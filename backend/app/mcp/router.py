@@ -4,7 +4,7 @@ MCP工具API路由
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 
 from app.core.database import get_db
 from app.core.response import ApiResponse
@@ -14,6 +14,8 @@ from app.auth.models import User
 from app.novels.models import Novel
 from .base import MCPToolRegistry, MCPToolCategory
 from .novel_tools import NovelManagementTools
+from .memory_tools import MemoryRetrievalTools
+from .consistency_tools import ConsistencyCheckTools
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
@@ -22,6 +24,8 @@ def get_mcp_registry(db: Session = Depends(get_db)) -> MCPToolRegistry:
     """获取MCP工具注册表实例"""
     registry = MCPToolRegistry()
     NovelManagementTools.register_all(db, registry)
+    MemoryRetrievalTools.register_all(db, registry)
+    ConsistencyCheckTools.register_all(db, registry)
     return registry
 
 
@@ -111,9 +115,6 @@ async def get_novel_summary(
     registry: MCPToolRegistry = Depends(get_mcp_registry),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    获取小说摘要 - 便捷接口
-    """
     result = await registry.execute("get_novel_summary", novel_id=novel.id)
     
     if result.success:
@@ -130,9 +131,6 @@ async def get_chapter_list(
     registry: MCPToolRegistry = Depends(get_mcp_registry),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    获取章节列表 - 便捷接口
-    """
     result = await registry.execute(
         "get_chapter_list",
         novel_id=novel.id,
@@ -154,9 +152,6 @@ async def get_chapter_content(
     registry: MCPToolRegistry = Depends(get_mcp_registry),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    获取章节内容 - 便捷接口
-    """
     from app.chapters.models import Chapter
     from app.core.exceptions import NotFoundException, UnauthorizedException
     
@@ -185,9 +180,6 @@ async def get_novel_progress(
     registry: MCPToolRegistry = Depends(get_mcp_registry),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    获取小说进度 - 便捷接口
-    """
     result = await registry.execute("get_novel_progress", novel_id=novel.id)
     
     if result.success:
@@ -202,9 +194,6 @@ async def get_character_list(
     registry: MCPToolRegistry = Depends(get_mcp_registry),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    获取角色列表 - 便捷接口
-    """
     result = await registry.execute(
         "get_character_list",
         novel_id=novel.id,
@@ -223,9 +212,6 @@ async def get_character_detail(
     registry: MCPToolRegistry = Depends(get_mcp_registry),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    获取角色详情 - 便捷接口
-    """
     from app.characters.models import Character
     from app.core.exceptions import NotFoundException, UnauthorizedException
     
@@ -240,6 +226,232 @@ async def get_character_detail(
     result = await registry.execute(
         "get_character_detail",
         character_id=character_id
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/novels/{novel_id}/memory/search")
+async def search_plot_memory(
+    novel: Novel = NovelOwner,
+    query: str = Query(..., description="搜索查询文本"),
+    top_k: int = Query(10, ge=1, le=50, description="返回结果数量"),
+    chapter_ids: Optional[str] = Query(None, description="限定章节ID，逗号分隔"),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    ids = None
+    if chapter_ids:
+        ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
+    
+    result = await registry.execute(
+        "search_plot_memory",
+        novel_id=novel.id,
+        query=query,
+        top_k=top_k,
+        chapter_ids=ids
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/characters/{character_id}/memory")
+async def get_character_memory(
+    character_id: int,
+    include_plot_events: bool = Query(True, description="是否包含情节事件"),
+    db: Session = Depends(get_db),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    from app.characters.models import Character
+    from app.core.exceptions import NotFoundException, UnauthorizedException
+    
+    character = db.query(Character).filter(Character.id == character_id).first()
+    if not character:
+        raise NotFoundException("角色")
+    
+    novel = db.query(Novel).filter(Novel.id == character.novel_id).first()
+    if not novel or novel.author_id != current_user.id:
+        raise UnauthorizedException("无权访问此角色")
+    
+    result = await registry.execute(
+        "get_character_memory",
+        novel_id=novel.id,
+        character_id=character_id,
+        include_plot_events=include_plot_events
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/novels/{novel_id}/timeline")
+async def get_timeline(
+    novel: Novel = NovelOwner,
+    start_chapter: Optional[int] = Query(None, description="起始章节号"),
+    end_chapter: Optional[int] = Query(None, description="结束章节号"),
+    event_types: Optional[str] = Query(None, description="事件类型，逗号分隔"),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    types = None
+    if event_types:
+        types = [x.strip() for x in event_types.split(",") if x.strip()]
+    
+    result = await registry.execute(
+        "get_timeline",
+        novel_id=novel.id,
+        start_chapter=start_chapter,
+        end_chapter=end_chapter,
+        event_types=types
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/chapters/{chapter_id}/context")
+async def get_recent_context(
+    chapter_id: int,
+    window_size: int = Query(3, ge=1, le=10, description="前文章节数量"),
+    context_size: int = Query(3000, ge=500, le=10000, description="上下文最大字符数"),
+    db: Session = Depends(get_db),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    from app.chapters.models import Chapter
+    from app.core.exceptions import NotFoundException, UnauthorizedException
+    
+    chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
+    if not chapter:
+        raise NotFoundException("章节")
+    
+    novel = db.query(Novel).filter(Novel.id == chapter.novel_id).first()
+    if not novel or novel.author_id != current_user.id:
+        raise UnauthorizedException("无权访问此章节")
+    
+    result = await registry.execute(
+        "get_recent_context",
+        novel_id=novel.id,
+        chapter_id=chapter_id,
+        window_size=window_size,
+        context_size=context_size
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/novels/{novel_id}/consistency/character")
+async def check_character_consistency(
+    novel: Novel = NovelOwner,
+    chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔"),
+    character_id: Optional[int] = Query(None, description="指定角色ID"),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    ids = None
+    if chapter_ids:
+        ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
+    
+    result = await registry.execute(
+        "check_character_consistency",
+        novel_id=novel.id,
+        chapter_ids=ids,
+        character_id=character_id
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/novels/{novel_id}/consistency/plot")
+async def check_plot_consistency(
+    novel: Novel = NovelOwner,
+    chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔"),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    ids = None
+    if chapter_ids:
+        ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
+    
+    result = await registry.execute(
+        "check_plot_consistency",
+        novel_id=novel.id,
+        chapter_ids=ids
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.post("/novels/{novel_id}/consistency/full")
+async def run_full_consistency_check(
+    novel: Novel = NovelOwner,
+    chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔"),
+    check_types: Optional[str] = Query(None, description="检查类型，逗号分隔(character,plot,timeline,foreshadowing)"),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    ids = None
+    if chapter_ids:
+        ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
+    
+    types = None
+    if check_types:
+        types = [x.strip() for x in check_types.split(",") if x.strip()]
+    
+    result = await registry.execute(
+        "run_full_consistency_check",
+        novel_id=novel.id,
+        chapter_ids=ids,
+        check_types=types
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.get("/novels/{novel_id}/foreshadowing/unresolved")
+async def list_unresolved_plots(
+    novel: Novel = NovelOwner,
+    min_importance: Optional[int] = Query(None, ge=1, le=5, description="最小重要程度"),
+    days_pending: Optional[int] = Query(None, ge=1, description="挂起天数筛选"),
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    result = await registry.execute(
+        "list_unresolved_plots",
+        novel_id=novel.id,
+        min_importance=min_importance,
+        days_pending=days_pending
+    )
+    
+    if result.success:
+        return ApiResponse.success(result.data)
+    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+
+
+@router.get("/novels/{novel_id}/foreshadowing/status")
+async def get_foreshadowing_status(
+    novel: Novel = NovelOwner,
+    registry: MCPToolRegistry = Depends(get_mcp_registry),
+    current_user: User = Depends(get_current_user)
+):
+    result = await registry.execute(
+        "get_foreshadowing_status",
+        novel_id=novel.id
     )
     
     if result.success:

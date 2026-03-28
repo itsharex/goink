@@ -18,8 +18,8 @@
 - MCP工具开发
 
 ## 当前任务
-- 任务ID: backend_016
-- 任务描述: MCP工具 - 记忆检索类
+- 任务ID: backend_018
+- 任务描述: Redis集成 - 缓存 + 分布式锁
 - 状态: 待开始
 
 ## 任务列表
@@ -45,14 +45,14 @@
 - [x] backend_012: 实现LangGraph工作流 ✅ (2026-03-28)
 - [x] backend_013: 实现情节规划系统 ✅ (2026-03-28)
 
-### 阶段4: 高级功能开发
+### 阶段4: 高级功能开发 (已完成) ✅
 - [x] backend_014: 实现文本生成系统 ✅ (2026-03-29)
 - [x] backend_015: MCP工具 - 小说管理类 ✅ (2026-03-29)
-- [ ] backend_016: MCP工具 - 记忆检索类 ← 当前任务
-- [ ] backend_017: MCP工具 - 一致性检查类
+- [x] backend_016: MCP工具 - 记忆检索类 ✅ (2026-03-29)
+- [x] backend_017: MCP工具 - 一致性检查类 ✅ (2026-03-29)
 
 ### 阶段5: 性能优化与基础设施 (新增)
-- [ ] backend_018: Redis集成 - 缓存 + 分布式锁
+- [ ] backend_018: Redis集成 - 缓存 + 分布式锁 ← 当前任务
 - [ ] backend_019: WebSocket实时通信 - 生成进度推送
 - [ ] backend_020: 知识图谱 - 角色关系 + 情节因果
 - [ ] backend_021: Prompt模板管理系统
@@ -330,6 +330,54 @@
   - POST /api/v1/mcp/novels/{novel_id}/progress - 获取小说进度
   - POST /api/v1/mcp/novels/{novel_id}/characters/list - 获取角色列表
   - POST /api/v1/mcp/characters/{character_id}/detail - 获取角色详情
+
+### backend_016 - MCP工具 - 记忆检索类
+- 完成时间: 2026-03-29
+- 关键成果:
+  - 实现4个记忆检索类MCP工具
+  - 集成VectorStore语义检索
+  - 集成ContextBuilder上下文构建
+  - 支持章节范围筛选、事件类型筛选
+- 文件创建:
+  - backend/app/mcp/memory_tools.py - 记忆检索类MCP工具
+- 文件修改:
+  - backend/app/mcp/router.py - 注册新工具和便捷接口
+  - backend/app/mcp/__init__.py - 导出新工具类
+- MCP工具列表:
+  - search_plot_memory - 搜索情节记忆（语义检索）
+  - get_character_memory - 获取角色记忆（角色信息+情节事件+相关内容）
+  - get_timeline - 获取时间线（章节范围筛选、事件类型筛选）
+  - get_recent_context - 获取最近上下文（前文摘要+角色信息+情节线索）
+- API端点:
+  - POST /api/v1/mcp/novels/{novel_id}/memory/search - 搜索情节记忆
+  - POST /api/v1/mcp/characters/{character_id}/memory - 获取角色记忆
+  - POST /api/v1/mcp/novels/{novel_id}/timeline - 获取时间线
+  - POST /api/v1/mcp/chapters/{chapter_id}/context - 获取最近上下文
+
+### backend_017 - MCP工具 - 一致性检查类
+- 完成时间: 2026-03-29
+- 关键成果:
+  - 实现5个一致性检查类MCP工具
+  - 集成ConsistencyChecker一致性检查服务
+  - 支持角色一致性检查、情节一致性检查
+  - 支持伏笔状态统计和未解决伏笔列表
+- 文件创建:
+  - backend/app/mcp/consistency_tools.py - 一致性检查类MCP工具
+- 文件修改:
+  - backend/app/mcp/router.py - 注册新工具和便捷接口
+  - backend/app/mcp/__init__.py - 导出新工具类
+- MCP工具列表:
+  - check_character_consistency - 检查角色一致性
+  - check_plot_consistency - 检查情节一致性
+  - list_unresolved_plots - 列出未解决的伏笔
+  - get_foreshadowing_status - 获取伏笔状态统计
+  - run_full_consistency_check - 执行完整一致性检查
+- API端点:
+  - POST /api/v1/mcp/novels/{novel_id}/consistency/character - 检查角色一致性
+  - POST /api/v1/mcp/novels/{novel_id}/consistency/plot - 检查情节一致性
+  - POST /api/v1/mcp/novels/{novel_id}/consistency/full - 执行完整一致性检查
+  - GET /api/v1/mcp/novels/{novel_id}/foreshadowing/unresolved - 列出未解决伏笔
+  - GET /api/v1/mcp/novels/{novel_id}/foreshadowing/status - 获取伏笔状态
 
 ## 依赖关系
 - ✅ API接口文档: `.trae/documents/api-specification.md`

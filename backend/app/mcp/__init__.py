@@ -4,6 +4,8 @@ MCP (Model Context Protocol) 工具模块
 """
 from .base import BaseMCPTool, MCPToolRegistry, MCPToolResult, MCPToolCategory
 from .novel_tools import NovelManagementTools
+from .memory_tools import MemoryRetrievalTools
+from .consistency_tools import ConsistencyCheckTools
 
 from .router import router
 
@@ -13,5 +15,7 @@ __all__ = [
     "MCPToolResult",
     "MCPToolCategory",
     "NovelManagementTools",
+    "MemoryRetrievalTools",
+    "ConsistencyCheckTools",
     "router",
 ]
