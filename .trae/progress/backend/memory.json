@@ -2,7 +2,7 @@
   "agent_id": "agent_2",
   "agent_name": "后端开发Agent",
   "created_at": "2026-03-27T00:00:00Z",
-  "last_updated": "2026-03-28T12:00:00Z",
+  "last_updated": "2026-03-28T15:00:00Z",
   "completed_tasks": [
     {
       "task_id": "backend_000",
@@ -21,13 +21,7 @@
         "使用LangChain集成LLM",
         "使用ChromaDB作为向量数据库"
       ],
-      "files_created": ["requirements.txt", "venv/"],
-      "problems_solved": [
-        {
-          "problem": "ChromaDB需要编译依赖",
-          "solution": "安装python3-dev和cmake"
-        }
-      ]
+      "files_created": ["requirements.txt", "venv/"]
     },
     {
       "task_id": "backend_002",
@@ -145,11 +139,42 @@
         "PUT /api/v1/plot-events/{id}",
         "DELETE /api/v1/plot-events/{id}"
       ]
+    },
+    {
+      "task_id": "backend_007",
+      "task_name": "实现记忆管理系统",
+      "completed_at": "2026-03-28T15:00:00Z",
+      "key_decisions": [
+        "使用ChromaDB作为向量数据库",
+        "支持OpenAI Embedding和SentenceTransformer本地嵌入",
+        "实现文本分块和重叠机制",
+        "实现语义检索功能",
+        "支持章节级别的索引管理"
+      ],
+      "files_created": [
+        "backend/app/memory/models.py",
+        "backend/app/memory/schemas.py",
+        "backend/app/memory/router.py",
+        "backend/app/memory/__init__.py",
+        "backend/app/core/vector_store.py"
+      ],
+      "api_endpoints": [
+        "POST /api/v1/memory/novels/{novel_id}/index",
+        "POST /api/v1/memory/novels/{novel_id}/chapters/{chapter_id}/index",
+        "POST /api/v1/memory/novels/{novel_id}/search",
+        "DELETE /api/v1/memory/novels/{novel_id}/memory"
+      ],
+      "features": [
+        "小说内容向量化存储",
+        "语义相似度检索",
+        "章节内容分块索引",
+        "支持自定义分块大小和重叠",
+        "支持按章节筛选检索"
+      ]
     }
   ],
-  "current_tasks": ["backend_007"],
+  "current_tasks": ["backend_008"],
   "pending_tasks": [
-    "backend_008",
     "backend_009",
     "backend_010",
     "backend_011",
@@ -191,6 +216,11 @@
       "decision": "使用JWT认证",
       "reason": "无状态、跨域友好、适合前后端分离架构",
       "date": "2026-03-28T12:00:00Z"
+    },
+    {
+      "decision": "使用SentenceTransformer作为默认嵌入模型",
+      "reason": "无需API密钥、本地运行、中文支持良好",
+      "date": "2026-03-28T15:00:00Z"
     }
   ]
 }

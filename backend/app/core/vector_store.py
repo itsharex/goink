@@ -1,0 +1,203 @@
+"""
+向量存储服务 - ChromaDB集成
+"""
+import os
+import logging
+from typing import List, Dict, Any, Optional
+
+import chromadb
+from chromadb.utils import embedding_functions
+
+logger = logging.getLogger(__name__)
+
+
+class VectorStoreConfig:
+    """向量存储配置"""
+    CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    USE_OPENAI_EMBEDDING: bool = os.getenv("USE_OPENAI_EMBEDDING", "false").lower() == "true"
+    
+    @classmethod
+    def validate(cls):
+        """验证配置"""
+        if cls.USE_OPENAI_EMBEDDING and not cls.OPENAI_API_KEY:
+            raise ValueError("USE_OPENAI_EMBEDDING is true but OPENAI_API_KEY is not set")
+
+
+class VectorStoreError(Exception):
+    """向量存储错误"""
+    pass
+
+
+class VectorStore:
+    """向量存储服务"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+        
+        try:
+            VectorStoreConfig.validate()
+            
+            self.persist_directory = VectorStoreConfig.CHROMA_PERSIST_DIR
+            os.makedirs(self.persist_directory, exist_ok=True)
+            logger.info(f"ChromaDB persist directory: {self.persist_directory}")
+            
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
+            
+            if VectorStoreConfig.USE_OPENAI_EMBEDDING:
+                logger.info(f"Using OpenAI embedding model: {VectorStoreConfig.EMBEDDING_MODEL}")
+                self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                    api_key=VectorStoreConfig.OPENAI_API_KEY,
+                    model_name=VectorStoreConfig.EMBEDDING_MODEL
+                )
+            else:
+                logger.info(f"Using SentenceTransformer embedding model: {VectorStoreConfig.EMBEDDING_MODEL}")
+                self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                    model_name=VectorStoreConfig.EMBEDDING_MODEL
+                )
+            
+            self._initialized = True
+            logger.info("VectorStore initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize VectorStore: {e}")
+            raise VectorStoreError(f"VectorStore initialization failed: {e}")
+    
+    def get_or_create_collection(self, novel_id: int):
+        """获取或创建小说的向量集合"""
+        try:
+            collection_name = f"novel_{novel_id}"
+            collection = self.client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=self.embedding_function,
+                metadata={"novel_id": novel_id}
+            )
+            logger.debug(f"Got/created collection: {collection_name}")
+            return collection
+        except Exception as e:
+            logger.error(f"Failed to get/create collection for novel {novel_id}: {e}")
+            raise VectorStoreError(f"Collection operation failed: {e}")
+    
+    def add_chunks(
+        self, 
+        novel_id: int, 
+        chunks: List[Dict[str, Any]]
+    ) -> int:
+        """添加内容块到向量存储"""
+        try:
+            collection = self.get_or_create_collection(novel_id)
+            
+            ids = [f"chunk_{chunk['id']}" for chunk in chunks]
+            documents = [chunk['content'] for chunk in chunks]
+            metadatas = [
+                {
+                    "chapter_id": chunk.get('chapter_id'),
+                    "chunk_type": chunk.get('chunk_type', 'content'),
+                    "chunk_index": chunk.get('chunk_index', 0),
+                    **chunk.get('metadata', {})
+                }
+                for chunk in chunks
+            ]
+            
+            collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas
+            )
+            
+            logger.info(f"Added {len(chunks)} chunks to novel {novel_id}")
+            return len(chunks)
+            
+        except Exception as e:
+            logger.error(f"Failed to add chunks to novel {novel_id}: {e}")
+            raise VectorStoreError(f"Add chunks failed: {e}")
+    
+    def search(
+        self, 
+        novel_id: int, 
+        query: str, 
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """语义检索"""
+        try:
+            collection = self.get_or_create_collection(novel_id)
+            
+            where = None
+            if filters:
+                conditions = []
+                if filters.get("chapter_ids"):
+                    conditions.append({"chapter_id": {"$in": filters["chapter_ids"]}})
+                if filters.get("chunk_types"):
+                    conditions.append({"chunk_type": {"$in": filters["chunk_types"]}})
+                if conditions:
+                    where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+            
+            results = collection.query(
+                query_texts=[query],
+                n_results=top_k,
+                where=where,
+                include=["documents", "metadatas", "distances"]
+            )
+            
+            formatted_results = []
+            if results['ids'] and results['ids'][0]:
+                for i, doc_id in enumerate(results['ids'][0]):
+                    formatted_results.append({
+                        "id": doc_id,
+                        "content": results['documents'][0][i],
+                        "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
+                        "distance": results['distances'][0][i] if results['distances'] else 0
+                    })
+            
+            logger.info(f"Search completed for novel {novel_id}, found {len(formatted_results)} results")
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Search failed for novel {novel_id}: {e}")
+            raise VectorStoreError(f"Search failed: {e}")
+    
+    def delete_chapter_chunks(self, novel_id: int, chapter_id: int) -> int:
+        """删除章节的所有内容块"""
+        try:
+            collection = self.get_or_create_collection(novel_id)
+            
+            results = collection.get(
+                where={"chapter_id": chapter_id}
+            )
+            
+            deleted_count = 0
+            if results['ids']:
+                collection.delete(ids=results['ids'])
+                deleted_count = len(results['ids'])
+            
+            logger.info(f"Deleted {deleted_count} chunks for chapter {chapter_id} in novel {novel_id}")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Failed to delete chapter chunks: {e}")
+            raise VectorStoreError(f"Delete chapter chunks failed: {e}")
+    
+    def delete_collection(self, novel_id: int) -> bool:
+        """删除小说的整个向量集合"""
+        try:
+            collection_name = f"novel_{novel_id}"
+            self.client.delete_collection(collection_name)
+            logger.info(f"Deleted collection: {collection_name}")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to delete collection for novel {novel_id}: {e}")
+            return False
+
+
+vector_store = VectorStore()
