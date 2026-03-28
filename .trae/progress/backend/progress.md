@@ -18,8 +18,8 @@
 - MCP工具开发
 
 ## 当前任务
-- 任务ID: backend_015
-- 任务描述: MCP工具 - 小说管理类
+- 任务ID: backend_016
+- 任务描述: MCP工具 - 记忆检索类
 - 状态: 待开始
 
 ## 任务列表
@@ -47,9 +47,8 @@
 
 ### 阶段4: 高级功能开发
 - [x] backend_014: 实现文本生成系统 ✅ (2026-03-29)
-- [ ] backend_015: MCP工具 - 小说管理类 ← 当前任务
-- [ ] backend_015: MCP工具 - 小说管理类
-- [ ] backend_016: MCP工具 - 记忆检索类
+- [x] backend_015: MCP工具 - 小说管理类 ✅ (2026-03-29)
+- [ ] backend_016: MCP工具 - 记忆检索类 ← 当前任务
 - [ ] backend_017: MCP工具 - 一致性检查类
 
 ### 阶段5: 性能优化与基础设施 (新增)
@@ -297,6 +296,40 @@
   - POST /api/v1/text/novels/{novel_id}/generate/character-profile - 生成角色档案
   - POST /api/v1/text/novels/{novel_id}/generate/custom - 自定义生成
   - GET /api/v1/text/generation-types - 获取支持的生成类型和风格
+
+### backend_015 - MCP工具 - 小说管理类
+- 完成时间: 2026-03-29
+- 关键成果:
+  - 创建MCP工具框架（BaseMCPTool抽象基类、MCPToolRegistry注册表）
+  - 实现MCPToolResult统一返回格式
+  - 实现MCPToolCategory工具分类枚举
+  - 实现6个小说管理类MCP工具
+  - 创建MCP工具API路由（通用执行接口+便捷接口）
+- 文件创建:
+  - backend/app/mcp/__init__.py - 模块导出
+  - backend/app/mcp/base.py - MCP工具基类和注册表
+  - backend/app/mcp/novel_tools.py - 小说管理类MCP工具
+  - backend/app/mcp/router.py - MCP工具API路由
+- 文件修改:
+  - backend/app/main.py - 注册mcp路由
+- MCP工具列表:
+  - get_novel_summary - 获取小说整体摘要
+  - get_chapter_list - 获取章节列表
+  - get_chapter_content - 获取章节内容
+  - get_novel_progress - 获取小说进度
+  - get_character_list - 获取角色列表
+  - get_character_detail - 获取角色详情
+- API端点:
+  - GET /api/v1/mcp/tools - 列出所有工具
+  - GET /api/v1/mcp/tools/categories - 按分类列出工具
+  - GET /api/v1/mcp/tools/{tool_name} - 获取工具详情
+  - POST /api/v1/mcp/tools/{tool_name}/execute - 执行工具
+  - POST /api/v1/mcp/novels/{novel_id}/summary - 获取小说摘要
+  - POST /api/v1/mcp/novels/{novel_id}/chapters/list - 获取章节列表
+  - POST /api/v1/mcp/chapters/{chapter_id}/content - 获取章节内容
+  - POST /api/v1/mcp/novels/{novel_id}/progress - 获取小说进度
+  - POST /api/v1/mcp/novels/{novel_id}/characters/list - 获取角色列表
+  - POST /api/v1/mcp/characters/{character_id}/detail - 获取角色详情
 
 ## 依赖关系
 - ✅ API接口文档: `.trae/documents/api-specification.md`

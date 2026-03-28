@@ -8,79 +8,91 @@
 ---
 
 ## 统计信息
-- **总请求数**: 22
+- **总请求数**: 23
 - **待处理**: 1
-- **已完成**: 21
+- **已完成**: 22
 
 ---
 
 ## 待处理请求
 
-### REQ-20260329-002
+### REQ-20260329-003
 
 **基本信息**
-- **请求ID**: REQ-20260329-002
-- **请求时间**: 2026-03-29T01:00:00Z
+- **请求ID**: REQ-20260329-003
+- **请求时间**: 2026-03-29T03:00:00Z
 - **请求Agent**: agent_2 (后端开发Agent)
-- **任务ID**: backend_014
+- **任务ID**: backend_015
 - **状态**: PENDING
 - **请求类型**: COMMIT
 
 **完成内容**
-1. ✅ 创建TextGenerator统一文本生成服务
-2. ✅ 支持多种生成类型：章节、对话、描写、大纲、摘要、角色档案
-3. ✅ 支持多种写作风格：叙述性、描写性、对话式、诗意、戏剧性、自然、生动
-4. ✅ 集成ContextBuilder自动构建生成上下文
-5. ✅ 支持自定义生成配置（温度、目标字数、风格）
-6. ✅ 创建文本生成API路由
+1. ✅ 创建MCP工具基础架构 (base.py)
+2. ✅ 实现MCPToolRegistry工具注册表（实例化模式）
+3. ✅ 实现BaseMCPTool抽象基类
+4. ✅ 实现6个小说管理类MCP工具
+5. ✅ 创建MCP工具API路由
+6. ✅ 注册mcp路由到main.py
+7. ✅ 修复安全性问题：便捷API添加所有权验证
+8. ✅ 修复MCPToolRegistry改为实例化模式（依赖注入）
+9. ✅ 修复__init__.py导出MCPToolCategory
 
 **新增文件**
-- `backend/app/core/text_generator.py` - 文本生成服务
-- `backend/app/text/router.py` - API路由
-- `backend/app/text/__init__.py`
+- `backend/app/mcp/__init__.py` - 模块导出
+- `backend/app/mcp/base.py` - MCP工具基类和注册表
+- `backend/app/mcp/novel_tools.py` - 小说管理类MCP工具
+- `backend/app/mcp/router.py` - MCP工具API路由
 
 **修改文件**
-- `backend/app/main.py` - 注册text路由
+- `backend/app/main.py` - 注册mcp路由
 
 **技术特性**
-- GenerationType枚举：CHAPTER、DIALOGUE、DESCRIPTION、OUTLINE、SUMMARY、CHARACTER_PROFILE
-- GenerationConfig配置类：生成类型、风格、目标字数、温度、最大tokens
-- 多种写作风格支持：narrative、descriptive、dialogue、poetic、dramatic、natural、vivid
-- 自动上下文构建：集成ContextBuilder获取前文摘要、角色信息、情节线索
-- 统一生成接口：generate()方法支持自定义prompt和配置
-- 专用生成方法：generate_chapter、generate_dialogue、generate_description等
+- MCPToolCategory枚举：novel_management、memory_retrieval、consistency_check、writing_assistant
+- MCPToolResult数据类：success、data、error、metadata
+- MCPToolRegistry注册表：register、get、list_tools、execute
+- 6个小说管理工具：get_novel_summary、get_chapter_list、get_chapter_content、get_novel_progress、get_character_list、get_character_detail
+- 统一工具执行接口：execute方法
+- 便捷API端点：为每个工具提供HTTP接口
 
 **API端点**
-- POST /api/v1/text/novels/{novel_id}/generate/chapter
-- POST /api/v1/text/novels/{novel_id}/generate/dialogue
-- POST /api/v1/text/novels/{novel_id}/generate/description
-- POST /api/v1/text/novels/{novel_id}/generate/outline
-- POST /api/v1/text/novels/{novel_id}/generate/summary
-- POST /api/v1/text/novels/{novel_id}/generate/character-profile
-- POST /api/v1/text/novels/{novel_id}/generate/custom
-- GET /api/v1/text/generation-types
+- GET /api/v1/mcp/tools - 列出所有工具
+- GET /api/v1/mcp/tools/categories - 按分类列出工具
+- GET /api/v1/mcp/tools/{tool_name} - 获取工具详情
+- POST /api/v1/mcp/tools/{tool_name}/execute - 执行工具
+- POST /api/v1/mcp/novels/{novel_id}/summary - 获取小说摘要
+- POST /api/v1/mcp/novels/{novel_id}/chapters/list - 获取章节列表
+- POST /api/v1/mcp/chapters/{chapter_id}/content - 获取章节内容
+- POST /api/v1/mcp/novels/{novel_id}/progress - 获取小说进度
+- POST /api/v1/mcp/novels/{novel_id}/characters/list - 获取角色列表
+- POST /api/v1/mcp/characters/{character_id}/detail - 获取角色详情
 
 **Commit建议**
 ```
-feat(backend): implement unified text generation system
+feat(backend): implement MCP tools for novel management
 
-- Add TextGenerator service with multiple generation types
-- Support chapter, dialogue, description, outline, summary, character profile generation
-- Add multiple writing styles (narrative, descriptive, dramatic, etc.)
-- Integrate ContextBuilder for automatic context building
-- Add GenerationConfig for customizable parameters
-- Add text generation API endpoints
+- Add MCP tool framework with BaseMCPTool and MCPToolRegistry
+- Implement 6 novel management tools (summary, chapters, content, progress, characters)
+- Add MCP tool API routes with execute endpoint
+- Support tool categorization and parameter schema
 ```
 
 **Review Agent填写**
 - **处理时间**: 
 - **评审结果**: 
 - **修改建议**: 
-- **提交哈希**: 
+- **提交哈希**:
 
 ---
 
 ## 已完成请求（历史记录）
+
+### REQ-20260329-002
+- **请求时间**: 2026-03-29T01:00:00Z
+- **请求Agent**: agent_2 (后端开发Agent)
+- **任务ID**: backend_014
+- **处理时间**: 2026-03-29T02:00:00Z
+- **结果**: APPROVED
+- **提交哈希**: 78702eb
 
 ### REQ-20260329-001
 - **请求时间**: 2026-03-29T00:00:00Z
@@ -97,11 +109,3 @@ feat(backend): implement unified text generation system
 - **处理时间**: 2026-03-28T23:45:00Z
 - **结果**: APPROVED
 - **提交哈希**: 4b7b8f6
-
-### REQ-20260328-014
-- **请求时间**: 2026-03-28T23:00:00Z
-- **请求Agent**: agent_1 (前端开发Agent)
-- **任务ID**: frontend_018-021
-- **处理时间**: 2026-03-28T23:30:00Z
-- **结果**: APPROVED
-- **提交哈希**: 5f1ad5e

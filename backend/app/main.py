@@ -22,6 +22,7 @@ from app.consistency import router as consistency_router
 from app.workflows import router as workflows_router
 from app.planning import router as planning_router
 from app.text import router as text_router
+from app.mcp import router as mcp_router
 
 from app.auth.models import User
 from app.novels.models import Novel
@@ -78,6 +79,7 @@ app.include_router(consistency_router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(planning_router, prefix="/api/v1")
 app.include_router(text_router, prefix="/api/v1")
+app.include_router(mcp_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
