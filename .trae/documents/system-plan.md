@@ -285,17 +285,30 @@
 └── 文档完善
 ```
 
-### 6.2 当前重点
+### 6.2 当前重点 (更新于 2026-03-28)
+
+**整体进度**: 70%
 
 **后端Agent**:
-- backend_006: 配置JWT认证和授权
-- backend_007: 实现记忆管理系统
-- backend_008: 实现RAG检索系统
+- ✅ backend_006: 配置JWT认证和授权 + 架构重构
+- ✅ backend_007: 实现记忆管理系统
+- ✅ backend_008: 实现RAG检索系统
+- ✅ backend_009: 实现多智能体框架 + DeepSeek集成
+- ✅ backend_010: 实现章节生成完整流程
+- ✅ backend_011: 实现一致性检查系统（待Review）
+- ⏳ backend_012: 实现LangGraph工作流 ← 当前任务
+- ⏳ backend_013: 实现情节规划系统
+- ⏳ backend_015-017: MCP工具开发
 
 **前端Agent**:
-- frontend_009: 实现小说编辑页面
-- frontend_010-013: 角色管理界面
-- frontend_014-017: 章节生成界面
+- ✅ frontend_009: 实现小说编辑页面
+- ✅ frontend_010-013: 角色管理界面
+- ✅ frontend_014-017: 章节生成界面
+- ⏳ frontend_018-021: 一致性检查界面 ← 当前任务
+- ⏳ frontend_022-024: 进度可视化
+
+**Review Agent**:
+- 2个待处理Review请求
 
 ---
 
