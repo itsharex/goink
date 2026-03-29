@@ -9,6 +9,7 @@ from app.core.response import ApiResponse
 from app.core.database import DBSession
 from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
+from app.core.redis_service import redis_service, NovelCache
 from .models import Novel
 from .schemas import NovelCreate, NovelUpdate
 
@@ -34,6 +35,11 @@ async def get_novels(
     - genre: 类型筛选
     - search: 标题搜索
     """
+    cache_key = f"user:{current_user.id}:novels:{page}:{page_size}:{status}:{genre}:{search}"
+    cached = await redis_service.get(cache_key)
+    if cached:
+        return ApiResponse.paginated(cached["items"], cached["total"], page, page_size)
+    
     query = select(Novel).where(Novel.author_id == current_user.id)
     
     if status:
@@ -64,6 +70,8 @@ async def get_novels(
             "updated_at": novel.updated_at
         })
     
+    await redis_service.set(cache_key, {"items": items, "total": total}, ttl=60)
+    
     return ApiResponse.paginated(items, total, page, page_size)
 
 
@@ -86,6 +94,8 @@ async def create_novel(
     await db.commit()
     await db.refresh(db_novel)
     
+    await redis_service.clear_pattern(f"user:{current_user.id}:novels:*")
+    
     return ApiResponse.success(
         {
             "id": db_novel.id,
@@ -106,7 +116,12 @@ async def get_novel(novel: NovelOwner):
     """
     获取小说详情
     """
-    return ApiResponse.success({
+    cache_key = f"novel:{novel.id}:detail"
+    cached = await redis_service.get(cache_key)
+    if cached:
+        return ApiResponse.success(cached)
+    
+    data = {
         "id": novel.id,
         "title": novel.title,
         "genre": novel.genre,
@@ -115,7 +130,11 @@ async def get_novel(novel: NovelOwner):
         "status": novel.status,
         "created_at": novel.created_at,
         "updated_at": novel.updated_at
-    })
+    }
+    
+    await redis_service.set(cache_key, data, ttl=300)
+    
+    return ApiResponse.success(data)
 
 
 @router.put("/{novel_id}")
@@ -133,6 +152,9 @@ async def update_novel(
     
     await db.commit()
     await db.refresh(novel)
+    
+    await redis_service.delete(f"novel:{novel.id}:detail")
+    await redis_service.clear_pattern(f"user:{novel.author_id}:novels:*")
     
     return ApiResponse.success(
         {
@@ -155,7 +177,13 @@ async def delete_novel(
     """
     删除小说
     """
+    author_id = novel.author_id
+    novel_id = novel.id
+    
     await db.delete(novel)
     await db.commit()
+    
+    await NovelCache.invalidate_novel(novel_id)
+    await redis_service.clear_pattern(f"user:{author_id}:novels:*")
     
     return ApiResponse.success(message="小说删除成功")

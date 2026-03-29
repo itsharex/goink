@@ -3,11 +3,13 @@ FastAPI主应用 - 符合API规范v1.0.0
 模块化架构：每个模块作为一等公民，包含自己的models/schemas/router
 """
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.database import init_db
+from app.core.redis_service import redis_service
 from app.core.exceptions import APIException
 
 from app.auth import router as auth_router
@@ -36,12 +38,23 @@ from app.agents.models import AgentTaskRecord
 from app.foreshadowing.models import Foreshadowing
 from app.planning.models import PlotLine, PlotNode, PlotOutline
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     await init_db()
+    
+    try:
+        await redis_service.connect()
+        logger.info("Redis connected successfully")
+    except Exception as e:
+        logger.warning(f"Redis connection failed, running without cache: {e}")
+    
     yield
+    
+    await redis_service.disconnect()
 
 
 app = FastAPI(
@@ -100,12 +113,21 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    redis_status = "connected"
+    try:
+        if redis_service._redis:
+            await redis_service.client.ping()
+        else:
+            redis_status = "not_configured"
+    except Exception:
+        redis_status = "disconnected"
+    
     return {
         "success": True,
         "data": {
             "status": "healthy",
             "database": "connected",
-            "redis": "connected"
+            "redis": redis_status
         }
     }
 

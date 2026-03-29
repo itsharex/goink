@@ -11,6 +11,7 @@ from app.core.database import DBSession
 from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
 from app.core.exceptions import NotFoundException, UnauthorizedException
+from app.core.redis_service import redis_service
 from app.novels.models import Novel
 from .models import Character
 from .schemas import CharacterCreate, CharacterUpdate
@@ -34,6 +35,11 @@ async def get_characters_by_novel(
     - page_size: 每页数量
     - search: 角色名搜索
     """
+    cache_key = f"novel:{novel.id}:characters:{page}:{page_size}:{search}"
+    cached = await redis_service.get(cache_key)
+    if cached:
+        return ApiResponse.paginated(cached["items"], cached["total"], page, page_size)
+    
     query = select(Character).where(Character.novel_id == novel.id)
     
     if search:
@@ -59,6 +65,8 @@ async def get_characters_by_novel(
         }
         for ch in characters
     ]
+    
+    await redis_service.set(cache_key, {"items": items, "total": total}, ttl=120)
     
     return ApiResponse.paginated(items, total, page, page_size)
 
@@ -87,6 +95,8 @@ async def create_character(
     await db.commit()
     await db.refresh(db_character)
     
+    await redis_service.clear_pattern(f"novel:{character.novel_id}:characters:*")
+    
     return ApiResponse.success(
         {
             "id": db_character.id,
@@ -110,6 +120,11 @@ async def get_character(
     """
     获取角色详情
     """
+    cache_key = f"character:{character_id}:detail"
+    cached = await redis_service.get(cache_key)
+    if cached:
+        return ApiResponse.success(cached)
+    
     result = await db.execute(
         select(Character)
         .options(selectinload(Character.novel))
@@ -123,7 +138,7 @@ async def get_character(
     if character.novel.author_id != current_user.id:
         raise UnauthorizedException("无权访问此角色")
     
-    return ApiResponse.success({
+    data = {
         "id": character.id,
         "novel_id": character.novel_id,
         "name": character.name,
@@ -135,7 +150,11 @@ async def get_character(
             "id": character.novel.id,
             "title": character.novel.title
         }
-    })
+    }
+    
+    await redis_service.set(cache_key, data, ttl=300)
+    
+    return ApiResponse.success(data)
 
 
 @router.put("/{character_id}")
@@ -167,6 +186,9 @@ async def update_character(
     
     await db.commit()
     await db.refresh(db_character)
+    
+    await redis_service.delete(f"character:{character_id}:detail")
+    await redis_service.clear_pattern(f"novel:{db_character.novel_id}:characters:*")
     
     return ApiResponse.success(
         {
@@ -202,7 +224,12 @@ async def delete_character(
     if db_character.novel.author_id != current_user.id:
         raise UnauthorizedException("无权删除此角色")
     
+    novel_id = db_character.novel_id
+    
     await db.delete(db_character)
     await db.commit()
+    
+    await redis_service.delete(f"character:{character_id}:detail")
+    await redis_service.clear_pattern(f"novel:{novel_id}:characters:*")
     
     return ApiResponse.success(message="角色删除成功")

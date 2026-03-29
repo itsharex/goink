@@ -11,6 +11,7 @@ from app.core.database import DBSession
 from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
 from app.core.exceptions import NotFoundException, UnauthorizedException
+from app.core.redis_service import redis_service
 from app.novels.models import Novel
 from .models import Chapter
 from .schemas import ChapterCreate, ChapterUpdate
@@ -36,6 +37,11 @@ async def get_chapters_by_novel(
     - status: 状态筛选 (draft/completed)
     - order: 排序 (asc/desc)
     """
+    cache_key = f"novel:{novel.id}:chapters:{page}:{page_size}:{status}:{order}"
+    cached = await redis_service.get(cache_key)
+    if cached:
+        return ApiResponse.paginated(cached["items"], cached["total"], page, page_size)
+    
     query = select(Chapter).where(Chapter.novel_id == novel.id)
     
     if status:
@@ -69,6 +75,8 @@ async def get_chapters_by_novel(
         for ch in chapters
     ]
     
+    await redis_service.set(cache_key, {"items": items, "total": total}, ttl=120)
+    
     return ApiResponse.paginated(items, total, page, page_size)
 
 
@@ -96,6 +104,8 @@ async def create_chapter(
     await db.commit()
     await db.refresh(db_chapter)
     
+    await redis_service.clear_pattern(f"novel:{chapter.novel_id}:chapters:*")
+    
     return ApiResponse.success(
         {
             "id": db_chapter.id,
@@ -121,6 +131,11 @@ async def get_chapter(
     """
     获取章节详情
     """
+    cache_key = f"chapter:{chapter_id}:detail"
+    cached = await redis_service.get(cache_key)
+    if cached:
+        return ApiResponse.success(cached)
+    
     result = await db.execute(
         select(Chapter)
         .options(
@@ -137,7 +152,7 @@ async def get_chapter(
     if chapter.novel.author_id != current_user.id:
         raise UnauthorizedException("无权访问此章节")
     
-    return ApiResponse.success({
+    data = {
         "id": chapter.id,
         "novel_id": chapter.novel_id,
         "chapter_number": chapter.chapter_number,
@@ -160,7 +175,11 @@ async def get_chapter(
             }
             for pe in chapter.plot_events
         ]
-    })
+    }
+    
+    await redis_service.set(cache_key, data, ttl=300)
+    
+    return ApiResponse.success(data)
 
 
 @router.put("/{chapter_id}")
@@ -192,6 +211,9 @@ async def update_chapter(
     
     await db.commit()
     await db.refresh(db_chapter)
+    
+    await redis_service.delete(f"chapter:{chapter_id}:detail")
+    await redis_service.clear_pattern(f"novel:{db_chapter.novel_id}:chapters:*")
     
     return ApiResponse.success(
         {
@@ -229,7 +251,12 @@ async def delete_chapter(
     if db_chapter.novel.author_id != current_user.id:
         raise UnauthorizedException("无权删除此章节")
     
+    novel_id = db_chapter.novel_id
+    
     await db.delete(db_chapter)
     await db.commit()
+    
+    await redis_service.delete(f"chapter:{chapter_id}:detail")
+    await redis_service.clear_pattern(f"novel:{novel_id}:chapters:*")
     
     return ApiResponse.success(message="章节删除成功")
