@@ -1,16 +1,16 @@
 """
 角色管理模块 - API路由
 """
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from typing import Optional
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
-from app.core.exceptions import NotFoundException
-from app.core.auth import get_current_user
+from app.core.database import DBSession
+from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
-from app.auth.models import User
+from app.core.exceptions import NotFoundException, UnauthorizedException
 from app.novels.models import Novel
 from .models import Character
 from .schemas import CharacterCreate, CharacterUpdate
@@ -19,12 +19,12 @@ router = APIRouter(prefix="/characters", tags=["characters"])
 
 
 @router.get("/novel/{novel_id}")
-def get_characters_by_novel(
+async def get_characters_by_novel(
     novel: NovelOwner,
+    db: DBSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    search: Optional[str] = Query(None, max_length=50),
-    db: Session = Depends(get_db)
+    search: Optional[str] = Query(None, max_length=50)
 ):
     """
     获取小说角色列表
@@ -34,13 +34,18 @@ def get_characters_by_novel(
     - page_size: 每页数量
     - search: 角色名搜索
     """
-    query = db.query(Character).filter(Character.novel_id == novel.id)
+    query = select(Character).where(Character.novel_id == novel.id)
     
     if search:
-        query = query.filter(Character.name.contains(search))
+        query = query.where(Character.name.contains(search))
     
-    total = query.count()
-    characters = query.offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    characters = result.scalars().all()
     
     items = [
         {
@@ -59,25 +64,28 @@ def get_characters_by_novel(
 
 
 @router.post("", status_code=201)
-def create_character(
+async def create_character(
     character: CharacterCreate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     创建角色
     """
-    novel = db.query(Novel).filter(Novel.id == character.novel_id).first()
+    result = await db.execute(
+        select(Novel).where(Novel.id == character.novel_id)
+    )
+    novel = result.scalar_one_or_none()
+    
     if novel is None:
         raise NotFoundException("小说")
     if novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权访问此小说")
     
-    db_character = Character(**character.dict())
+    db_character = Character(**character.model_dump())
     db.add(db_character)
-    db.commit()
-    db.refresh(db_character)
+    await db.commit()
+    await db.refresh(db_character)
     
     return ApiResponse.success(
         {
@@ -94,20 +102,25 @@ def create_character(
 
 
 @router.get("/{character_id}")
-def get_character(
+async def get_character(
     character_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     获取角色详情
     """
-    character = db.query(Character).filter(Character.id == character_id).first()
+    result = await db.execute(
+        select(Character)
+        .options(selectinload(Character.novel))
+        .where(Character.id == character_id)
+    )
+    character = result.scalar_one_or_none()
+    
     if character is None:
         raise NotFoundException("角色")
     
     if character.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权访问此角色")
     
     return ApiResponse.success({
@@ -126,29 +139,34 @@ def get_character(
 
 
 @router.put("/{character_id}")
-def update_character(
+async def update_character(
     character_id: int, 
     character: CharacterUpdate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     更新角色
     """
-    db_character = db.query(Character).filter(Character.id == character_id).first()
+    result = await db.execute(
+        select(Character)
+        .options(selectinload(Character.novel))
+        .where(Character.id == character_id)
+    )
+    db_character = result.scalar_one_or_none()
+    
     if db_character is None:
         raise NotFoundException("角色")
     
     if db_character.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权修改此角色")
     
-    update_data = character.dict(exclude_unset=True)
+    update_data = character.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_character, key, value)
     
-    db.commit()
-    db.refresh(db_character)
+    await db.commit()
+    await db.refresh(db_character)
     
     return ApiResponse.success(
         {
@@ -163,23 +181,28 @@ def update_character(
 
 
 @router.delete("/{character_id}")
-def delete_character(
+async def delete_character(
     character_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     删除角色
     """
-    db_character = db.query(Character).filter(Character.id == character_id).first()
+    result = await db.execute(
+        select(Character)
+        .options(selectinload(Character.novel))
+        .where(Character.id == character_id)
+    )
+    db_character = result.scalar_one_or_none()
+    
     if db_character is None:
         raise NotFoundException("角色")
     
     if db_character.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权删除此角色")
     
-    db.delete(db_character)
-    db.commit()
+    await db.delete(db_character)
+    await db.commit()
     
     return ApiResponse.success(message="角色删除成功")

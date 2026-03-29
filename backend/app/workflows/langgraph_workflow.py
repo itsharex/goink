@@ -5,6 +5,7 @@ LangGraph工作流 - 章节生成工作流
 import logging
 from typing import TypedDict, Annotated, Literal, Optional, Dict, Any, List
 from datetime import datetime
+from sqlalchemy import select
 
 try:
     from langgraph.graph import StateGraph, END
@@ -16,27 +17,9 @@ except ImportError:
     END = None
     MemorySaver = None
 
-try:
-    from app.core.context_builder import ContextBuilder
-    CONTEXT_BUILDER_AVAILABLE = True
-except ImportError:
-    CONTEXT_BUILDER_AVAILABLE = False
-    ContextBuilder = None
-
-try:
-    from app.consistency.service import ConsistencyChecker
-    CONSISTENCY_CHECKER_AVAILABLE = True
-except ImportError:
-    CONSISTENCY_CHECKER_AVAILABLE = False
-    ConsistencyChecker = None
-
-try:
-    from app.core.vector_store import vector_store
-    VECTOR_STORE_AVAILABLE = True
-except ImportError:
-    VECTOR_STORE_AVAILABLE = False
-    vector_store = None
-
+from app.core.context_builder import ContextBuilder
+from app.consistency.service import ConsistencyChecker
+from app.core.vector_store import vector_store
 from app.agents.base import AgentTask, AgentResult, TaskType
 from app.agents.writer import WriterAgent
 from app.agents.reviewer import ReviewerAgent
@@ -163,19 +146,10 @@ class ChapterWorkflow:
         """准备上下文节点"""
         logger.info(f"[{state['task_id']}] Preparing context for chapter {state['chapter_number']}")
         
-        if not CONTEXT_BUILDER_AVAILABLE:
-            logger.warning("ContextBuilder not available, using empty context")
-            return {
-                "context": {},
-                "status": "context_prepared",
-                "updated_at": datetime.now().isoformat()
-            }
-        
         try:
-            from app.core.database import SessionLocal
+            from app.core.database import AsyncSessionLocal
             
-            db = SessionLocal()
-            try:
+            async with AsyncSessionLocal() as db:
                 builder = ContextBuilder(db, state["novel_id"])
                 context = await builder.build_chapter_context(
                     chapter_number=state["chapter_number"],
@@ -187,8 +161,6 @@ class ChapterWorkflow:
                     "status": "context_prepared",
                     "updated_at": datetime.now().isoformat()
                 }
-            finally:
-                db.close()
                 
         except Exception as e:
             logger.error(f"Failed to prepare context: {e}")
@@ -282,27 +254,13 @@ class ChapterWorkflow:
         """一致性检查节点"""
         logger.info(f"[{state['task_id']}] Checking consistency")
         
-        if not CONSISTENCY_CHECKER_AVAILABLE:
-            logger.warning("ConsistencyChecker not available, skipping consistency check")
-            return {
-                "consistency_result": {"issues": []},
-                "status": "consistency_skipped",
-                "updated_at": datetime.now().isoformat()
-            }
-        
         try:
-            from app.core.database import SessionLocal
+            from app.core.database import AsyncSessionLocal
             
-            db = SessionLocal()
-            try:
+            async with AsyncSessionLocal() as db:
                 checker = ConsistencyChecker(db, state["novel_id"])
                 result = await checker.check_all(
                     check_types=["character", "plot", "timeline"]
-                )
-                
-                has_errors = any(
-                    issue.get("severity") == "error"
-                    for issue in result.get("issues", [])
                 )
                 
                 return {
@@ -310,8 +268,6 @@ class ChapterWorkflow:
                     "status": "consistency_checked",
                     "updated_at": datetime.now().isoformat()
                 }
-            finally:
-                db.close()
                 
         except Exception as e:
             logger.error(f"Failed to check consistency: {e}")
@@ -328,22 +284,24 @@ class ChapterWorkflow:
         logger.info(f"[{state['task_id']}] Saving chapter")
         
         try:
-            from app.core.database import SessionLocal
+            from app.core.database import AsyncSessionLocal
             from app.chapters.models import Chapter
             
-            db = SessionLocal()
-            try:
-                chapter = db.query(Chapter).filter(
-                    Chapter.novel_id == state["novel_id"],
-                    Chapter.chapter_number == state["chapter_number"]
-                ).first()
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Chapter).where(
+                        Chapter.novel_id == state["novel_id"],
+                        Chapter.chapter_number == state["chapter_number"]
+                    )
+                )
+                chapter = result.scalar_one_or_none()
                 
                 if chapter:
                     chapter.content = state["generated_content"]
                     chapter.status = "completed"
                     chapter.word_count = len(state["generated_content"])
                     chapter.updated_at = datetime.now()
-                    db.commit()
+                    await db.commit()
                 else:
                     chapter = Chapter(
                         novel_id=state["novel_id"],
@@ -354,15 +312,13 @@ class ChapterWorkflow:
                         word_count=len(state["generated_content"])
                     )
                     db.add(chapter)
-                    db.commit()
-                    db.refresh(chapter)
+                    await db.commit()
+                    await db.refresh(chapter)
                 
                 return {
                     "status": "chapter_saved",
                     "updated_at": datetime.now().isoformat()
                 }
-            finally:
-                db.close()
                 
         except Exception as e:
             logger.error(f"Failed to save chapter: {e}")
@@ -376,23 +332,18 @@ class ChapterWorkflow:
         """更新记忆节点"""
         logger.info(f"[{state['task_id']}] Updating memory")
         
-        if not VECTOR_STORE_AVAILABLE:
-            logger.warning("VectorStore not available, skipping memory update")
-            return {
-                "status": "memory_skipped",
-                "updated_at": datetime.now().isoformat()
-            }
-        
         try:
-            from app.core.database import SessionLocal
+            from app.core.database import AsyncSessionLocal
             from app.chapters.models import Chapter
             
-            db = SessionLocal()
-            try:
-                chapter = db.query(Chapter).filter(
-                    Chapter.novel_id == state["novel_id"],
-                    Chapter.chapter_number == state["chapter_number"]
-                ).first()
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Chapter).where(
+                        Chapter.novel_id == state["novel_id"],
+                        Chapter.chapter_number == state["chapter_number"]
+                    )
+                )
+                chapter = result.scalar_one_or_none()
                 
                 if chapter and chapter.content:
                     chunks = vector_store.split_text(chapter.content)
@@ -418,8 +369,6 @@ class ChapterWorkflow:
                     "status": "completed",
                     "updated_at": datetime.now().isoformat()
                 }
-            finally:
-                db.close()
                 
         except Exception as e:
             logger.error(f"Failed to update memory: {e}")

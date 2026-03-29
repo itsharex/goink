@@ -2,11 +2,12 @@
 FastAPI主应用 - 符合API规范v1.0.0
 模块化架构：每个模块作为一等公民，包含自己的models/schemas/router
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.database import engine, Base
+from app.core.database import init_db
 from app.core.exceptions import APIException
 
 from app.auth import router as auth_router
@@ -35,14 +36,21 @@ from app.agents.models import AgentTaskRecord
 from app.foreshadowing.models import Foreshadowing
 from app.planning.models import PlotLine, PlotNode, PlotOutline
 
-Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    await init_db()
+    yield
+
 
 app = FastAPI(
     title="AI小说生成系统API",
     description="基于多智能体协作的AI小说生成系统 - API v1.0.0",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 app.add_middleware(

@@ -1,16 +1,16 @@
 """
 章节管理模块 - API路由
 """
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from typing import Optional
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
-from app.core.exceptions import NotFoundException
-from app.core.auth import get_current_user
+from app.core.database import DBSession
+from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
-from app.auth.models import User
+from app.core.exceptions import NotFoundException, UnauthorizedException
 from app.novels.models import Novel
 from .models import Chapter
 from .schemas import ChapterCreate, ChapterUpdate
@@ -19,13 +19,13 @@ router = APIRouter(prefix="/chapters", tags=["chapters"])
 
 
 @router.get("/novel/{novel_id}")
-def get_chapters_by_novel(
+async def get_chapters_by_novel(
     novel: NovelOwner,
+    db: DBSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
-    order: str = Query("asc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_db)
+    order: str = Query("asc", pattern="^(asc|desc)$")
 ):
     """
     获取小说章节列表
@@ -36,18 +36,23 @@ def get_chapters_by_novel(
     - status: 状态筛选 (draft/completed)
     - order: 排序 (asc/desc)
     """
-    query = db.query(Chapter).filter(Chapter.novel_id == novel.id)
+    query = select(Chapter).where(Chapter.novel_id == novel.id)
     
     if status:
-        query = query.filter(Chapter.status == status)
+        query = query.where(Chapter.status == status)
     
     if order == "desc":
         query = query.order_by(Chapter.chapter_number.desc())
     else:
         query = query.order_by(Chapter.chapter_number.asc())
     
-    total = query.count()
-    chapters = query.offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    chapters = result.scalars().all()
     
     items = [
         {
@@ -68,25 +73,28 @@ def get_chapters_by_novel(
 
 
 @router.post("", status_code=201)
-def create_chapter(
+async def create_chapter(
     chapter: ChapterCreate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     创建章节
     """
-    novel = db.query(Novel).filter(Novel.id == chapter.novel_id).first()
+    result = await db.execute(
+        select(Novel).where(Novel.id == chapter.novel_id)
+    )
+    novel = result.scalar_one_or_none()
+    
     if novel is None:
         raise NotFoundException("小说")
     if novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权访问此小说")
     
-    db_chapter = Chapter(**chapter.dict())
+    db_chapter = Chapter(**chapter.model_dump())
     db.add(db_chapter)
-    db.commit()
-    db.refresh(db_chapter)
+    await db.commit()
+    await db.refresh(db_chapter)
     
     return ApiResponse.success(
         {
@@ -105,20 +113,28 @@ def create_chapter(
 
 
 @router.get("/{chapter_id}")
-def get_chapter(
+async def get_chapter(
     chapter_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     获取章节详情
     """
-    chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
+    result = await db.execute(
+        select(Chapter)
+        .options(
+            selectinload(Chapter.novel),
+            selectinload(Chapter.plot_events)
+        )
+        .where(Chapter.id == chapter_id)
+    )
+    chapter = result.scalar_one_or_none()
+    
     if chapter is None:
         raise NotFoundException("章节")
     
     if chapter.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权访问此章节")
     
     return ApiResponse.success({
@@ -148,29 +164,34 @@ def get_chapter(
 
 
 @router.put("/{chapter_id}")
-def update_chapter(
+async def update_chapter(
     chapter_id: int, 
     chapter: ChapterUpdate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     更新章节
     """
-    db_chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
+    result = await db.execute(
+        select(Chapter)
+        .options(selectinload(Chapter.novel))
+        .where(Chapter.id == chapter_id)
+    )
+    db_chapter = result.scalar_one_or_none()
+    
     if db_chapter is None:
         raise NotFoundException("章节")
     
     if db_chapter.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权修改此章节")
     
-    update_data = chapter.dict(exclude_unset=True)
+    update_data = chapter.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_chapter, key, value)
     
-    db.commit()
-    db.refresh(db_chapter)
+    await db.commit()
+    await db.refresh(db_chapter)
     
     return ApiResponse.success(
         {
@@ -187,23 +208,28 @@ def update_chapter(
 
 
 @router.delete("/{chapter_id}")
-def delete_chapter(
+async def delete_chapter(
     chapter_id: int, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     删除章节
     """
-    db_chapter = db.query(Chapter).filter(Chapter.id == chapter_id).first()
+    result = await db.execute(
+        select(Chapter)
+        .options(selectinload(Chapter.novel))
+        .where(Chapter.id == chapter_id)
+    )
+    db_chapter = result.scalar_one_or_none()
+    
     if db_chapter is None:
         raise NotFoundException("章节")
     
     if db_chapter.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
         raise UnauthorizedException("无权删除此章节")
     
-    db.delete(db_chapter)
-    db.commit()
+    await db.delete(db_chapter)
+    await db.commit()
     
     return ApiResponse.success(message="章节删除成功")

@@ -5,7 +5,9 @@ import logging
 import hashlib
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.vector_store import vector_store, VectorStoreError
 from app.novels.models import Novel
@@ -60,12 +62,20 @@ context_cache = ContextCache(ttl_seconds=300)
 class ContextBuilder:
     """上下文构建器"""
     
-    def __init__(self, db: Session, novel_id: int):
+    def __init__(self, db: AsyncSession, novel_id: int):
         self.db = db
         self.novel_id = novel_id
-        self.novel = db.query(Novel).filter(Novel.id == novel_id).first()
+        self.novel = None
     
-    def build_writing_context(
+    async def _init_novel(self):
+        """初始化小说对象"""
+        if self.novel is None:
+            result = await self.db.execute(
+                select(Novel).where(Novel.id == self.novel_id)
+            )
+            self.novel = result.scalar_one_or_none()
+    
+    async def build_writing_context(
         self,
         chapter_id: int,
         context_size: int = 3000,
@@ -74,6 +84,8 @@ class ContextBuilder:
         include_plot_events: bool = True
     ) -> Dict[str, Any]:
         """构建写作上下文"""
+        await self._init_novel()
+        
         cache_key = context_cache._get_key(
             "writing_context",
             novel_id=self.novel_id,
@@ -91,7 +103,10 @@ class ContextBuilder:
         logger.info(f"Building writing context for chapter {chapter_id}")
         
         context_parts = []
-        chapter = self.db.query(Chapter).filter(Chapter.id == chapter_id).first()
+        result = await self.db.execute(
+            select(Chapter).where(Chapter.id == chapter_id)
+        )
+        chapter = result.scalar_one_or_none()
         
         if not chapter:
             raise ValueError(f"Chapter {chapter_id} not found")
@@ -102,17 +117,17 @@ class ContextBuilder:
         
         previous_summary = None
         if include_previous_chapters:
-            previous_summary = self._get_previous_chapters_summary(chapter.chapter_number)
+            previous_summary = await self._get_previous_chapters_summary(chapter.chapter_number)
             if previous_summary:
                 context_parts.append(f"【前文摘要】\n{previous_summary}")
         
         if include_characters:
-            characters_context = self._get_characters_context()
+            characters_context = await self._get_characters_context()
             if characters_context:
                 context_parts.append(f"【角色信息】\n{characters_context}")
         
         if include_plot_events:
-            plot_context = self._get_plot_events_context()
+            plot_context = await self._get_plot_events_context()
             if plot_context:
                 context_parts.append(f"【情节线索】\n{plot_context}")
         
@@ -121,12 +136,12 @@ class ContextBuilder:
         if len(full_context) > context_size:
             full_context = full_context[:context_size] + "..."
         
-        characters = self._get_characters_list()
-        plot_hints = self._get_plot_hints()
+        characters = await self._get_characters_list()
+        plot_hints = await self._get_plot_hints()
         
         logger.info(f"Context built: {len(full_context)} chars")
         
-        result = {
+        result_data = {
             "chapter_id": chapter_id,
             "novel_id": self.novel_id,
             "context": full_context,
@@ -136,17 +151,19 @@ class ContextBuilder:
             "context_length": len(full_context)
         }
         
-        context_cache.set(cache_key, result)
+        context_cache.set(cache_key, result_data)
         
-        return result
+        return result_data
     
-    def search_relevant_context(
+    async def search_relevant_context(
         self,
         query: str,
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """搜索相关上下文"""
+        await self._init_novel()
+        
         cache_key = context_cache._get_key(
             "search",
             novel_id=self.novel_id,
@@ -162,7 +179,7 @@ class ContextBuilder:
         logger.info(f"Searching context for query: '{query[:50]}...'")
         
         try:
-            results = vector_store.search(
+            results = await vector_store.search(
                 novel_id=self.novel_id,
                 query=query,
                 top_k=top_k,
@@ -190,13 +207,16 @@ class ContextBuilder:
             logger.error(f"Vector search failed: {e}")
             return []
     
-    def _get_previous_chapters_summary(self, current_chapter_num: int) -> Optional[str]:
+    async def _get_previous_chapters_summary(self, current_chapter_num: int) -> Optional[str]:
         """获取前几章的摘要"""
-        previous_chapters = self.db.query(Chapter).filter(
-            Chapter.novel_id == self.novel_id,
-            Chapter.chapter_number < current_chapter_num,
-            Chapter.status == "completed"
-        ).order_by(Chapter.chapter_number.desc()).limit(3).all()
+        result = await self.db.execute(
+            select(Chapter).where(
+                Chapter.novel_id == self.novel_id,
+                Chapter.chapter_number < current_chapter_num,
+                Chapter.status == "completed"
+            ).order_by(Chapter.chapter_number.desc()).limit(3)
+        )
+        previous_chapters = result.scalars().all()
         
         if not previous_chapters:
             return None
@@ -210,11 +230,12 @@ class ContextBuilder:
         
         return "\n".join(summaries) if summaries else None
     
-    def _get_characters_context(self) -> Optional[str]:
+    async def _get_characters_context(self) -> Optional[str]:
         """获取角色上下文"""
-        characters = self.db.query(Character).filter(
-            Character.novel_id == self.novel_id
-        ).all()
+        result = await self.db.execute(
+            select(Character).where(Character.novel_id == self.novel_id)
+        )
+        characters = result.scalars().all()
         
         if not characters:
             return None
@@ -230,11 +251,14 @@ class ContextBuilder:
         
         return "\n".join(char_info)
     
-    def _get_plot_events_context(self) -> Optional[str]:
+    async def _get_plot_events_context(self) -> Optional[str]:
         """获取情节事件上下文"""
-        events = self.db.query(PlotEvent).filter(
-            PlotEvent.novel_id == self.novel_id
-        ).order_by(PlotEvent.timeline).limit(10).all()
+        result = await self.db.execute(
+            select(PlotEvent).where(
+                PlotEvent.novel_id == self.novel_id
+            ).order_by(PlotEvent.timeline).limit(10)
+        )
+        events = result.scalars().all()
         
         if not events:
             return None
@@ -246,11 +270,12 @@ class ContextBuilder:
         
         return "\n".join(event_info)
     
-    def _get_characters_list(self) -> List[Dict[str, Any]]:
+    async def _get_characters_list(self) -> List[Dict[str, Any]]:
         """获取角色列表"""
-        characters = self.db.query(Character).filter(
-            Character.novel_id == self.novel_id
-        ).all()
+        result = await self.db.execute(
+            select(Character).where(Character.novel_id == self.novel_id)
+        )
+        characters = result.scalars().all()
         
         return [
             {
@@ -262,11 +287,14 @@ class ContextBuilder:
             for char in characters
         ]
     
-    def _get_plot_hints(self) -> List[Dict[str, Any]]:
+    async def _get_plot_hints(self) -> List[Dict[str, Any]]:
         """获取情节提示"""
-        events = self.db.query(PlotEvent).filter(
-            PlotEvent.novel_id == self.novel_id
-        ).order_by(PlotEvent.created_at.desc()).limit(5).all()
+        result = await self.db.execute(
+            select(PlotEvent).where(
+                PlotEvent.novel_id == self.novel_id
+            ).order_by(PlotEvent.created_at.desc()).limit(5)
+        )
+        events = result.scalars().all()
         
         return [
             {

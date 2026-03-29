@@ -2,10 +2,13 @@
 一致性检查API路由
 """
 import logging
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+from typing import Optional
+from datetime import datetime
 
-from app.core.database import get_db
+from app.core.database import DBSession
 from app.core.response import ApiResponse
 from app.core.exceptions import NotFoundException
 from app.core.dependencies import NovelOwner
@@ -16,8 +19,7 @@ from app.foreshadowing.schemas import (
     ForeshadowingUpdate,
     ForeshadowingResolve,
     ForeshadowingResponse,
-    ConsistencyCheckRequest,
-    ConsistencyCheckResponse
+    ConsistencyCheckRequest
 )
 
 router = APIRouter(prefix="/consistency", tags=["consistency"])
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 async def check_consistency(
     novel: NovelOwner,
     request: ConsistencyCheckRequest,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     执行一致性检查
@@ -46,13 +48,13 @@ async def check_consistency(
 
 
 @router.get("/novels/{novel_id}/foreshadowings")
-def list_foreshadowings(
+async def list_foreshadowings(
     novel: NovelOwner,
-    status: str = None,
-    foreshadowing_type: str = None,
-    page: int = 1,
-    page_size: int = 20,
-    db: Session = Depends(get_db)
+    db: DBSession,
+    status: Optional[str] = None,
+    foreshadowing_type: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100)
 ):
     """
     获取伏笔列表
@@ -60,18 +62,27 @@ def list_foreshadowings(
     - status: 状态筛选 (unresolved/resolved/abandoned)
     - foreshadowing_type: 类型筛选 (plot/character/item/mystery/other)
     """
-    query = db.query(Foreshadowing).filter(
+    query = select(Foreshadowing).where(
         Foreshadowing.novel_id == novel.id
     )
     
     if status:
-        query = query.filter(Foreshadowing.status == status)
+        query = query.where(Foreshadowing.status == status)
     
     if foreshadowing_type:
-        query = query.filter(Foreshadowing.foreshadowing_type == foreshadowing_type)
+        query = query.where(Foreshadowing.foreshadowing_type == foreshadowing_type)
     
-    total = query.count()
-    items = query.order_by(Foreshadowing.importance.desc(), Foreshadowing.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.order_by(
+        Foreshadowing.importance.desc(),
+        Foreshadowing.created_at.desc()
+    ).offset((page - 1) * page_size).limit(page_size)
+    
+    result = await db.execute(query)
+    items = result.scalars().all()
     
     return ApiResponse.paginated(
         [ForeshadowingResponse.model_validate(item) for item in items],
@@ -81,11 +92,11 @@ def list_foreshadowings(
     )
 
 
-@router.post("/novels/{novel_id}/foreshadowings")
-def create_foreshadowing(
+@router.post("/novels/{novel_id}/foreshadowings", status_code=201)
+async def create_foreshadowing(
     novel: NovelOwner,
     data: ForeshadowingCreate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     创建伏笔（挖坑）
@@ -107,8 +118,8 @@ def create_foreshadowing(
     )
     
     db.add(foreshadowing)
-    db.commit()
-    db.refresh(foreshadowing)
+    await db.commit()
+    await db.refresh(foreshadowing)
     
     return ApiResponse.success({
         "id": foreshadowing.id,
@@ -119,18 +130,21 @@ def create_foreshadowing(
 
 
 @router.get("/novels/{novel_id}/foreshadowings/{foreshadowing_id}")
-def get_foreshadowing(
+async def get_foreshadowing(
     novel: NovelOwner,
     foreshadowing_id: int,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     获取伏笔详情
     """
-    foreshadowing = db.query(Foreshadowing).filter(
-        Foreshadowing.id == foreshadowing_id,
-        Foreshadowing.novel_id == novel.id
-    ).first()
+    result = await db.execute(
+        select(Foreshadowing).where(
+            Foreshadowing.id == foreshadowing_id,
+            Foreshadowing.novel_id == novel.id
+        )
+    )
+    foreshadowing = result.scalar_one_or_none()
     
     if not foreshadowing:
         raise NotFoundException("伏笔")
@@ -139,19 +153,22 @@ def get_foreshadowing(
 
 
 @router.put("/novels/{novel_id}/foreshadowings/{foreshadowing_id}")
-def update_foreshadowing(
+async def update_foreshadowing(
     novel: NovelOwner,
     foreshadowing_id: int,
     data: ForeshadowingUpdate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     更新伏笔信息
     """
-    foreshadowing = db.query(Foreshadowing).filter(
-        Foreshadowing.id == foreshadowing_id,
-        Foreshadowing.novel_id == novel.id
-    ).first()
+    result = await db.execute(
+        select(Foreshadowing).where(
+            Foreshadowing.id == foreshadowing_id,
+            Foreshadowing.novel_id == novel.id
+        )
+    )
+    foreshadowing = result.scalar_one_or_none()
     
     if not foreshadowing:
         raise NotFoundException("伏笔")
@@ -167,8 +184,8 @@ def update_foreshadowing(
     if data.metadata is not None:
         foreshadowing.metadata = data.metadata
     
-    db.commit()
-    db.refresh(foreshadowing)
+    await db.commit()
+    await db.refresh(foreshadowing)
     
     return ApiResponse.success({
         "id": foreshadowing.id,
@@ -178,11 +195,11 @@ def update_foreshadowing(
 
 
 @router.post("/novels/{novel_id}/foreshadowings/{foreshadowing_id}/resolve")
-def resolve_foreshadowing(
+async def resolve_foreshadowing(
     novel: NovelOwner,
     foreshadowing_id: int,
     data: ForeshadowingResolve,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     解决伏笔（填坑）
@@ -190,23 +207,24 @@ def resolve_foreshadowing(
     - resolved_chapter_id: 填坑章节ID
     - resolution_notes: 解决说明
     """
-    foreshadowing = db.query(Foreshadowing).filter(
-        Foreshadowing.id == foreshadowing_id,
-        Foreshadowing.novel_id == novel.id
-    ).first()
+    result = await db.execute(
+        select(Foreshadowing).where(
+            Foreshadowing.id == foreshadowing_id,
+            Foreshadowing.novel_id == novel.id
+        )
+    )
+    foreshadowing = result.scalar_one_or_none()
     
     if not foreshadowing:
         raise NotFoundException("伏笔")
-    
-    from datetime import datetime
     
     foreshadowing.status = ForeshadowingStatus.RESOLVED.value
     foreshadowing.resolved_chapter_id = data.resolved_chapter_id
     foreshadowing.resolution_notes = data.resolution_notes
     foreshadowing.resolved_at = datetime.now()
     
-    db.commit()
-    db.refresh(foreshadowing)
+    await db.commit()
+    await db.refresh(foreshadowing)
     
     return ApiResponse.success({
         "id": foreshadowing.id,
@@ -217,21 +235,24 @@ def resolve_foreshadowing(
 
 
 @router.post("/novels/{novel_id}/foreshadowings/{foreshadowing_id}/abandon")
-def abandon_foreshadowing(
+async def abandon_foreshadowing(
     novel: NovelOwner,
     foreshadowing_id: int,
-    reason: str = None,
-    db: Session = Depends(get_db)
+    db: DBSession,
+    reason: Optional[str] = None
 ):
     """
     放弃伏笔
     
     - reason: 放弃原因
     """
-    foreshadowing = db.query(Foreshadowing).filter(
-        Foreshadowing.id == foreshadowing_id,
-        Foreshadowing.novel_id == novel.id
-    ).first()
+    result = await db.execute(
+        select(Foreshadowing).where(
+            Foreshadowing.id == foreshadowing_id,
+            Foreshadowing.novel_id == novel.id
+        )
+    )
+    foreshadowing = result.scalar_one_or_none()
     
     if not foreshadowing:
         raise NotFoundException("伏笔")
@@ -240,7 +261,7 @@ def abandon_foreshadowing(
     if reason:
         foreshadowing.resolution_notes = f"放弃原因: {reason}"
     
-    db.commit()
+    await db.commit()
     
     return ApiResponse.success({
         "id": foreshadowing.id,
@@ -250,17 +271,22 @@ def abandon_foreshadowing(
 
 
 @router.get("/novels/{novel_id}/foreshadowings/unresolved")
-def list_unresolved_foreshadowings(
+async def list_unresolved_foreshadowings(
     novel: NovelOwner,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     获取未解决的伏笔列表
     """
-    foreshadowings = db.query(Foreshadowing).filter(
-        Foreshadowing.novel_id == novel.id,
-        Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
-    ).order_by(Foreshadowing.importance.desc()).all()
+    result = await db.execute(
+        select(Foreshadowing)
+        .where(
+            Foreshadowing.novel_id == novel.id,
+            Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
+        )
+        .order_by(Foreshadowing.importance.desc())
+    )
+    foreshadowings = result.scalars().all()
     
     return ApiResponse.success({
         "items": [ForeshadowingResponse.model_validate(fs) for fs in foreshadowings],
@@ -269,37 +295,50 @@ def list_unresolved_foreshadowings(
 
 
 @router.get("/novels/{novel_id}/foreshadowings/statistics")
-def get_foreshadowing_statistics(
+async def get_foreshadowing_statistics(
     novel: NovelOwner,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     获取伏笔统计信息
     """
-    total = db.query(Foreshadowing).filter(
-        Foreshadowing.novel_id == novel.id
-    ).count()
+    total_result = await db.execute(
+        select(func.count()).where(Foreshadowing.novel_id == novel.id)
+    )
+    total = total_result.scalar()
     
-    unresolved = db.query(Foreshadowing).filter(
-        Foreshadowing.novel_id == novel.id,
-        Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
-    ).count()
+    unresolved_result = await db.execute(
+        select(func.count()).where(
+            Foreshadowing.novel_id == novel.id,
+            Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
+        )
+    )
+    unresolved = unresolved_result.scalar()
     
-    resolved = db.query(Foreshadowing).filter(
-        Foreshadowing.novel_id == novel.id,
-        Foreshadowing.status == ForeshadowingStatus.RESOLVED.value
-    ).count()
+    resolved_result = await db.execute(
+        select(func.count()).where(
+            Foreshadowing.novel_id == novel.id,
+            Foreshadowing.status == ForeshadowingStatus.RESOLVED.value
+        )
+    )
+    resolved = resolved_result.scalar()
     
-    abandoned = db.query(Foreshadowing).filter(
-        Foreshadowing.novel_id == novel.id,
-        Foreshadowing.status == ForeshadowingStatus.ABANDONED.value
-    ).count()
+    abandoned_result = await db.execute(
+        select(func.count()).where(
+            Foreshadowing.novel_id == novel.id,
+            Foreshadowing.status == ForeshadowingStatus.ABANDONED.value
+        )
+    )
+    abandoned = abandoned_result.scalar()
     
-    high_importance_unresolved = db.query(Foreshadowing).filter(
-        Foreshadowing.novel_id == novel.id,
-        Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value,
-        Foreshadowing.importance >= 4
-    ).count()
+    high_importance_result = await db.execute(
+        select(func.count()).where(
+            Foreshadowing.novel_id == novel.id,
+            Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value,
+            Foreshadowing.importance >= 4
+        )
+    )
+    high_importance_unresolved = high_importance_result.scalar()
     
     return ApiResponse.success({
         "total": total,

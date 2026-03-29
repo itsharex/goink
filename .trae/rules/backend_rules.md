@@ -5,7 +5,7 @@
 ### Python虚拟环境
 **必须**先激活虚拟环境再运行任何Python命令：
 ```bash
-cd backend
+
 source venv/bin/activate  # Linux/Mac
 # 或
 venv\Scripts\activate  # Windows
@@ -13,7 +13,7 @@ venv\Scripts\activate  # Windows
 
 ### 启动服务
 ```bash
-cd backend
+
 source venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```

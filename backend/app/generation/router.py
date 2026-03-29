@@ -4,15 +4,14 @@
 import logging
 import asyncio
 from functools import wraps
-from fastapi import APIRouter, Depends, BackgroundTasks
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, BackgroundTasks
+from sqlalchemy import select
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
+from app.core.database import DBSession, AsyncSessionLocal
 from app.core.exceptions import NotFoundException
 from app.core.dependencies import NovelOwner
 from app.generation.service import ChapterGenerationService
-from app.auth.models import User
 from app.chapters.models import Chapter
 from app.agents.models import AgentTaskRecord
 from app.agents.base import TaskType, TaskStatus
@@ -23,33 +22,14 @@ logger = logging.getLogger(__name__)
 _generation_locks: dict = {}
 
 
-def with_retry(max_retries: int = 3, delay: float = 1.0):
-    """重试装饰器"""
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            last_error = None
-            for attempt in range(max_retries):
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    last_error = e
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed, retrying in {delay}s: {e}")
-                        await asyncio.sleep(delay * (attempt + 1))
-            raise last_error
-        return wrapper
-    return decorator
-
-
 @router.post("/novels/{novel_id}/chapters/{chapter_number}")
 async def generate_chapter(
     novel: NovelOwner,
-    chapter_number: int,
+    db: DBSession,
     background_tasks: BackgroundTasks,
+    chapter_number: int,
     target_length: int = 3000,
-    style: str = "narrative",
-    db: Session = Depends(get_db)
+    style: str = "narrative"
 ):
     """
     生成章节（异步）
@@ -68,10 +48,13 @@ async def generate_chapter(
             status_code=409
         )
     
-    existing = db.query(Chapter).filter(
-        Chapter.novel_id == novel.id,
-        Chapter.chapter_number == chapter_number
-    ).first()
+    result = await db.execute(
+        select(Chapter).where(
+            Chapter.novel_id == novel.id,
+            Chapter.chapter_number == chapter_number
+        )
+    )
+    existing = result.scalar_one_or_none()
     
     if existing and existing.status == "generating":
         return ApiResponse.error(
@@ -92,7 +75,7 @@ async def generate_chapter(
         }
     )
     db.add(task_record)
-    db.commit()
+    await db.commit()
     
     if not existing:
         chapter = Chapter(
@@ -103,10 +86,10 @@ async def generate_chapter(
             status="generating"
         )
         db.add(chapter)
-        db.commit()
+        await db.commit()
     else:
         existing.status = "generating"
-        db.commit()
+        await db.commit()
     
     _generation_locks[lock_key] = True
     
@@ -131,49 +114,48 @@ async def _generate_chapter_task(
     task_id: str
 ):
     """后台任务：生成章节"""
-    from app.core.database import SessionLocal
-    
-    db = SessionLocal()
-    lock_key = f"{novel_id}_{chapter_number}"
-    
-    try:
-        task_record = db.query(AgentTaskRecord).filter(
-            AgentTaskRecord.task_id == task_id
-        ).first()
+    async with AsyncSessionLocal() as db:
+        lock_key = f"{novel_id}_{chapter_number}"
         
-        if task_record:
-            task_record.status = TaskStatus.IN_PROGRESS.value
-            db.commit()
-        
-        service = ChapterGenerationService(db, novel_id)
-        result = await _generate_with_retry(
-            service, chapter_number, target_length, style, max_retries=3
-        )
-        
-        if task_record:
-            task_record.status = TaskStatus.COMPLETED.value if result["success"] else TaskStatus.FAILED.value
-            task_record.result = result
-            if not result["success"]:
-                task_record.error = result.get("error", "Unknown error")
-            db.commit()
-        
-        logger.info(f"Chapter generation task {task_id} completed: {result['success']}")
-        
-    except Exception as e:
-        logger.error(f"Chapter generation task {task_id} failed: {e}")
         try:
-            task_record = db.query(AgentTaskRecord).filter(
-                AgentTaskRecord.task_id == task_id
-            ).first()
+            result = await db.execute(
+                select(AgentTaskRecord).where(AgentTaskRecord.task_id == task_id)
+            )
+            task_record = result.scalar_one_or_none()
+            
             if task_record:
-                task_record.status = TaskStatus.FAILED.value
-                task_record.error = str(e)
-                db.commit()
-        except Exception as db_error:
-            logger.error(f"Failed to update task status: {db_error}")
-    finally:
-        _generation_locks[lock_key] = False
-        db.close()
+                task_record.status = TaskStatus.IN_PROGRESS.value
+                await db.commit()
+            
+            service = ChapterGenerationService(db, novel_id)
+            result_data = await _generate_with_retry(
+                service, chapter_number, target_length, style, max_retries=3
+            )
+            
+            if task_record:
+                task_record.status = TaskStatus.COMPLETED.value if result_data["success"] else TaskStatus.FAILED.value
+                task_record.result = result_data
+                if not result_data["success"]:
+                    task_record.error = result_data.get("error", "Unknown error")
+                await db.commit()
+            
+            logger.info(f"Chapter generation task {task_id} completed: {result_data['success']}")
+            
+        except Exception as e:
+            logger.error(f"Chapter generation task {task_id} failed: {e}")
+            try:
+                result = await db.execute(
+                    select(AgentTaskRecord).where(AgentTaskRecord.task_id == task_id)
+                )
+                task_record = result.scalar_one_or_none()
+                if task_record:
+                    task_record.status = TaskStatus.FAILED.value
+                    task_record.error = str(e)
+                    await db.commit()
+            except Exception as db_error:
+                logger.error(f"Failed to update task status: {db_error}")
+        finally:
+            _generation_locks[lock_key] = False
 
 
 async def _generate_with_retry(
@@ -209,10 +191,10 @@ async def _generate_with_retry(
 @router.post("/novels/{novel_id}/chapters/{chapter_id}/regenerate")
 async def regenerate_chapter(
     novel: NovelOwner,
+    db: DBSession,
+    background_tasks: BackgroundTasks,
     chapter_id: int,
-    feedback: str = None,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
-    db: Session = Depends(get_db)
+    feedback: str = None
 ):
     """
     重新生成章节
@@ -220,10 +202,13 @@ async def regenerate_chapter(
     - chapter_id: 章节ID
     - feedback: 反馈意见
     """
-    chapter = db.query(Chapter).filter(
-        Chapter.id == chapter_id,
-        Chapter.novel_id == novel.id
-    ).first()
+    result = await db.execute(
+        select(Chapter).where(
+            Chapter.id == chapter_id,
+            Chapter.novel_id == novel.id
+        )
+    )
+    chapter = result.scalar_one_or_none()
     
     if not chapter:
         raise NotFoundException("章节")
@@ -250,7 +235,7 @@ async def regenerate_chapter(
     db.add(task_record)
     
     chapter.status = "generating"
-    db.commit()
+    await db.commit()
     
     _generation_locks[lock_key] = True
     
@@ -275,47 +260,46 @@ async def _regenerate_chapter_task(
     task_id: str
 ):
     """后台任务：重新生成章节"""
-    from app.core.database import SessionLocal
-    
-    db = SessionLocal()
-    lock_key = f"{novel_id}_{chapter_number}"
-    
-    try:
-        task_record = db.query(AgentTaskRecord).filter(
-            AgentTaskRecord.task_id == task_id
-        ).first()
+    async with AsyncSessionLocal() as db:
+        lock_key = f"{novel_id}_{chapter_number}"
         
-        if task_record:
-            task_record.status = TaskStatus.IN_PROGRESS.value
-            db.commit()
-        
-        service = ChapterGenerationService(db, novel_id)
-        result = await _regenerate_with_retry(
-            service, chapter_id, feedback, max_retries=3
-        )
-        
-        if task_record:
-            task_record.status = TaskStatus.COMPLETED.value if result["success"] else TaskStatus.FAILED.value
-            task_record.result = result
-            if not result["success"]:
-                task_record.error = result.get("error", "Unknown error")
-            db.commit()
-        
-    except Exception as e:
-        logger.error(f"Chapter regeneration task {task_id} failed: {e}")
         try:
-            task_record = db.query(AgentTaskRecord).filter(
-                AgentTaskRecord.task_id == task_id
-            ).first()
+            result = await db.execute(
+                select(AgentTaskRecord).where(AgentTaskRecord.task_id == task_id)
+            )
+            task_record = result.scalar_one_or_none()
+            
             if task_record:
-                task_record.status = TaskStatus.FAILED.value
-                task_record.error = str(e)
-                db.commit()
-        except Exception as db_error:
-            logger.error(f"Failed to update task status: {db_error}")
-    finally:
-        _generation_locks[lock_key] = False
-        db.close()
+                task_record.status = TaskStatus.IN_PROGRESS.value
+                await db.commit()
+            
+            service = ChapterGenerationService(db, novel_id)
+            result_data = await _regenerate_with_retry(
+                service, chapter_id, feedback, max_retries=3
+            )
+            
+            if task_record:
+                task_record.status = TaskStatus.COMPLETED.value if result_data["success"] else TaskStatus.FAILED.value
+                task_record.result = result_data
+                if not result_data["success"]:
+                    task_record.error = result_data.get("error", "Unknown error")
+                await db.commit()
+            
+        except Exception as e:
+            logger.error(f"Chapter regeneration task {task_id} failed: {e}")
+            try:
+                result = await db.execute(
+                    select(AgentTaskRecord).where(AgentTaskRecord.task_id == task_id)
+                )
+                task_record = result.scalar_one_or_none()
+                if task_record:
+                    task_record.status = TaskStatus.FAILED.value
+                    task_record.error = str(e)
+                    await db.commit()
+            except Exception as db_error:
+                logger.error(f"Failed to update task status: {db_error}")
+        finally:
+            _generation_locks[lock_key] = False
 
 
 async def _regenerate_with_retry(
@@ -347,12 +331,12 @@ async def _regenerate_with_retry(
 
 
 @router.get("/novels/{novel_id}/tasks")
-def get_generation_tasks(
+async def get_generation_tasks(
     novel: NovelOwner,
+    db: DBSession,
     status: str = None,
     page: int = 1,
-    page_size: int = 20,
-    db: Session = Depends(get_db)
+    page_size: int = 20
 ):
     """
     获取生成任务列表
@@ -361,15 +345,22 @@ def get_generation_tasks(
     - page: 页码
     - page_size: 每页数量
     """
-    query = db.query(AgentTaskRecord).filter(
+    from sqlalchemy import func
+    
+    query = select(AgentTaskRecord).where(
         AgentTaskRecord.novel_id == novel.id
     )
     
     if status:
-        query = query.filter(AgentTaskRecord.status == status)
+        query = query.where(AgentTaskRecord.status == status)
     
-    total = query.count()
-    tasks = query.order_by(AgentTaskRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.order_by(AgentTaskRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    tasks = result.scalars().all()
     
     items = [
         {
@@ -388,14 +379,17 @@ def get_generation_tasks(
 
 
 @router.get("/tasks/{task_id}")
-def get_task_status(
+async def get_task_status(
     task_id: str,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     获取任务状态
     """
-    task = db.query(AgentTaskRecord).filter(AgentTaskRecord.task_id == task_id).first()
+    result = await db.execute(
+        select(AgentTaskRecord).where(AgentTaskRecord.task_id == task_id)
+    )
+    task = result.scalar_one_or_none()
     
     if not task:
         raise NotFoundException("任务")

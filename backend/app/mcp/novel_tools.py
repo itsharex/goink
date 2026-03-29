@@ -3,7 +3,9 @@
 提供小说信息查询的标准接口
 """
 from typing import Any, Dict, List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from app.novels.models import Novel
@@ -28,11 +30,17 @@ class GetNovelSummaryTool(BaseMCPTool):
         "required": ["novel_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def execute(self, novel_id: int, **kwargs) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+        result = await self.db.execute(
+            select(Novel)
+            .options(selectinload(Novel.chapters), selectinload(Novel.characters))
+            .where(Novel.id == novel_id)
+        )
+        novel = result.scalar_one_or_none()
+        
         if not novel:
             return MCPToolResult(
                 success=False,
@@ -97,7 +105,7 @@ class GetChapterListTool(BaseMCPTool):
         "required": ["novel_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def execute(
@@ -108,20 +116,30 @@ class GetChapterListTool(BaseMCPTool):
         page_size: int = 20,
         **kwargs
     ) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+        result = await self.db.execute(
+            select(Novel).where(Novel.id == novel_id)
+        )
+        novel = result.scalar_one_or_none()
+        
         if not novel:
             return MCPToolResult(
                 success=False,
                 error=f"Novel not found: {novel_id}"
             )
         
-        query = self.db.query(Chapter).filter(Chapter.novel_id == novel_id)
+        query = select(Chapter).where(Chapter.novel_id == novel_id)
         
         if status:
             query = query.filter(Chapter.status == status)
         
-        total = query.count()
-        chapters = query.order_by(Chapter.chapter_number).offset((page - 1) * page_size).limit(page_size).all()
+        from sqlalchemy import func
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar()
+        
+        query = query.order_by(Chapter.chapter_number).offset((page - 1) * page_size).limit(page_size)
+        result = await self.db.execute(query)
+        chapters = result.scalars().all()
         
         items = [
             {
@@ -172,7 +190,7 @@ class GetChapterContentTool(BaseMCPTool):
         "required": ["chapter_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def execute(
@@ -181,14 +199,18 @@ class GetChapterContentTool(BaseMCPTool):
         include_summary: bool = True,
         **kwargs
     ) -> MCPToolResult:
-        chapter = self.db.query(Chapter).filter(Chapter.id == chapter_id).first()
+        result = await self.db.execute(
+            select(Chapter).where(Chapter.id == chapter_id)
+        )
+        chapter = result.scalar_one_or_none()
+        
         if not chapter:
             return MCPToolResult(
                 success=False,
                 error=f"Chapter not found: {chapter_id}"
             )
         
-        result = {
+        data = {
             "id": chapter.id,
             "novel_id": chapter.novel_id,
             "chapter_number": chapter.chapter_number,
@@ -201,11 +223,11 @@ class GetChapterContentTool(BaseMCPTool):
         }
         
         if include_summary:
-            result["summary"] = chapter.summary
+            data["summary"] = chapter.summary
         
         return MCPToolResult(
             success=True,
-            data=result,
+            data=data,
             metadata={"tool": self.name, "chapter_id": chapter_id}
         )
 
@@ -227,11 +249,21 @@ class GetNovelProgressTool(BaseMCPTool):
         "required": ["novel_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def execute(self, novel_id: int, **kwargs) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+        result = await self.db.execute(
+            select(Novel)
+            .options(
+                selectinload(Novel.chapters),
+                selectinload(Novel.characters),
+                selectinload(Novel.plot_events)
+            )
+            .where(Novel.id == novel_id)
+        )
+        novel = result.scalar_one_or_none()
+        
         if not novel:
             return MCPToolResult(
                 success=False,
@@ -311,7 +343,7 @@ class GetCharacterListTool(BaseMCPTool):
         "required": ["novel_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def execute(
@@ -320,19 +352,24 @@ class GetCharacterListTool(BaseMCPTool):
         search: Optional[str] = None,
         **kwargs
     ) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+        result = await self.db.execute(
+            select(Novel).where(Novel.id == novel_id)
+        )
+        novel = result.scalar_one_or_none()
+        
         if not novel:
             return MCPToolResult(
                 success=False,
                 error=f"Novel not found: {novel_id}"
             )
         
-        query = self.db.query(Character).filter(Character.novel_id == novel_id)
+        query = select(Character).where(Character.novel_id == novel_id)
         
         if search:
             query = query.filter(Character.name.contains(search))
         
-        characters = query.all()
+        result = await self.db.execute(query)
+        characters = result.scalars().all()
         
         items = [
             {
@@ -370,18 +407,24 @@ class GetCharacterDetailTool(BaseMCPTool):
         "required": ["character_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
     async def execute(self, character_id: int, **kwargs) -> MCPToolResult:
-        character = self.db.query(Character).filter(Character.id == character_id).first()
+        result = await self.db.execute(
+            select(Character)
+            .options(selectinload(Character.novel))
+            .where(Character.id == character_id)
+        )
+        character = result.scalar_one_or_none()
+        
         if not character:
             return MCPToolResult(
                 success=False,
                 error=f"Character not found: {character_id}"
             )
         
-        result = {
+        data = {
             "id": character.id,
             "novel_id": character.novel_id,
             "name": character.name,
@@ -397,7 +440,7 @@ class GetCharacterDetailTool(BaseMCPTool):
         
         return MCPToolResult(
             success=True,
-            data=result,
+            data=data,
             metadata={"tool": self.name, "character_id": character_id}
         )
 
@@ -406,7 +449,7 @@ class NovelManagementTools:
     """小说管理工具集合"""
     
     @staticmethod
-    def register_all(db: Session, registry: MCPToolRegistry) -> None:
+    def register_all(db: AsyncSession, registry: MCPToolRegistry) -> None:
         """注册所有小说管理工具"""
         registry.register(GetNovelSummaryTool(db))
         registry.register(GetChapterListTool(db))

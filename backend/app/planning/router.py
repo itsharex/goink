@@ -3,12 +3,13 @@
 """
 import logging
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from app.core.database import get_db
+from app.core.database import get_db, DBSession
 from app.core.response import ApiResponse
 from app.core.exceptions import NotFoundException, UnauthorizedException
-from app.core.dependencies import NovelOwner, get_current_user
+from app.core.dependencies import NovelOwner, CurrentUser
 from app.planning.planner import PlotPlanner
 from app.planning.models import PlotLine, PlotNode, PlotLineType, PlotNodeStatus
 from app.planning.schemas import (
@@ -25,57 +26,66 @@ from app.planning.schemas import (
     PlotSuggestionResponse
 )
 from app.auth.models import User
+from app.novels.models import Novel
 
 router = APIRouter(prefix="/planning", tags=["planning"])
 logger = logging.getLogger(__name__)
 
 
-def check_plot_line_ownership(
+async def check_plot_line_ownership(
     plot_line_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ) -> PlotLine:
     """检查情节线所有权"""
-    plot_line = db.query(PlotLine).filter(PlotLine.id == plot_line_id).first()
+    result = await db.execute(
+        select(PlotLine).where(PlotLine.id == plot_line_id)
+    )
+    plot_line = result.scalar_one_or_none()
     if not plot_line:
         raise NotFoundException("情节线")
     
-    from app.novels.models import Novel
-    novel = db.query(Novel).filter(Novel.id == plot_line.novel_id).first()
+    novel_result = await db.execute(
+        select(Novel).where(Novel.id == plot_line.novel_id)
+    )
+    novel = novel_result.scalar_one_or_none()
     if not novel or novel.author_id != current_user.id:
         raise UnauthorizedException("无权访问此情节线")
     
     return plot_line
 
 
-def check_plot_node_ownership(
+async def check_plot_node_ownership(
     node_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ) -> PlotNode:
     """检查情节节点所有权"""
-    node = db.query(PlotNode).filter(PlotNode.id == node_id).first()
+    result = await db.execute(
+        select(PlotNode).where(PlotNode.id == node_id)
+    )
+    node = result.scalar_one_or_none()
     if not node:
         raise NotFoundException("情节节点")
     
-    from app.novels.models import Novel
-    novel = db.query(Novel).filter(Novel.id == node.novel_id).first()
+    novel_result = await db.execute(
+        select(Novel).where(Novel.id == node.novel_id)
+    )
+    novel = novel_result.scalar_one_or_none()
     if not novel or novel.author_id != current_user.id:
         raise UnauthorizedException("无权访问此情节节点")
     
     return node
 
 
-# ==================== 情节大纲 ====================
-
 @router.get("/novels/{novel_id}/outline")
-def get_plot_outline(
+async def get_plot_outline(
     novel: NovelOwner,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """获取情节大纲"""
     planner = PlotPlanner(db, novel.id)
-    outline = planner.get_outline()
+    outline = await planner.get_outline()
     
     if not outline:
         return ApiResponse.success({
@@ -87,14 +97,14 @@ def get_plot_outline(
 
 
 @router.post("/novels/{novel_id}/outline")
-def create_or_update_outline(
+async def create_or_update_outline(
     novel: NovelOwner,
     data: PlotOutlineCreate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """创建或更新情节大纲"""
     planner = PlotPlanner(db, novel.id)
-    outline = planner.create_or_update_outline(data)
+    outline = await planner.create_or_update_outline(data)
     
     return ApiResponse.success({
         "id": outline.id,
@@ -104,14 +114,14 @@ def create_or_update_outline(
 
 
 @router.put("/novels/{novel_id}/outline")
-def update_plot_outline(
+async def update_plot_outline(
     novel: NovelOwner,
     data: PlotOutlineUpdate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """更新情节大纲"""
     planner = PlotPlanner(db, novel.id)
-    outline = planner.update_outline(data)
+    outline = await planner.update_outline(data)
     
     if not outline:
         raise NotFoundException("情节大纲")
@@ -123,18 +133,16 @@ def update_plot_outline(
     })
 
 
-# ==================== 情节线 ====================
-
 @router.get("/novels/{novel_id}/plot-lines")
-def list_plot_lines(
+async def list_plot_lines(
     novel: NovelOwner,
+    db: DBSession,
     line_type: str = None,
-    status: str = None,
-    db: Session = Depends(get_db)
+    status: str = None
 ):
     """获取情节线列表"""
     planner = PlotPlanner(db, novel.id)
-    plot_lines = planner.list_plot_lines(line_type=line_type, status=status)
+    plot_lines = await planner.list_plot_lines(line_type=line_type, status=status)
     
     return ApiResponse.success({
         "items": [PlotLineResponse.model_validate(pl) for pl in plot_lines],
@@ -143,14 +151,14 @@ def list_plot_lines(
 
 
 @router.post("/novels/{novel_id}/plot-lines")
-def create_plot_line(
+async def create_plot_line(
     novel: NovelOwner,
     data: PlotLineCreate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """创建情节线"""
     planner = PlotPlanner(db, novel.id)
-    plot_line = planner.create_plot_line(data)
+    plot_line = await planner.create_plot_line(data)
     
     return ApiResponse.success({
         "id": plot_line.id,
@@ -161,7 +169,7 @@ def create_plot_line(
 
 
 @router.get("/plot-lines/{plot_line_id}")
-def get_plot_line(
+async def get_plot_line(
     plot_line: PlotLine = Depends(check_plot_line_ownership)
 ):
     """获取情节线详情"""
@@ -169,14 +177,14 @@ def get_plot_line(
 
 
 @router.put("/plot-lines/{plot_line_id}")
-def update_plot_line(
+async def update_plot_line(
     data: PlotLineUpdate,
-    plot_line: PlotLine = Depends(check_plot_line_ownership),
-    db: Session = Depends(get_db)
+    db: DBSession,
+    plot_line: PlotLine = Depends(check_plot_line_ownership)
 ):
     """更新情节线"""
     planner = PlotPlanner(db, plot_line.novel_id)
-    updated = planner.update_plot_line(plot_line.id, data)
+    updated = await planner.update_plot_line(plot_line.id, data)
     
     return ApiResponse.success({
         "id": updated.id,
@@ -186,32 +194,30 @@ def update_plot_line(
 
 
 @router.delete("/plot-lines/{plot_line_id}")
-def delete_plot_line(
-    plot_line: PlotLine = Depends(check_plot_line_ownership),
-    db: Session = Depends(get_db)
+async def delete_plot_line(
+    db: DBSession,
+    plot_line: PlotLine = Depends(check_plot_line_ownership)
 ):
     """删除情节线"""
     planner = PlotPlanner(db, plot_line.novel_id)
-    planner.delete_plot_line(plot_line.id)
+    await planner.delete_plot_line(plot_line.id)
     
     return ApiResponse.success({
         "message": "情节线已删除"
     })
 
 
-# ==================== 情节节点 ====================
-
 @router.get("/novels/{novel_id}/plot-nodes")
-def list_plot_nodes(
+async def list_plot_nodes(
     novel: NovelOwner,
+    db: DBSession,
     plot_line_id: int = None,
     chapter_number: int = None,
-    status: str = None,
-    db: Session = Depends(get_db)
+    status: str = None
 ):
     """获取情节节点列表"""
     planner = PlotPlanner(db, novel.id)
-    nodes = planner.list_plot_nodes(
+    nodes = await planner.list_plot_nodes(
         plot_line_id=plot_line_id,
         chapter_number=chapter_number,
         status=status
@@ -224,14 +230,14 @@ def list_plot_nodes(
 
 
 @router.post("/novels/{novel_id}/plot-nodes")
-def create_plot_node(
+async def create_plot_node(
     novel: NovelOwner,
     data: PlotNodeCreate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """创建情节节点"""
     planner = PlotPlanner(db, novel.id)
-    node = planner.create_plot_node(data)
+    node = await planner.create_plot_node(data)
     
     return ApiResponse.success({
         "id": node.id,
@@ -242,7 +248,7 @@ def create_plot_node(
 
 
 @router.get("/plot-nodes/{node_id}")
-def get_plot_node(
+async def get_plot_node(
     node: PlotNode = Depends(check_plot_node_ownership)
 ):
     """获取情节节点详情"""
@@ -250,14 +256,14 @@ def get_plot_node(
 
 
 @router.put("/plot-nodes/{node_id}")
-def update_plot_node(
+async def update_plot_node(
     data: PlotNodeUpdate,
-    node: PlotNode = Depends(check_plot_node_ownership),
-    db: Session = Depends(get_db)
+    db: DBSession,
+    node: PlotNode = Depends(check_plot_node_ownership)
 ):
     """更新情节节点"""
     planner = PlotPlanner(db, node.novel_id)
-    updated = planner.update_plot_node(node.id, data)
+    updated = await planner.update_plot_node(node.id, data)
     
     return ApiResponse.success({
         "id": updated.id,
@@ -268,13 +274,13 @@ def update_plot_node(
 
 
 @router.delete("/plot-nodes/{node_id}")
-def delete_plot_node(
-    node: PlotNode = Depends(check_plot_node_ownership),
-    db: Session = Depends(get_db)
+async def delete_plot_node(
+    db: DBSession,
+    node: PlotNode = Depends(check_plot_node_ownership)
 ):
     """删除情节节点"""
     planner = PlotPlanner(db, node.novel_id)
-    planner.delete_plot_node(node.id)
+    await planner.delete_plot_node(node.id)
     
     return ApiResponse.success({
         "message": "情节节点已删除"
@@ -282,13 +288,13 @@ def delete_plot_node(
 
 
 @router.post("/plot-nodes/{node_id}/complete")
-def complete_plot_node(
-    node: PlotNode = Depends(check_plot_node_ownership),
-    db: Session = Depends(get_db)
+async def complete_plot_node(
+    db: DBSession,
+    node: PlotNode = Depends(check_plot_node_ownership)
 ):
     """标记情节节点为完成"""
     node.status = PlotNodeStatus.COMPLETED.value
-    db.commit()
+    await db.commit()
     
     return ApiResponse.success({
         "id": node.id,
@@ -297,13 +303,11 @@ def complete_plot_node(
     })
 
 
-# ==================== 情节建议 ====================
-
 @router.post("/novels/{novel_id}/suggestions")
 async def generate_plot_suggestions(
     novel: NovelOwner,
     data: PlotSuggestionRequest,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """生成情节建议"""
     planner = PlotPlanner(db, novel.id)
@@ -316,31 +320,27 @@ async def generate_plot_suggestions(
     return ApiResponse.success(result)
 
 
-# ==================== 情节进度 ====================
-
 @router.get("/novels/{novel_id}/progress")
-def get_plot_progress(
+async def get_plot_progress(
     novel: NovelOwner,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """获取情节进度分析"""
     planner = PlotPlanner(db, novel.id)
-    progress = planner.get_plot_progress()
+    progress = await planner.get_plot_progress()
     
     return ApiResponse.success(progress)
 
 
-# ==================== 章节情节节点 ====================
-
 @router.get("/novels/{novel_id}/chapters/{chapter_number}/nodes")
-def get_chapter_plot_nodes(
+async def get_chapter_plot_nodes(
     novel: NovelOwner,
     chapter_number: int,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """获取指定章节的情节节点"""
     planner = PlotPlanner(db, novel.id)
-    nodes = planner.get_nodes_by_chapter(chapter_number)
+    nodes = await planner.get_nodes_by_chapter(chapter_number)
     
     return ApiResponse.success({
         "chapter_number": chapter_number,

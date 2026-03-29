@@ -3,6 +3,7 @@
 """
 import os
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 
 import chromadb
@@ -122,14 +123,14 @@ class VectorStore:
             logger.error(f"Failed to add chunks to novel {novel_id}: {e}")
             raise VectorStoreError(f"Add chunks failed: {e}")
     
-    def search(
+    async def search(
         self, 
         novel_id: int, 
         query: str, 
         top_k: int = 10,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        """语义检索"""
+        """语义检索（异步）"""
         try:
             collection = self.get_or_create_collection(novel_id)
             
@@ -143,12 +144,15 @@ class VectorStore:
                 if conditions:
                     where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
             
-            results = collection.query(
-                query_texts=[query],
-                n_results=top_k,
-                where=where,
-                include=["documents", "metadatas", "distances"]
-            )
+            def _sync_query():
+                return collection.query(
+                    query_texts=[query],
+                    n_results=top_k,
+                    where=where,
+                    include=["documents", "metadatas", "distances"]
+                )
+            
+            results = await asyncio.to_thread(_sync_query)
             
             formatted_results = []
             if results['ids'] and results['ids'][0]:
@@ -198,6 +202,22 @@ class VectorStore:
         except Exception as e:
             logger.warning(f"Failed to delete collection for novel {novel_id}: {e}")
             return False
+    
+    def split_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+        """将文本分割成重叠的块"""
+        if not text:
+            return []
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk = text[start:end]
+            if chunk.strip():
+                chunks.append(chunk.strip())
+            start = end - overlap
+        
+        return chunks
 
 
 vector_store = VectorStore()

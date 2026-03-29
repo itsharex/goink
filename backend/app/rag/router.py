@@ -2,24 +2,21 @@
 RAG检索模块 - API路由
 """
 import logging
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
+from sqlalchemy import select, func
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
-from app.core.exceptions import NotFoundException
-from app.core.auth import get_current_user
+from app.core.database import DBSession
+from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
+from app.core.exceptions import NotFoundException, UnauthorizedException
 from app.core.context_builder import ContextBuilder
-from app.auth.models import User
 from app.novels.models import Novel
 from .models import RAGContext
 from .schemas import (
     RAGQueryRequest,
-    RAGContextResponse,
     RAGContextChunk,
-    WritingContextRequest,
-    WritingContextResponse
+    WritingContextRequest
 )
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -27,10 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/novels/{novel_id}/search")
-def search_context(
+async def search_context(
     novel: NovelOwner,
     request: RAGQueryRequest,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     RAG语义检索
@@ -49,7 +46,7 @@ def search_context(
         if request.include_chapters:
             filters["chapter_ids"] = request.include_chapters
         
-        results = builder.search_relevant_context(
+        results = await builder.search_relevant_context(
             query=request.query,
             top_k=request.top_k,
             filters=filters if filters else None
@@ -77,8 +74,8 @@ def search_context(
             source_chunks=[c.dict() for c in chunks]
         )
         db.add(rag_context)
-        db.commit()
-        db.refresh(rag_context)
+        await db.commit()
+        await db.refresh(rag_context)
         
         logger.info(f"RAG search completed: {len(chunks)} chunks found")
         
@@ -103,10 +100,10 @@ def search_context(
 
 
 @router.post("/novels/{novel_id}/writing-context")
-def get_writing_context(
+async def get_writing_context(
     novel: NovelOwner,
     request: WritingContextRequest,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     获取写作上下文
@@ -122,7 +119,7 @@ def get_writing_context(
     try:
         builder = ContextBuilder(db, novel.id)
         
-        context_data = builder.build_writing_context(
+        context_data = await builder.build_writing_context(
             chapter_id=request.chapter_id,
             context_size=request.context_size,
             include_previous_chapters=request.include_previous_chapters,
@@ -151,12 +148,12 @@ def get_writing_context(
 
 
 @router.get("/novels/{novel_id}/contexts")
-def get_context_history(
+async def get_context_history(
     novel: NovelOwner,
+    db: DBSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    context_type: str = None,
-    db: Session = Depends(get_db)
+    context_type: str = None
 ):
     """
     获取上下文历史
@@ -165,13 +162,18 @@ def get_context_history(
     - page_size: 每页数量 (1-100)
     - context_type: 上下文类型筛选
     """
-    query = db.query(RAGContext).filter(RAGContext.novel_id == novel.id)
+    query = select(RAGContext).where(RAGContext.novel_id == novel.id)
     
     if context_type:
-        query = query.filter(RAGContext.context_type == context_type)
+        query = query.where(RAGContext.context_type == context_type)
     
-    total = query.count()
-    contexts = query.order_by(RAGContext.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.order_by(RAGContext.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    contexts = result.scalars().all()
     
     items = [
         {
@@ -188,19 +190,26 @@ def get_context_history(
 
 
 @router.get("/contexts/{context_id}")
-def get_context_detail(
+async def get_context_detail(
     context_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """获取上下文详情"""
-    context = db.query(RAGContext).filter(RAGContext.id == context_id).first()
+    result = await db.execute(
+        select(RAGContext).where(RAGContext.id == context_id)
+    )
+    context = result.scalar_one_or_none()
     
     if not context:
         raise NotFoundException("上下文")
     
-    if context.novel.author_id != current_user.id:
-        from app.core.exceptions import UnauthorizedException
+    result = await db.execute(
+        select(Novel).where(Novel.id == context.novel_id)
+    )
+    novel = result.scalar_one_or_none()
+    
+    if not novel or novel.author_id != current_user.id:
         raise UnauthorizedException("无权访问此上下文")
     
     return ApiResponse.success({

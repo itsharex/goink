@@ -3,7 +3,10 @@
 提供记忆检索的标准接口
 """
 from typing import Any, Dict, List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from datetime import datetime
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from app.core.vector_store import vector_store, VectorStoreError
@@ -23,84 +26,48 @@ class SearchPlotMemoryTool(BaseMCPTool):
     parameters_schema = {
         "type": "object",
         "properties": {
-            "novel_id": {
-                "type": "integer",
-                "description": "小说ID"
-            },
-            "query": {
-                "type": "string",
-                "description": "搜索查询文本"
-            },
-            "top_k": {
-                "type": "integer",
-                "default": 10,
-                "description": "返回结果数量"
-            },
-            "chapter_ids": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "description": "限定章节ID列表（可选）"
-            }
+            "novel_id": {"type": "integer", "description": "小说ID"},
+            "query": {"type": "string", "description": "搜索查询文本"},
+            "top_k": {"type": "integer", "default": 10, "description": "返回结果数量"},
+            "chapter_ids": {"type": "array", "items": {"type": "integer"}, "description": "限定章节ID列表（可选）"}
         },
         "required": ["novel_id", "query"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def execute(
-        self, 
-        novel_id: int, 
-        query: str, 
-        top_k: int = 10,
-        chapter_ids: Optional[List[int]] = None,
-        **kwargs
-    ) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+    async def execute(self, novel_id: int, query: str, top_k: int = 10, chapter_ids: Optional[List[int]] = None, **kwargs) -> MCPToolResult:
+        result = await self.db.execute(select(Novel).where(Novel.id == novel_id))
+        novel = result.scalar_one_or_none()
         if not novel:
-            return MCPToolResult(
-                success=False,
-                error=f"Novel not found: {novel_id}"
-            )
+            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
         
         try:
             filters = None
             if chapter_ids:
                 filters = {"chapter_ids": chapter_ids}
             
-            results = vector_store.search(
-                novel_id=novel_id,
-                query=query,
-                top_k=top_k,
-                filters=filters
-            )
+            results = await vector_store.search(novel_id=novel_id, query=query, top_k=top_k, filters=filters)
             
             formatted_results = []
-            for result in results:
+            for r in results:
                 formatted_results.append({
-                    "chunk_id": result["id"],
-                    "content": result["content"],
-                    "chapter_id": result["metadata"].get("chapter_id"),
-                    "chapter_number": result["metadata"].get("chapter_number"),
-                    "chapter_title": result["metadata"].get("chapter_title"),
-                    "relevance_score": round(1 - result["distance"], 4)
+                    "chunk_id": r["id"],
+                    "content": r["content"],
+                    "chapter_id": r["metadata"].get("chapter_id"),
+                    "chapter_number": r["metadata"].get("chapter_number"),
+                    "chapter_title": r["metadata"].get("chapter_title"),
+                    "relevance_score": round(1 - r["distance"], 4)
                 })
             
             return MCPToolResult(
                 success=True,
-                data={
-                    "query": query,
-                    "results": formatted_results,
-                    "total": len(formatted_results)
-                },
+                data={"query": query, "results": formatted_results, "total": len(formatted_results)},
                 metadata={"tool": self.name, "novel_id": novel_id}
             )
-            
         except VectorStoreError as e:
-            return MCPToolResult(
-                success=False,
-                error=f"Search failed: {str(e)}"
-            )
+            return MCPToolResult(success=False, error=f"Search failed: {str(e)}")
 
 
 class GetCharacterMemoryTool(BaseMCPTool):
@@ -112,50 +79,28 @@ class GetCharacterMemoryTool(BaseMCPTool):
     parameters_schema = {
         "type": "object",
         "properties": {
-            "novel_id": {
-                "type": "integer",
-                "description": "小说ID"
-            },
-            "character_id": {
-                "type": "integer",
-                "description": "角色ID"
-            },
-            "include_plot_events": {
-                "type": "boolean",
-                "default": True,
-                "description": "是否包含角色参与的情节事件"
-            }
+            "novel_id": {"type": "integer", "description": "小说ID"},
+            "character_id": {"type": "integer", "description": "角色ID"},
+            "include_plot_events": {"type": "boolean", "default": True, "description": "是否包含角色参与的情节事件"}
         },
         "required": ["novel_id", "character_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def execute(
-        self, 
-        novel_id: int, 
-        character_id: int,
-        include_plot_events: bool = True,
-        **kwargs
-    ) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+    async def execute(self, novel_id: int, character_id: int, include_plot_events: bool = True, **kwargs) -> MCPToolResult:
+        result = await self.db.execute(select(Novel).where(Novel.id == novel_id))
+        novel = result.scalar_one_or_none()
         if not novel:
-            return MCPToolResult(
-                success=False,
-                error=f"Novel not found: {novel_id}"
-            )
+            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
         
-        character = self.db.query(Character).filter(
-            Character.id == character_id,
-            Character.novel_id == novel_id
-        ).first()
-        
+        result = await self.db.execute(
+            select(Character).where(Character.id == character_id, Character.novel_id == novel_id)
+        )
+        character = result.scalar_one_or_none()
         if not character:
-            return MCPToolResult(
-                success=False,
-                error=f"Character not found: {character_id}"
-            )
+            return MCPToolResult(success=False, error=f"Character not found: {character_id}")
         
         memory = {
             "character": {
@@ -168,9 +113,10 @@ class GetCharacterMemoryTool(BaseMCPTool):
         }
         
         if include_plot_events:
-            all_events = self.db.query(PlotEvent).filter(
-                PlotEvent.novel_id == novel_id
-            ).all()
+            result = await self.db.execute(
+                select(PlotEvent).where(PlotEvent.novel_id == novel_id)
+            )
+            all_events = result.scalars().all()
             
             character_events = []
             for event in all_events:
@@ -189,17 +135,9 @@ class GetCharacterMemoryTool(BaseMCPTool):
             memory["event_count"] = len(character_events)
         
         try:
-            search_results = vector_store.search(
-                novel_id=novel_id,
-                query=character.name,
-                top_k=5
-            )
-            
+            search_results = await vector_store.search(novel_id=novel_id, query=character.name, top_k=5)
             memory["relevant_content"] = [
-                {
-                    "content": r["content"][:200] + "..." if len(r["content"]) > 200 else r["content"],
-                    "chapter_id": r["metadata"].get("chapter_id")
-                }
+                {"content": r["content"][:200] + "..." if len(r["content"]) > 200 else r["content"], "chapter_id": r["metadata"].get("chapter_id")}
                 for r in search_results
             ]
         except VectorStoreError:
@@ -221,76 +159,56 @@ class GetTimelineTool(BaseMCPTool):
     parameters_schema = {
         "type": "object",
         "properties": {
-            "novel_id": {
-                "type": "integer",
-                "description": "小说ID"
-            },
-            "start_chapter": {
-                "type": "integer",
-                "description": "起始章节号（可选）"
-            },
-            "end_chapter": {
-                "type": "integer",
-                "description": "结束章节号（可选）"
-            },
-            "event_types": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "事件类型筛选（可选）"
-            }
+            "novel_id": {"type": "integer", "description": "小说ID"},
+            "start_chapter": {"type": "integer", "description": "起始章节号（可选）"},
+            "end_chapter": {"type": "integer", "description": "结束章节号（可选）"},
+            "event_types": {"type": "array", "items": {"type": "string"}, "description": "事件类型筛选（可选）"}
         },
         "required": ["novel_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def execute(
-        self, 
-        novel_id: int,
-        start_chapter: Optional[int] = None,
-        end_chapter: Optional[int] = None,
-        event_types: Optional[List[str]] = None,
-        **kwargs
-    ) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+    async def execute(self, novel_id: int, start_chapter: Optional[int] = None, end_chapter: Optional[int] = None, event_types: Optional[List[str]] = None, **kwargs) -> MCPToolResult:
+        result = await self.db.execute(select(Novel).where(Novel.id == novel_id))
+        novel = result.scalar_one_or_none()
         if not novel:
-            return MCPToolResult(
-                success=False,
-                error=f"Novel not found: {novel_id}"
-            )
+            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
         
-        query = self.db.query(PlotEvent).filter(PlotEvent.novel_id == novel_id)
+        query = select(PlotEvent).where(PlotEvent.novel_id == novel_id)
         
         if start_chapter is not None:
-            chapters = self.db.query(Chapter).filter(
-                Chapter.novel_id == novel_id,
-                Chapter.chapter_number >= start_chapter
-            ).all()
-            chapter_ids = [ch.id for ch in chapters]
-            query = query.filter(PlotEvent.chapter_id.in_(chapter_ids))
+            result = await self.db.execute(
+                select(Chapter.id).where(Chapter.novel_id == novel_id, Chapter.chapter_number >= start_chapter)
+            )
+            chapter_ids = [r[0] for r in result.fetchall()]
+            query = query.where(PlotEvent.chapter_id.in_(chapter_ids))
         
         if end_chapter is not None:
-            chapters = self.db.query(Chapter).filter(
-                Chapter.novel_id == novel_id,
-                Chapter.chapter_number <= end_chapter
-            ).all()
-            chapter_ids = [ch.id for ch in chapters]
-            query = query.filter(PlotEvent.chapter_id.in_(chapter_ids))
+            result = await self.db.execute(
+                select(Chapter.id).where(Chapter.novel_id == novel_id, Chapter.chapter_number <= end_chapter)
+            )
+            chapter_ids = [r[0] for r in result.fetchall()]
+            query = query.where(PlotEvent.chapter_id.in_(chapter_ids))
         
         if event_types:
-            query = query.filter(PlotEvent.event_type.in_(event_types))
+            query = query.where(PlotEvent.event_type.in_(event_types))
         
-        events = query.order_by(PlotEvent.timeline).all()
+        query = query.order_by(PlotEvent.timeline)
+        result = await self.db.execute(query)
+        events = result.scalars().all()
         
         timeline = []
         for event in events:
-            chapter = self.db.query(Chapter).filter(Chapter.id == event.chapter_id).first()
+            result = await self.db.execute(select(Chapter).where(Chapter.id == event.chapter_id))
+            chapter = result.scalar_one_or_none()
             
             characters = []
             if event.characters_involved:
                 for char_id in event.characters_involved:
-                    char = self.db.query(Character).filter(Character.id == char_id).first()
+                    result = await self.db.execute(select(Character).where(Character.id == char_id))
+                    char = result.scalar_one_or_none()
                     if char:
                         characters.append({"id": char.id, "name": char.name})
             
@@ -298,11 +216,7 @@ class GetTimelineTool(BaseMCPTool):
                 "id": event.id,
                 "event_type": event.event_type,
                 "description": event.description,
-                "chapter": {
-                    "id": chapter.id if chapter else None,
-                    "chapter_number": chapter.chapter_number if chapter else None,
-                    "title": chapter.title if chapter else None
-                },
+                "chapter": {"id": chapter.id if chapter else None, "chapter_number": chapter.chapter_number if chapter else None, "title": chapter.title if chapter else None},
                 "characters_involved": characters,
                 "timeline": event.timeline.isoformat() if event.timeline else None,
                 "consequences": event.consequences
@@ -310,16 +224,7 @@ class GetTimelineTool(BaseMCPTool):
         
         return MCPToolResult(
             success=True,
-            data={
-                "novel_id": novel_id,
-                "timeline": timeline,
-                "total_events": len(timeline),
-                "filters": {
-                    "start_chapter": start_chapter,
-                    "end_chapter": end_chapter,
-                    "event_types": event_types
-                }
-            },
+            data={"novel_id": novel_id, "timeline": timeline, "total_events": len(timeline), "filters": {"start_chapter": start_chapter, "end_chapter": end_chapter, "event_types": event_types}},
             metadata={"tool": self.name, "novel_id": novel_id}
         )
 
@@ -333,61 +238,33 @@ class GetRecentContextTool(BaseMCPTool):
     parameters_schema = {
         "type": "object",
         "properties": {
-            "novel_id": {
-                "type": "integer",
-                "description": "小说ID"
-            },
-            "chapter_id": {
-                "type": "integer",
-                "description": "章节ID"
-            },
-            "window_size": {
-                "type": "integer",
-                "default": 3,
-                "description": "前文章节数量"
-            },
-            "context_size": {
-                "type": "integer",
-                "default": 3000,
-                "description": "上下文最大字符数"
-            }
+            "novel_id": {"type": "integer", "description": "小说ID"},
+            "chapter_id": {"type": "integer", "description": "章节ID"},
+            "window_size": {"type": "integer", "default": 3, "description": "前文章节数量"},
+            "context_size": {"type": "integer", "default": 3000, "description": "上下文最大字符数"}
         },
         "required": ["novel_id", "chapter_id"]
     }
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
     
-    async def execute(
-        self, 
-        novel_id: int,
-        chapter_id: int,
-        window_size: int = 3,
-        context_size: int = 3000,
-        **kwargs
-    ) -> MCPToolResult:
-        novel = self.db.query(Novel).filter(Novel.id == novel_id).first()
+    async def execute(self, novel_id: int, chapter_id: int, window_size: int = 3, context_size: int = 3000, **kwargs) -> MCPToolResult:
+        result = await self.db.execute(select(Novel).where(Novel.id == novel_id))
+        novel = result.scalar_one_or_none()
         if not novel:
-            return MCPToolResult(
-                success=False,
-                error=f"Novel not found: {novel_id}"
-            )
+            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
         
-        chapter = self.db.query(Chapter).filter(
-            Chapter.id == chapter_id,
-            Chapter.novel_id == novel_id
-        ).first()
-        
+        result = await self.db.execute(
+            select(Chapter).where(Chapter.id == chapter_id, Chapter.novel_id == novel_id)
+        )
+        chapter = result.scalar_one_or_none()
         if not chapter:
-            return MCPToolResult(
-                success=False,
-                error=f"Chapter not found: {chapter_id}"
-            )
+            return MCPToolResult(success=False, error=f"Chapter not found: {chapter_id}")
         
         try:
             context_builder = ContextBuilder(self.db, novel_id)
-            
-            context = context_builder.build_writing_context(
+            context = await context_builder.build_writing_context(
                 chapter_id=chapter_id,
                 context_size=context_size,
                 include_previous_chapters=True,
@@ -395,20 +272,16 @@ class GetRecentContextTool(BaseMCPTool):
                 include_plot_events=True
             )
             
-            previous_chapters = self.db.query(Chapter).filter(
-                Chapter.novel_id == novel_id,
-                Chapter.chapter_number < chapter.chapter_number,
-                Chapter.status == "completed"
-            ).order_by(Chapter.chapter_number.desc()).limit(window_size).all()
+            result = await self.db.execute(
+                select(Chapter)
+                .where(Chapter.novel_id == novel_id, Chapter.chapter_number < chapter.chapter_number, Chapter.status == "completed")
+                .order_by(Chapter.chapter_number.desc())
+                .limit(window_size)
+            )
+            previous_chapters = result.scalars().all()
             
             recent_chapters = [
-                {
-                    "id": ch.id,
-                    "chapter_number": ch.chapter_number,
-                    "title": ch.title,
-                    "summary": ch.summary,
-                    "word_count": len(ch.content or "")
-                }
+                {"id": ch.id, "chapter_number": ch.chapter_number, "title": ch.title, "summary": ch.summary, "word_count": len(ch.content or "")}
                 for ch in reversed(previous_chapters)
             ]
             
@@ -428,19 +301,15 @@ class GetRecentContextTool(BaseMCPTool):
                 },
                 metadata={"tool": self.name, "novel_id": novel_id, "chapter_id": chapter_id}
             )
-            
         except Exception as e:
-            return MCPToolResult(
-                success=False,
-                error=f"Failed to build context: {str(e)}"
-            )
+            return MCPToolResult(success=False, error=f"Failed to build context: {str(e)}")
 
 
 class MemoryRetrievalTools:
     """记忆检索工具集合"""
     
     @staticmethod
-    def register_all(db: Session, registry: MCPToolRegistry) -> None:
+    def register_all(db: AsyncSession, registry: MCPToolRegistry) -> None:
         """注册所有记忆检索工具"""
         registry.register(SearchPlotMemoryTool(db))
         registry.register(GetCharacterMemoryTool(db))

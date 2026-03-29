@@ -3,7 +3,8 @@
 """
 from typing import Annotated
 from fastapi import Depends, Path
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.exceptions import NotFoundException, UnauthorizedException
@@ -12,9 +13,9 @@ from app.auth.models import User
 from app.novels.models import Novel
 
 
-def check_novel_ownership(
+async def check_novel_ownership(
     novel_id: Annotated[int, Path(..., description="小说ID")],
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Novel:
     """
@@ -22,17 +23,21 @@ def check_novel_ownership(
     
     使用方式:
         @router.get("/novels/{novel_id}")
-        def get_novel(novel: Novel = Depends(check_novel_ownership)):
+        async def get_novel(novel: Novel = Depends(check_novel_ownership)):
             return novel
     
     或使用 Annotated:
         from app.core.dependencies import NovelOwner
         
         @router.get("/novels/{novel_id}")
-        def get_novel(novel: NovelOwner):
+        async def get_novel(novel: NovelOwner):
             return novel
     """
-    novel = db.query(Novel).filter(Novel.id == novel_id).first()
+    result = await db.execute(
+        select(Novel).where(Novel.id == novel_id)
+    )
+    novel = result.scalar_one_or_none()
+    
     if novel is None:
         raise NotFoundException("小说")
     if novel.author_id != current_user.id:

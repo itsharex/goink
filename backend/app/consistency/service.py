@@ -7,7 +7,10 @@ import time
 import json
 import asyncio
 from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from datetime import datetime
 
 from app.novels.models import Novel
 from app.chapters.models import Chapter
@@ -23,11 +26,19 @@ logger = logging.getLogger(__name__)
 class ConsistencyChecker:
     """一致性检查服务"""
     
-    def __init__(self, db: Session, novel_id: int):
+    def __init__(self, db: AsyncSession, novel_id: int):
         self.db = db
         self.novel_id = novel_id
-        self.novel = db.query(Novel).filter(Novel.id == novel_id).first()
+        self.novel = None
         self.llm_service = LLMService()
+    
+    async def _init_novel(self):
+        """初始化小说对象"""
+        if self.novel is None:
+            result = await self.db.execute(
+                select(Novel).where(Novel.id == self.novel_id)
+            )
+            self.novel = result.scalar_one_or_none()
     
     async def _call_llm_with_retry(
         self,
@@ -83,6 +94,8 @@ class ConsistencyChecker:
         Returns:
             检查结果
         """
+        await self._init_novel()
+        
         start_time = time.time()
         check_id = f"check_{uuid.uuid4().hex[:12]}"
         
@@ -91,7 +104,7 @@ class ConsistencyChecker:
         
         all_issues: List[ConsistencyIssue] = []
         
-        chapters = self._get_chapters(chapter_ids)
+        chapters = await self._get_chapters(chapter_ids)
         
         if "character" in check_types:
             character_issues = await self.check_character_consistency(chapters)
@@ -122,17 +135,19 @@ class ConsistencyChecker:
             "check_time": round(check_time, 2)
         }
     
-    def _get_chapters(self, chapter_ids: Optional[List[int]] = None) -> List[Chapter]:
+    async def _get_chapters(self, chapter_ids: Optional[List[int]] = None) -> List[Chapter]:
         """获取要检查的章节"""
-        query = self.db.query(Chapter).filter(
+        query = select(Chapter).where(
             Chapter.novel_id == self.novel_id,
             Chapter.status == "completed"
         )
         
         if chapter_ids:
-            query = query.filter(Chapter.id.in_(chapter_ids))
+            query = query.where(Chapter.id.in_(chapter_ids))
         
-        return query.order_by(Chapter.chapter_number).all()
+        query = query.order_by(Chapter.chapter_number)
+        result = await self.db.execute(query)
+        return result.scalars().all()
     
     async def check_character_consistency(self, chapters: List[Chapter]) -> List[ConsistencyIssue]:
         """
@@ -148,9 +163,10 @@ class ConsistencyChecker:
         if not chapters:
             return issues
         
-        characters = self.db.query(Character).filter(
-            Character.novel_id == self.novel_id
-        ).all()
+        result = await self.db.execute(
+            select(Character).where(Character.novel_id == self.novel_id)
+        )
+        characters = result.scalars().all()
         
         if not characters:
             return issues
@@ -233,9 +249,12 @@ class ConsistencyChecker:
         if len(chapters) < 2:
             return issues
         
-        plot_events = self.db.query(PlotEvent).filter(
-            PlotEvent.novel_id == self.novel_id
-        ).order_by(PlotEvent.created_at).all()
+        result = await self.db.execute(
+            select(PlotEvent)
+            .where(PlotEvent.novel_id == self.novel_id)
+            .order_by(PlotEvent.created_at)
+        )
+        plot_events = result.scalars().all()
         
         if not plot_events:
             return issues
@@ -313,9 +332,12 @@ class ConsistencyChecker:
         """
         issues: List[ConsistencyIssue] = []
         
-        plot_events = self.db.query(PlotEvent).filter(
-            PlotEvent.novel_id == self.novel_id
-        ).order_by(PlotEvent.timeline).all()
+        result = await self.db.execute(
+            select(PlotEvent)
+            .where(PlotEvent.novel_id == self.novel_id)
+            .order_by(PlotEvent.timeline)
+        )
+        plot_events = result.scalars().all()
         
         if len(plot_events) < 2:
             return issues
@@ -326,12 +348,15 @@ class ConsistencyChecker:
             
             if prev_event.timeline and curr_event.timeline:
                 if prev_event.timeline > curr_event.timeline:
-                    prev_chapter = self.db.query(Chapter).filter(
-                        Chapter.id == prev_event.chapter_id
-                    ).first()
-                    curr_chapter = self.db.query(Chapter).filter(
-                        Chapter.id == curr_event.chapter_id
-                    ).first()
+                    prev_result = await self.db.execute(
+                        select(Chapter).where(Chapter.id == prev_event.chapter_id)
+                    )
+                    prev_chapter = prev_result.scalar_one_or_none()
+                    
+                    curr_result = await self.db.execute(
+                        select(Chapter).where(Chapter.id == curr_event.chapter_id)
+                    )
+                    curr_chapter = curr_result.scalar_one_or_none()
                     
                     if prev_chapter and curr_chapter and prev_chapter.chapter_number <= curr_chapter.chapter_number:
                         issues.append(ConsistencyIssue(
@@ -359,13 +384,15 @@ class ConsistencyChecker:
         """
         issues: List[ConsistencyIssue] = []
         
-        unresolved_foreshadowings = self.db.query(Foreshadowing).filter(
-            Foreshadowing.novel_id == self.novel_id,
-            Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
-        ).all()
+        result = await self.db.execute(
+            select(Foreshadowing).where(
+                Foreshadowing.novel_id == self.novel_id,
+                Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
+            )
+        )
+        unresolved_foreshadowings = result.scalars().all()
         
         for fs in unresolved_foreshadowings:
-            from datetime import datetime
             days_pending = (datetime.now() - fs.created_at).days if fs.created_at else 0
             
             severity = "info"

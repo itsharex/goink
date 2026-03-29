@@ -18,9 +18,20 @@
 - MCP工具开发
 
 ## 当前任务
-- 任务ID: backend_018
-- 任务描述: Redis集成 - 缓存 + 分布式锁
-- 状态: 待开始
+- 任务ID: backend_async_migration
+- 任务描述: 全面异步化改造
+- 状态: 待Review
+
+## Review请求
+请Review以下异步化改造实现：
+- 将所有同步SQLAlchemy Session改为异步AsyncSession
+- 更新planning模块（router.py, planner.py, service.py）为异步
+- 更新workflows模块（router.py, langgraph_workflow.py）为异步
+- 更新generation模块（service.py）为异步
+- 更新agents模块（router.py）为异步
+- 所有数据库操作使用 `await db.execute()` 和 `select()` 模式
+- 后台任务使用 `AsyncSessionLocal` 上下文管理器
+- 语法检查已通过
 
 ## 任务列表
 

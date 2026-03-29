@@ -1,16 +1,14 @@
 """
 小说管理模块 - API路由
 """
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
+from sqlalchemy import select, func
 from typing import Optional
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
-from app.core.exceptions import NotFoundException
-from app.core.auth import get_current_user
+from app.core.database import DBSession
+from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
-from app.auth.models import User
 from .models import Novel
 from .schemas import NovelCreate, NovelUpdate
 
@@ -18,14 +16,14 @@ router = APIRouter(prefix="/novels", tags=["novels"])
 
 
 @router.get("")
-def get_novels(
+async def get_novels(
+    db: DBSession,
+    current_user: CurrentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
     genre: Optional[str] = None,
-    search: Optional[str] = Query(None, max_length=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    search: Optional[str] = Query(None, max_length=100)
 ):
     """
     获取小说列表（仅返回当前用户的小说）
@@ -36,42 +34,44 @@ def get_novels(
     - genre: 类型筛选
     - search: 标题搜索
     """
-    query = db.query(Novel).filter(Novel.author_id == current_user.id)
+    query = select(Novel).where(Novel.author_id == current_user.id)
     
     if status:
-        query = query.filter(Novel.status == status)
+        query = query.where(Novel.status == status)
     if genre:
-        query = query.filter(Novel.genre == genre)
+        query = query.where(Novel.genre == genre)
     if search:
-        query = query.filter(Novel.title.contains(search))
+        query = query.where(Novel.title.contains(search))
     
-    total = query.count()
-    novels = query.offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    novels = result.scalars().all()
     
     items = []
     for novel in novels:
-        item = {
+        items.append({
             "id": novel.id,
             "title": novel.title,
             "genre": novel.genre,
             "description": novel.description,
             "author_id": novel.author_id,
             "status": novel.status,
-            "chapter_count": len(novel.chapters),
-            "word_count": sum(len(ch.content or "") for ch in novel.chapters),
             "created_at": novel.created_at,
             "updated_at": novel.updated_at
-        }
-        items.append(item)
+        })
     
     return ApiResponse.paginated(items, total, page, page_size)
 
 
 @router.post("", status_code=201)
-def create_novel(
+async def create_novel(
     novel: NovelCreate, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: DBSession,
+    current_user: CurrentUser
 ):
     """
     创建小说
@@ -83,8 +83,8 @@ def create_novel(
         author_id=current_user.id
     )
     db.add(db_novel)
-    db.commit()
-    db.refresh(db_novel)
+    await db.commit()
+    await db.refresh(db_novel)
     
     return ApiResponse.success(
         {
@@ -102,7 +102,7 @@ def create_novel(
 
 
 @router.get("/{novel_id}")
-def get_novel(novel: NovelOwner):
+async def get_novel(novel: NovelOwner):
     """
     获取小说详情
     """
@@ -113,44 +113,26 @@ def get_novel(novel: NovelOwner):
         "description": novel.description,
         "author_id": novel.author_id,
         "status": novel.status,
-        "chapter_count": len(novel.chapters),
-        "word_count": sum(len(ch.content or "") for ch in novel.chapters),
-        "character_count": len(novel.characters),
         "created_at": novel.created_at,
-        "updated_at": novel.updated_at,
-        "characters": [
-            {
-                "id": ch.id,
-                "name": ch.name,
-                "personality": ch.personality
-            } for ch in novel.characters
-        ],
-        "chapters": [
-            {
-                "id": ch.id,
-                "chapter_number": ch.chapter_number,
-                "title": ch.title,
-                "status": ch.status
-            } for ch in sorted(novel.chapters, key=lambda x: x.chapter_number)
-        ]
+        "updated_at": novel.updated_at
     })
 
 
 @router.put("/{novel_id}")
-def update_novel(
+async def update_novel(
     novel: NovelOwner,
     novel_data: NovelUpdate,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     更新小说
     """
-    update_data = novel_data.dict(exclude_unset=True)
+    update_data = novel_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(novel, key, value)
     
-    db.commit()
-    db.refresh(novel)
+    await db.commit()
+    await db.refresh(novel)
     
     return ApiResponse.success(
         {
@@ -166,14 +148,14 @@ def update_novel(
 
 
 @router.delete("/{novel_id}")
-def delete_novel(
+async def delete_novel(
     novel: NovelOwner,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """
     删除小说
     """
-    db.delete(novel)
-    db.commit()
+    await db.delete(novel)
+    await db.commit()
     
     return ApiResponse.success(message="小说删除成功")

@@ -2,9 +2,10 @@
 情节规划服务 - 管理情节线、节点和大纲
 """
 import logging
+import json
 from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
 
 from app.planning.models import (
     PlotLine, PlotNode, PlotOutline,
@@ -23,13 +24,11 @@ logger = logging.getLogger(__name__)
 class PlotPlanningService:
     """情节规划服务"""
     
-    def __init__(self, db: Session, novel_id: int):
+    def __init__(self, db: AsyncSession, novel_id: int):
         self.db = db
         self.novel_id = novel_id
     
-    # ==================== 情节线管理 ====================
-    
-    def create_plot_line(self, data: PlotLineCreate) -> PlotLine:
+    async def create_plot_line(self, data: PlotLineCreate) -> PlotLine:
         """创建情节线"""
         plot_line = PlotLine(
             novel_id=self.novel_id,
@@ -42,37 +41,42 @@ class PlotPlanningService:
             metadata=data.metadata
         )
         self.db.add(plot_line)
-        self.db.commit()
-        self.db.refresh(plot_line)
+        await self.db.commit()
+        await self.db.refresh(plot_line)
         return plot_line
     
-    def get_plot_line(self, plot_line_id: int) -> Optional[PlotLine]:
+    async def get_plot_line(self, plot_line_id: int) -> Optional[PlotLine]:
         """获取情节线"""
-        return self.db.query(PlotLine).filter(
-            PlotLine.id == plot_line_id,
-            PlotLine.novel_id == self.novel_id
-        ).first()
+        result = await self.db.execute(
+            select(PlotLine).where(
+                PlotLine.id == plot_line_id,
+                PlotLine.novel_id == self.novel_id
+            )
+        )
+        return result.scalar_one_or_none()
     
-    def list_plot_lines(
+    async def list_plot_lines(
         self,
         line_type: Optional[str] = None,
         status: Optional[str] = None
     ) -> List[PlotLine]:
         """获取情节线列表"""
-        query = self.db.query(PlotLine).filter(
+        query = select(PlotLine).where(
             PlotLine.novel_id == self.novel_id
         )
         
         if line_type:
-            query = query.filter(PlotLine.line_type == line_type)
+            query = query.where(PlotLine.line_type == line_type)
         if status:
-            query = query.filter(PlotLine.status == status)
+            query = query.where(PlotLine.status == status)
         
-        return query.order_by(PlotLine.importance.desc(), PlotLine.created_at).all()
+        query = query.order_by(PlotLine.importance.desc(), PlotLine.created_at)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
     
-    def update_plot_line(self, plot_line_id: int, data: PlotLineUpdate) -> Optional[PlotLine]:
+    async def update_plot_line(self, plot_line_id: int, data: PlotLineUpdate) -> Optional[PlotLine]:
         """更新情节线"""
-        plot_line = self.get_plot_line(plot_line_id)
+        plot_line = await self.get_plot_line(plot_line_id)
         if not plot_line:
             return None
         
@@ -82,23 +86,21 @@ class PlotPlanningService:
                 value = value.value
             setattr(plot_line, key, value)
         
-        self.db.commit()
-        self.db.refresh(plot_line)
+        await self.db.commit()
+        await self.db.refresh(plot_line)
         return plot_line
     
-    def delete_plot_line(self, plot_line_id: int) -> bool:
+    async def delete_plot_line(self, plot_line_id: int) -> bool:
         """删除情节线"""
-        plot_line = self.get_plot_line(plot_line_id)
+        plot_line = await self.get_plot_line(plot_line_id)
         if not plot_line:
             return False
         
-        self.db.delete(plot_line)
-        self.db.commit()
+        await self.db.delete(plot_line)
+        await self.db.commit()
         return True
     
-    # ==================== 情节节点管理 ====================
-    
-    def create_plot_node(self, data: PlotNodeCreate) -> PlotNode:
+    async def create_plot_node(self, data: PlotNodeCreate) -> PlotNode:
         """创建情节节点"""
         plot_node = PlotNode(
             plot_line_id=data.plot_line_id,
@@ -114,40 +116,45 @@ class PlotPlanningService:
             metadata=data.metadata
         )
         self.db.add(plot_node)
-        self.db.commit()
-        self.db.refresh(plot_node)
+        await self.db.commit()
+        await self.db.refresh(plot_node)
         return plot_node
     
-    def get_plot_node(self, node_id: int) -> Optional[PlotNode]:
+    async def get_plot_node(self, node_id: int) -> Optional[PlotNode]:
         """获取情节节点"""
-        return self.db.query(PlotNode).filter(
-            PlotNode.id == node_id,
-            PlotNode.novel_id == self.novel_id
-        ).first()
+        result = await self.db.execute(
+            select(PlotNode).where(
+                PlotNode.id == node_id,
+                PlotNode.novel_id == self.novel_id
+            )
+        )
+        return result.scalar_one_or_none()
     
-    def list_plot_nodes(
+    async def list_plot_nodes(
         self,
         plot_line_id: Optional[int] = None,
         chapter_number: Optional[int] = None,
         status: Optional[str] = None
     ) -> List[PlotNode]:
         """获取情节节点列表"""
-        query = self.db.query(PlotNode).filter(
+        query = select(PlotNode).where(
             PlotNode.novel_id == self.novel_id
         )
         
         if plot_line_id:
-            query = query.filter(PlotNode.plot_line_id == plot_line_id)
+            query = query.where(PlotNode.plot_line_id == plot_line_id)
         if chapter_number:
-            query = query.filter(PlotNode.chapter_number == chapter_number)
+            query = query.where(PlotNode.chapter_number == chapter_number)
         if status:
-            query = query.filter(PlotNode.status == status)
+            query = query.where(PlotNode.status == status)
         
-        return query.order_by(PlotNode.chapter_number, PlotNode.sequence).all()
+        query = query.order_by(PlotNode.chapter_number, PlotNode.sequence)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
     
-    def update_plot_node(self, node_id: int, data: PlotNodeUpdate) -> Optional[PlotNode]:
+    async def update_plot_node(self, node_id: int, data: PlotNodeUpdate) -> Optional[PlotNode]:
         """更新情节节点"""
-        plot_node = self.get_plot_node(node_id)
+        plot_node = await self.get_plot_node(node_id)
         if not plot_node:
             return None
         
@@ -157,42 +164,49 @@ class PlotPlanningService:
                 value = value.value
             setattr(plot_node, key, value)
         
-        self.db.commit()
-        self.db.refresh(plot_node)
+        await self.db.commit()
+        await self.db.refresh(plot_node)
         return plot_node
     
-    def delete_plot_node(self, node_id: int) -> bool:
+    async def delete_plot_node(self, node_id: int) -> bool:
         """删除情节节点"""
-        plot_node = self.get_plot_node(node_id)
+        plot_node = await self.get_plot_node(node_id)
         if not plot_node:
             return False
         
-        self.db.delete(plot_node)
-        self.db.commit()
+        await self.db.delete(plot_node)
+        await self.db.commit()
         return True
     
-    def get_nodes_by_chapter(self, chapter_number: int) -> List[PlotNode]:
+    async def get_nodes_by_chapter(self, chapter_number: int) -> List[PlotNode]:
         """获取指定章节的所有情节节点"""
-        return self.db.query(PlotNode).filter(
-            PlotNode.novel_id == self.novel_id,
-            PlotNode.chapter_number == chapter_number
-        ).order_by(PlotNode.sequence).all()
+        result = await self.db.execute(
+            select(PlotNode).where(
+                PlotNode.novel_id == self.novel_id,
+                PlotNode.chapter_number == chapter_number
+            ).order_by(PlotNode.sequence)
+        )
+        return list(result.scalars().all())
     
-    def get_next_nodes(self, current_node_id: int) -> List[PlotNode]:
+    async def get_next_nodes(self, current_node_id: int) -> List[PlotNode]:
         """获取下一个情节节点（基于前置依赖）"""
-        return self.db.query(PlotNode).filter(
-            PlotNode.novel_id == self.novel_id,
-            PlotNode.prerequisites.contains([current_node_id]),
-            PlotNode.status == PlotNodeStatus.PLANNED.value
-        ).all()
+        result = await self.db.execute(
+            select(PlotNode).where(
+                PlotNode.novel_id == self.novel_id,
+                PlotNode.prerequisites.contains([current_node_id]),
+                PlotNode.status == PlotNodeStatus.PLANNED.value
+            )
+        )
+        return list(result.scalars().all())
     
-    # ==================== 情节大纲管理 ====================
-    
-    def create_or_update_outline(self, data: PlotOutlineCreate) -> PlotOutline:
+    async def create_or_update_outline(self, data: PlotOutlineCreate) -> PlotOutline:
         """创建或更新情节大纲"""
-        outline = self.db.query(PlotOutline).filter(
-            PlotOutline.novel_id == self.novel_id
-        ).first()
+        result = await self.db.execute(
+            select(PlotOutline).where(
+                PlotOutline.novel_id == self.novel_id
+            )
+        )
+        outline = result.scalar_one_or_none()
         
         if outline:
             update_data = data.model_dump(exclude_unset=True)
@@ -205,19 +219,22 @@ class PlotPlanningService:
             )
             self.db.add(outline)
         
-        self.db.commit()
-        self.db.refresh(outline)
+        await self.db.commit()
+        await self.db.refresh(outline)
         return outline
     
-    def get_outline(self) -> Optional[PlotOutline]:
+    async def get_outline(self) -> Optional[PlotOutline]:
         """获取情节大纲"""
-        return self.db.query(PlotOutline).filter(
-            PlotOutline.novel_id == self.novel_id
-        ).first()
+        result = await self.db.execute(
+            select(PlotOutline).where(
+                PlotOutline.novel_id == self.novel_id
+            )
+        )
+        return result.scalar_one_or_none()
     
-    def update_outline(self, data: PlotOutlineUpdate) -> Optional[PlotOutline]:
+    async def update_outline(self, data: PlotOutlineUpdate) -> Optional[PlotOutline]:
         """更新情节大纲"""
-        outline = self.get_outline()
+        outline = await self.get_outline()
         if not outline:
             return None
         
@@ -225,11 +242,9 @@ class PlotPlanningService:
         for key, value in update_data.items():
             setattr(outline, key, value)
         
-        self.db.commit()
-        self.db.refresh(outline)
+        await self.db.commit()
+        await self.db.refresh(outline)
         return outline
-    
-    # ==================== 情节建议生成 ====================
     
     async def generate_plot_suggestions(
         self,
@@ -248,8 +263,8 @@ class PlotPlanningService:
         Returns:
             情节建议
         """
-        outline = self.get_outline()
-        plot_lines = self.list_plot_lines()
+        outline = await self.get_outline()
+        plot_lines = await self.list_plot_lines()
         
         outline_info = ""
         if outline:
@@ -264,10 +279,13 @@ class PlotPlanningService:
         
         plot_lines_info = ""
         for pl in plot_lines[:5]:
-            nodes = self.db.query(PlotNode).filter(
-                PlotNode.plot_line_id == pl.id,
-                PlotNode.status != PlotNodeStatus.SKIPPED.value
-            ).order_by(PlotNode.sequence).limit(5).all()
+            nodes_result = await self.db.execute(
+                select(PlotNode).where(
+                    PlotNode.plot_line_id == pl.id,
+                    PlotNode.status != PlotNodeStatus.SKIPPED.value
+                ).order_by(PlotNode.sequence).limit(5)
+            )
+            nodes = list(nodes_result.scalars().all())
             
             nodes_info = "\n".join([
                 f"  - 第{n.chapter_number or '?'}章: {n.title} ({n.status})"
@@ -283,7 +301,7 @@ class PlotPlanningService:
         
         target_plot_line = None
         if plot_line_id:
-            target_plot_line = self.get_plot_line(plot_line_id)
+            target_plot_line = await self.get_plot_line(plot_line_id)
         
         prompt = f"""请为以下小说生成第{chapter_number}章的情节建议。
 
@@ -331,7 +349,6 @@ class PlotPlanningService:
         try:
             result = await llm_service.generate_text(prompt)
             
-            import json
             try:
                 suggestions = json.loads(result)
                 return {
@@ -354,12 +371,10 @@ class PlotPlanningService:
                 "error": str(e)
             }
     
-    # ==================== 情节进度分析 ====================
-    
-    def get_plot_progress(self) -> Dict[str, Any]:
+    async def get_plot_progress(self) -> Dict[str, Any]:
         """获取情节进度"""
-        plot_lines = self.list_plot_lines()
-        outline = self.get_outline()
+        plot_lines = await self.list_plot_lines()
+        outline = await self.get_outline()
         
         total_nodes = 0
         completed_nodes = 0
@@ -368,9 +383,12 @@ class PlotPlanningService:
         plot_line_progress = []
         
         for pl in plot_lines:
-            nodes = self.db.query(PlotNode).filter(
-                PlotNode.plot_line_id == pl.id
-            ).all()
+            nodes_result = await self.db.execute(
+                select(PlotNode).where(
+                    PlotNode.plot_line_id == pl.id
+                )
+            )
+            nodes = list(nodes_result.scalars().all())
             
             pl_completed = sum(1 for n in nodes if n.status == PlotNodeStatus.COMPLETED.value)
             pl_in_progress = sum(1 for n in nodes if n.status == PlotNodeStatus.IN_PROGRESS.value)

@@ -3,17 +3,16 @@
 """
 import time
 import logging
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from typing import List, Optional
+from fastapi import APIRouter, Query
+from sqlalchemy import select
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
-from app.core.exceptions import NotFoundException
-from app.core.auth import get_current_user
+from app.core.database import DBSession
+from app.core.auth import CurrentUser
 from app.core.dependencies import NovelOwner
+from app.core.exceptions import NotFoundException
 from app.core.vector_store import vector_store, VectorStoreError
-from app.auth.models import User
 from app.novels.models import Novel
 from app.chapters.models import Chapter
 from .models import MemoryChunk
@@ -41,15 +40,19 @@ def split_text_into_chunks(text: str, chunk_size: int = 500, overlap: int = 50) 
 
 
 @router.post("/novels/{novel_id}/index")
-def index_novel_memory(
+async def index_novel_memory(
     novel: NovelOwner,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """索引小说所有章节到向量存储"""
     logger.info(f"Indexing novel {novel.id}")
     
     try:
-        chapters = db.query(Chapter).filter(Chapter.novel_id == novel.id).all()
+        result = await db.execute(
+            select(Chapter).where(Chapter.novel_id == novel.id)
+        )
+        chapters = result.scalars().all()
+        
         if not chapters:
             logger.info(f"Novel {novel.id} has no chapters to index")
             return ApiResponse.success(
@@ -102,20 +105,24 @@ def index_novel_memory(
 
 
 @router.post("/novels/{novel_id}/chapters/{chapter_id}/index")
-def index_chapter_memory(
+async def index_chapter_memory(
     novel: NovelOwner,
     chapter_id: int,
     request: MemoryIndexRequest,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """索引单个章节到向量存储"""
     logger.info(f"Indexing chapter {chapter_id} of novel {novel.id}")
     
     try:
-        chapter = db.query(Chapter).filter(
-            Chapter.id == chapter_id,
-            Chapter.novel_id == novel.id
-        ).first()
+        result = await db.execute(
+            select(Chapter).where(
+                Chapter.id == chapter_id,
+                Chapter.novel_id == novel.id
+            )
+        )
+        chapter = result.scalar_one_or_none()
+        
         if chapter is None:
             raise NotFoundException("章节")
         
@@ -171,10 +178,10 @@ def index_chapter_memory(
 
 
 @router.post("/novels/{novel_id}/search")
-def search_memory(
+async def search_memory(
     novel: NovelOwner,
     request: MemorySearchRequest,
-    db: Session = Depends(get_db)
+    db: DBSession
 ):
     """语义检索小说内容"""
     logger.info(f"Searching novel {novel.id}: '{request.query[:50]}...'")
@@ -182,7 +189,7 @@ def search_memory(
     try:
         start_time = time.time()
         
-        results = vector_store.search(
+        results = await vector_store.search(
             novel_id=novel.id,
             query=request.query,
             top_k=request.top_k,
@@ -219,7 +226,7 @@ def search_memory(
 
 
 @router.delete("/novels/{novel_id}/memory")
-def clear_novel_memory(
+async def clear_novel_memory(
     novel: NovelOwner
 ):
     """清除小说的所有向量索引"""

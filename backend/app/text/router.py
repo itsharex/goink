@@ -2,11 +2,10 @@
 文本生成API路由
 """
 import logging
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
+from app.core.database import DBSession
 from app.core.dependencies import NovelOwner
 from app.text.service import TextGenerator, GenerationType, GenerationConfig
 
@@ -17,10 +16,10 @@ logger = logging.getLogger(__name__)
 @router.post("/novels/{novel_id}/generate/chapter")
 async def generate_chapter(
     novel: NovelOwner,
+    db: DBSession,
     chapter_number: int,
     target_length: int = 3000,
-    style: str = "narrative",
-    db: Session = Depends(get_db)
+    style: str = "narrative"
 ):
     """
     生成章节
@@ -42,10 +41,10 @@ async def generate_chapter(
 @router.post("/novels/{novel_id}/generate/dialogue")
 async def generate_dialogue(
     novel: NovelOwner,
+    db: DBSession,
     characters: list,
     context: str,
-    style: str = "natural",
-    db: Session = Depends(get_db)
+    style: str = "natural"
 ):
     """
     生成对话
@@ -67,9 +66,9 @@ async def generate_dialogue(
 @router.post("/novels/{novel_id}/generate/description")
 async def generate_description(
     novel: NovelOwner,
+    db: DBSession,
     subject: str,
-    style: str = "vivid",
-    db: Session = Depends(get_db)
+    style: str = "vivid"
 ):
     """
     生成描写
@@ -89,11 +88,11 @@ async def generate_description(
 @router.post("/novels/{novel_id}/generate/outline")
 async def generate_outline(
     novel: NovelOwner,
+    db: DBSession,
     premise: str,
     genre: str,
     total_chapters: int = 20,
-    style: str = "narrative",
-    db: Session = Depends(get_db)
+    style: str = "narrative"
 ):
     """
     生成大纲
@@ -117,9 +116,9 @@ async def generate_outline(
 @router.post("/novels/{novel_id}/generate/summary")
 async def generate_summary(
     novel: NovelOwner,
+    db: DBSession,
     content: str,
-    max_length: int = 500,
-    db: Session = Depends(get_db)
+    max_length: int = 500
 ):
     """
     生成摘要
@@ -139,11 +138,11 @@ async def generate_summary(
 @router.post("/novels/{novel_id}/generate/character-profile")
 async def generate_character_profile(
     novel: NovelOwner,
+    db: DBSession,
     name: str,
     role: str,
     novel_context: str,
-    style: str = "narrative",
-    db: Session = Depends(get_db)
+    style: str = "narrative"
 ):
     """
     生成角色档案
@@ -167,12 +166,12 @@ async def generate_character_profile(
 @router.post("/novels/{novel_id}/generate/custom")
 async def generate_custom(
     novel: NovelOwner,
+    db: DBSession,
     prompt: str,
     generation_type: str = "chapter",
     style: str = "narrative",
     target_length: int = 3000,
-    temperature: float = 0.8,
-    db: Session = Depends(get_db)
+    temperature: float = 0.8
 ):
     """
     自定义生成

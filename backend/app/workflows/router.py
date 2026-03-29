@@ -3,9 +3,9 @@
 """
 import logging
 from fastapi import APIRouter, Depends, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func
 
-from app.core.database import get_db
+from app.core.database import get_db, DBSession, AsyncSessionLocal
 from app.core.response import ApiResponse
 from app.core.exceptions import NotFoundException
 from app.core.dependencies import NovelOwner
@@ -22,9 +22,9 @@ async def generate_chapter_with_workflow(
     novel: NovelOwner,
     chapter_number: int,
     background_tasks: BackgroundTasks,
+    db: DBSession,
     target_length: int = 3000,
-    style: str = "narrative",
-    db: Session = Depends(get_db)
+    style: str = "narrative"
 ):
     """
     使用LangGraph工作流生成章节
@@ -58,10 +58,13 @@ async def generate_chapter_with_workflow(
     task_id = f"workflow_{novel.id}_{chapter_number}_{uuid.uuid4().hex[:8]}"
     
     from app.chapters.models import Chapter
-    existing = db.query(Chapter).filter(
-        Chapter.novel_id == novel.id,
-        Chapter.chapter_number == chapter_number
-    ).first()
+    result = await db.execute(
+        select(Chapter).where(
+            Chapter.novel_id == novel.id,
+            Chapter.chapter_number == chapter_number
+        )
+    )
+    existing = result.scalar_one_or_none()
     
     if existing and existing.status == "generating":
         return ApiResponse.error(
@@ -79,10 +82,10 @@ async def generate_chapter_with_workflow(
             status="generating"
         )
         db.add(chapter)
-        db.commit()
+        await db.commit()
     else:
         existing.status = "generating"
-        db.commit()
+        await db.commit()
     
     _workflow_locks[lock_key] = True
     
@@ -109,46 +112,50 @@ async def _run_workflow_task(
     lock_key: str
 ):
     """后台执行工作流任务"""
-    from app.core.database import SessionLocal
     from app.chapters.models import Chapter
     
-    db = SessionLocal()
-    try:
-        result = await workflow.run(
-            task_id=task_id,
-            novel_id=novel_id,
-            chapter_number=chapter_number,
-            target_length=target_length,
-            style=style
-        )
-        
-        if not result.get("success"):
-            chapter = db.query(Chapter).filter(
-                Chapter.novel_id == novel_id,
-                Chapter.chapter_number == chapter_number
-            ).first()
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await workflow.run(
+                task_id=task_id,
+                novel_id=novel_id,
+                chapter_number=chapter_number,
+                target_length=target_length,
+                style=style
+            )
+            
+            if not result.get("success"):
+                chapter_result = await db.execute(
+                    select(Chapter).where(
+                        Chapter.novel_id == novel_id,
+                        Chapter.chapter_number == chapter_number
+                    )
+                )
+                chapter = chapter_result.scalar_one_or_none()
+                
+                if chapter:
+                    chapter.status = "failed"
+                    await db.commit()
+            
+            logger.info(f"Workflow task {task_id} completed: {result.get('status')}")
+            
+        except Exception as e:
+            logger.error(f"Workflow task {task_id} failed: {e}")
+            
+            chapter_result = await db.execute(
+                select(Chapter).where(
+                    Chapter.novel_id == novel_id,
+                    Chapter.chapter_number == chapter_number
+                )
+            )
+            chapter = chapter_result.scalar_one_or_none()
             
             if chapter:
                 chapter.status = "failed"
-                db.commit()
-        
-        logger.info(f"Workflow task {task_id} completed: {result.get('status')}")
-        
-    except Exception as e:
-        logger.error(f"Workflow task {task_id} failed: {e}")
-        
-        chapter = db.query(Chapter).filter(
-            Chapter.novel_id == novel_id,
-            Chapter.chapter_number == chapter_number
-        ).first()
-        
-        if chapter:
-            chapter.status = "failed"
-            db.commit()
-            
-    finally:
-        _workflow_locks[lock_key] = False
-        db.close()
+                await db.commit()
+                
+        finally:
+            _workflow_locks[lock_key] = False
 
 
 @router.get("/tasks/{task_id}/status")
@@ -185,12 +192,12 @@ def get_workflow_status(task_id: str):
 
 
 @router.get("/novels/{novel_id}/workflows")
-def list_novel_workflows(
+async def list_novel_workflows(
     novel: NovelOwner,
+    db: DBSession,
     status: str = None,
     page: int = 1,
-    page_size: int = 20,
-    db: Session = Depends(get_db)
+    page_size: int = 20
 ):
     """
     获取小说的工作流任务列表
@@ -199,15 +206,22 @@ def list_novel_workflows(
     """
     from app.agents.models import AgentTaskRecord
     
-    query = db.query(AgentTaskRecord).filter(
+    query = select(AgentTaskRecord).where(
         AgentTaskRecord.novel_id == novel.id
     )
     
     if status:
-        query = query.filter(AgentTaskRecord.status == status)
+        query = query.where(AgentTaskRecord.status == status)
     
-    total = query.count()
-    tasks = query.order_by(AgentTaskRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    query = query.order_by(AgentTaskRecord.created_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    
+    result = await db.execute(query)
+    tasks = list(result.scalars().all())
     
     items = [
         {

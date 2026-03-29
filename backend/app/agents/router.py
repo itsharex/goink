@@ -3,15 +3,11 @@ Agent系统API路由
 """
 import logging
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
 from app.core.exceptions import NotFoundException
 from app.core.auth import get_current_user
-from app.core.dependencies import NovelOwner
-from app.auth.models import User
-from app.novels.models import Novel
+from app.core.dependencies import NovelOwner, CurrentUser
 from .base import AgentTask, TaskType, TaskStatus
 from .coordinator import CoordinatorAgent
 from .writer import WriterAgent
@@ -26,8 +22,8 @@ coordinator.register_agent(ReviewerAgent())
 
 
 @router.get("/status")
-def get_agent_status(
-    current_user: User = Depends(get_current_user)
+async def get_agent_status(
+    current_user: CurrentUser
 ):
     """获取Agent系统状态"""
     status = coordinator.get_agent_status()
@@ -71,7 +67,7 @@ async def create_task(
 
 
 @router.get("/novels/{novel_id}/tasks")
-def get_tasks(
+async def get_tasks(
     novel: NovelOwner,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
@@ -90,9 +86,9 @@ def get_tasks(
 
 
 @router.get("/tasks/{task_id}")
-def get_task_status(
+async def get_task_status(
     task_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: CurrentUser
 ):
     """获取任务状态"""
     status = coordinator.get_task_status(task_id)

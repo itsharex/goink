@@ -4,7 +4,8 @@
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.context_builder import ContextBuilder
 from app.core.vector_store import vector_store
@@ -21,10 +22,9 @@ logger = logging.getLogger(__name__)
 class ChapterGenerationService:
     """章节生成服务"""
     
-    def __init__(self, db: Session, novel_id: int):
+    def __init__(self, db: AsyncSession, novel_id: int):
         self.db = db
         self.novel_id = novel_id
-        self.novel = db.query(Novel).filter(Novel.id == novel_id).first()
         self.context_builder = ContextBuilder(db, novel_id)
         self.coordinator = CoordinatorAgent()
         
@@ -32,6 +32,13 @@ class ChapterGenerationService:
         from app.agents.reviewer import ReviewerAgent
         self.coordinator.register_agent(WriterAgent())
         self.coordinator.register_agent(ReviewerAgent())
+    
+    async def _get_novel(self) -> Optional[Novel]:
+        """获取小说"""
+        result = await self.db.execute(
+            select(Novel).where(Novel.id == self.novel_id)
+        )
+        return result.scalar_one_or_none()
     
     async def generate_chapter(
         self,
@@ -114,10 +121,13 @@ class ChapterGenerationService:
         
         context = {}
         
-        previous_chapters = self.db.query(Chapter).filter(
-            Chapter.novel_id == self.novel_id,
-            Chapter.chapter_number < chapter_number
-        ).order_by(Chapter.chapter_number.desc()).limit(3).all()
+        result = await self.db.execute(
+            select(Chapter).where(
+                Chapter.novel_id == self.novel_id,
+                Chapter.chapter_number < chapter_number
+            ).order_by(Chapter.chapter_number.desc()).limit(3)
+        )
+        previous_chapters = list(result.scalars().all())
         
         if previous_chapters:
             summaries = []
@@ -128,9 +138,10 @@ class ChapterGenerationService:
                     summaries.append(f"第{ch.chapter_number}章: {ch.content[:200]}...")
             context["previous_summary"] = "\n".join(summaries)
         
-        characters = self.db.query(Character).filter(
-            Character.novel_id == self.novel_id
-        ).all()
+        result = await self.db.execute(
+            select(Character).where(Character.novel_id == self.novel_id)
+        )
+        characters = list(result.scalars().all())
         context["characters"] = [
             {
                 "id": char.id,
@@ -141,9 +152,12 @@ class ChapterGenerationService:
             for char in characters
         ]
         
-        plot_events = self.db.query(PlotEvent).filter(
-            PlotEvent.novel_id == self.novel_id
-        ).order_by(PlotEvent.created_at.desc()).limit(10).all()
+        result = await self.db.execute(
+            select(PlotEvent).where(
+                PlotEvent.novel_id == self.novel_id
+            ).order_by(PlotEvent.created_at.desc()).limit(10)
+        )
+        plot_events = list(result.scalars().all())
         context["plot_hints"] = [
             {
                 "id": event.id,
@@ -165,17 +179,20 @@ class ChapterGenerationService:
         style: str
     ) -> Chapter:
         """保存章节"""
-        existing = self.db.query(Chapter).filter(
-            Chapter.novel_id == self.novel_id,
-            Chapter.chapter_number == chapter_number
-        ).first()
+        result = await self.db.execute(
+            select(Chapter).where(
+                Chapter.novel_id == self.novel_id,
+                Chapter.chapter_number == chapter_number
+            )
+        )
+        existing = result.scalar_one_or_none()
         
         if existing:
             existing.content = content
             existing.status = "completed"
             existing.updated_at = datetime.now()
-            self.db.commit()
-            self.db.refresh(existing)
+            await self.db.commit()
+            await self.db.refresh(existing)
             return existing
         else:
             chapter = Chapter(
@@ -186,8 +203,8 @@ class ChapterGenerationService:
                 status="completed"
             )
             self.db.add(chapter)
-            self.db.commit()
-            self.db.refresh(chapter)
+            await self.db.commit()
+            await self.db.refresh(chapter)
             return chapter
     
     async def _index_chapter(self, chapter: Chapter):
@@ -241,7 +258,10 @@ class ChapterGenerationService:
         feedback: Optional[str] = None
     ) -> Dict[str, Any]:
         """重新生成章节"""
-        chapter = self.db.query(Chapter).filter(Chapter.id == chapter_id).first()
+        result = await self.db.execute(
+            select(Chapter).where(Chapter.id == chapter_id)
+        )
+        chapter = result.scalar_one_or_none()
         if not chapter:
             return {"success": False, "error": "章节不存在"}
         

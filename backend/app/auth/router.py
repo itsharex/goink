@@ -1,13 +1,13 @@
 """
 认证模块 - API路由
 """
-from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, status
+from sqlalchemy import select, or_
 
-from app.core.database import get_db
 from app.core.response import ApiResponse
 from app.core.jwt import hash_password, verify_password, create_tokens, decode_token, create_access_token
-from app.core.auth import get_current_user
+from app.core.database import DBSession
+from app.core.auth import CurrentUser
 from .models import User
 from .schemas import UserRegister, UserLogin
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", status_code=201)
-def register(user_data: UserRegister, db: Session = Depends(get_db)):
+async def register(user_data: UserRegister, db: DBSession):
     """
     用户注册
     
@@ -23,9 +23,12 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
     - email: 邮箱地址
     - password: 密码 (6-100字符)
     """
-    existing_user = db.query(User).filter(
-        (User.username == user_data.username) | (User.email == user_data.email)
-    ).first()
+    result = await db.execute(
+        select(User).where(
+            or_(User.username == user_data.username, User.email == user_data.email)
+        )
+    )
+    existing_user = result.scalar_one_or_none()
     
     if existing_user:
         if existing_user.username == user_data.username:
@@ -47,8 +50,8 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
         password_hash=hash_password(user_data.password)
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     
     return ApiResponse.success(
         {
@@ -62,14 +65,17 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(login_data: UserLogin, db: Session = Depends(get_db)):
+async def login(login_data: UserLogin, db: DBSession):
     """
     用户登录
     
     - username: 用户名
     - password: 密码
     """
-    user = db.query(User).filter(User.username == login_data.username).first()
+    result = await db.execute(
+        select(User).where(User.username == login_data.username)
+    )
+    user = result.scalar_one_or_none()
     
     if not user or not verify_password(login_data.password, user.password_hash):
         return ApiResponse.error(
@@ -84,7 +90,7 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh")
-def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+async def refresh_token(refresh_token: str, db: DBSession):
     """
     刷新Token
     
@@ -114,7 +120,11 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED
         )
     
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    result = await db.execute(
+        select(User).where(User.id == int(user_id))
+    )
+    user = result.scalar_one_or_none()
+    
     if user is None:
         return ApiResponse.error(
             code="AUTH_002",
@@ -136,7 +146,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(current_user: CurrentUser):
     """
     获取当前用户信息
     
