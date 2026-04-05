@@ -118,6 +118,7 @@ class EditModeConfig:
             "run_review",
             "get_character_network", "get_character_relationships", "update_character_relationship",
             "get_location_list", "get_location_detail", "create_location",
+            "update_location", "delete_location",
             "get_pending_changes",
         },
         EditMode.REVIEW: {

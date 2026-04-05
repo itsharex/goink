@@ -6,14 +6,14 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core.jwt import decode_token
-from app.auth.models import User
+from app.auth.schemas import CurrentUser
 
 security = HTTPBearer()
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> User:
+) -> CurrentUser:
     """
     从Token获取当前用户（直接从JWT解析，不查数据库）
     """
@@ -60,11 +60,11 @@ async def get_current_user(
             }
         )
     
-    return User(
+    return CurrentUser(
         id=int(user_id),
         username=username or "",
         email=email or ""
     )
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]

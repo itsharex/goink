@@ -27,7 +27,12 @@ class PlotNodeStatus(str, enum.Enum):
 
 
 class PlotLine(Base):
-    """情节线模型 - 管理多条情节线"""
+    """情节线模型 - 管理多条情节线（Layer2，与TimelineEntry/Layer4的foreshadowing完全独立）
+
+    区分说明：
+    - PlotLine(本类): 情节规划骨架，如"主线：复仇之路""支线：主角感情线"
+    - TimelineEntry.foreshadowing: 伏笔追踪，如"第3章埋下的神秘信件→第15章揭晓"
+    - 两者是不同层级的概念，PlotLine是宏观结构，foreshadowing是微观追踪"""
     __tablename__ = "plot_lines"
     
     id: int = Column(Integer, primary_key=True, autoincrement=True)

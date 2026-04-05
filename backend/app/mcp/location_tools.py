@@ -2,12 +2,9 @@
 地点管理MCP工具
 """
 from typing import Any, Dict, List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory
-
-from app.novels.models import Novel
+from app.core.permissions import verify_novel_ownership
 
 
 class GetLocationListTool(BaseMCPTool):
@@ -36,9 +33,13 @@ class GetLocationListTool(BaseMCPTool):
         "required": []
     }
 
-    async def execute(self, db, novel_id: int=0, location_type: Optional[str]=None,
-                     search: Optional[str]=None, user_id=None, **kwargs) -> MCPToolResult:
+    async def execute(self, db, novel_id: int, user_id: int, location_type: Optional[str]=None,
+                     search: Optional[str]=None, **kwargs) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             from app.locations.service import LocationService
             svc = LocationService(db, novel_id)
             
@@ -85,9 +86,13 @@ class GetLocationDetailTool(BaseMCPTool):
         "required": ["location_id"]
     }
 
-    async def execute(self, db, novel_id: int=0, location_id: int=0,
-                     user_id=None, **kwargs) -> MCPToolResult:
+    async def execute(self, db, novel_id: int, user_id: int, location_id: int,
+                     **kwargs) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             from app.locations.service import LocationService
             svc = LocationService(db, novel_id)
             location = await svc.get_by_id(location_id)
@@ -135,7 +140,7 @@ class CreateLocationTool(BaseMCPTool):
         "为当前小说创建一个新地点。无需传novel_id，系统会注入当前小说ID。"
         "\n适用场景：用户要求添加新地点、AI写作时发现需要新的场景设定、规划世界观时。"
         "\nname 为必填；location_type 建议从 city/town/forest/building 等中选择。"
-        "\n创建后可通过 get_location_detail 查看详情。"
+        "\n创建后可通过 get_location_detail 查看详情，通过 update_location 修改设定。"
     )
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
@@ -160,19 +165,18 @@ class CreateLocationTool(BaseMCPTool):
         "required": ["name"]
     }
 
-    async def execute(self, db, novel_id: int=0, name: str="",
+    async def execute(self, db, novel_id: int, user_id: int, name: str="",
                      location_type: Optional[str]=None, description: Optional[str]=None,
                      tags: Optional[List[str]]=None, parent_location_id: Optional[int]=None,
-                     user_id=None, **kwargs) -> MCPToolResult:
+                     **kwargs) -> MCPToolResult:
         try:
-            result = await db.execute(select(Novel).where(Novel.id == novel_id))
-            novel = result.scalar_one_or_none()
+            novel = await verify_novel_ownership(db, novel_id, user_id)
             if not novel:
-                return MCPToolResult(success=False, error=f"小说 {novel_id} 不存在")
-            
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+
             from app.locations.schemas import LocationCreate, LocationType
             from app.locations.service import LocationService
-            
+
             loc_data = LocationCreate(
                 name=name,
                 location_type=LocationType(location_type) if location_type else LocationType.OTHER,
@@ -180,10 +184,10 @@ class CreateLocationTool(BaseMCPTool):
                 tags=tags,
                 parent_location_id=parent_location_id,
             )
-            
+
             svc = LocationService(db, novel_id)
             location = await svc.create(loc_data)
-            
+
             return MCPToolResult(
                 success=True,
                 data={
@@ -198,7 +202,127 @@ class CreateLocationTool(BaseMCPTool):
             return MCPToolResult(success=False, error=f"创建地点失败: {str(e)}")
 
 
+class UpdateLocationTool(BaseMCPTool):
+    """更新地点信息"""
+
+    name = "update_location"
+    description = (
+        "更新已有地点的设定信息。无需传novel_id，系统会注入当前小说ID。"
+        "\n适用场景：修改地点名称、类型、描述、标签、父子关系等。"
+        "\n只需传入要修改的字段，未传入的字段保持不变。"
+    )
+    category = MCPToolCategory.NOVEL_MANAGEMENT
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "location_id": {"type": "integer", "description": "地点ID（必填）"},
+            "name": {"type": "string", "description": "新的名称"},
+            "location_type": {
+                "type": "string",
+                "enum": ["city", "town", "forest", "mountain", "building", "room",
+                         "sea", "river", "road", "castle", "temple", "village",
+                         "dungeon", "palace", "market", "inn", "other"],
+                "description": "新的类型"
+            },
+            "description": {"type": "string", "description": "新的描述"},
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "新的标签列表（完全替换旧的）"
+            },
+            "parent_location_id": {"type": "integer", "description": "新的父级地点ID（设null解除层级）"},
+        },
+        "required": ["location_id"]
+    }
+
+    async def execute(self, db, novel_id: int, user_id: int, location_id: int,
+                     **kwargs) -> MCPToolResult:
+        try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
+            from app.locations.schemas import LocationUpdate, LocationType
+            from app.locations.service import LocationService
+
+            svc = LocationService(db, novel_id)
+            update_fields = {}
+            if kwargs.get("name") is not None:
+                update_fields["name"] = kwargs["name"]
+            if kwargs.get("location_type") is not None:
+                update_fields["location_type"] = LocationType(kwargs["location_type"])
+            if kwargs.get("description") is not None:
+                update_fields["description"] = kwargs["description"]
+            if kwargs.get("tags") is not None:
+                update_fields["tags"] = kwargs["tags"]
+            if kwargs.get("parent_location_id") is not None:
+                update_fields["parent_location_id"] = kwargs["parent_location_id"]
+
+            if not update_fields:
+                return MCPToolResult(success=False, error="至少需要提供一个要修改的字段")
+
+            data = LocationUpdate(**update_fields)
+            location = await svc.update(location_id, data)
+            if not location:
+                return MCPToolResult(success=False, error=f"地点 {location_id} 不存在或不属于当前小说")
+
+            return MCPToolResult(
+                success=True,
+                data={
+                    "id": location.id,
+                    "name": location.name,
+                    "type": location.location_type,
+                    "description": location.description,
+                    "tags": location.tags,
+                },
+                metadata={"tool": self.name, "novel_id": novel_id, "location_id": location_id}
+            )
+        except Exception as e:
+            return MCPToolResult(success=False, error=f"更新地点失败: {str(e)}")
+
+
+class DeleteLocationTool(BaseMCPTool):
+    """删除地点"""
+
+    name = "delete_location"
+    description = (
+        "删除一个已创建的地点。无需传novel_id，系统会注入当前小说ID。"
+        "\n⚠️ 谨慎操作：删除后不可恢复。如果该地点有子地点，子地点不会自动删除但会失去父级引用。"
+        "\n适用场景：错误创建了重复地点、某地点不再需要时。"
+    )
+    category = MCPToolCategory.NOVEL_MANAGEMENT
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "location_id": {"type": "integer", "description": "要删除的地点ID（必填）"},
+        },
+        "required": ["location_id"]
+    }
+
+    async def execute(self, db, novel_id: int, user_id: int, location_id: int,
+                     **kwargs) -> MCPToolResult:
+        try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
+            from app.locations.service import LocationService
+            svc = LocationService(db, novel_id)
+            deleted = await svc.delete(location_id)
+            if not deleted:
+                return MCPToolResult(success=False, error=f"地点 {location_id} 不存在、不属于当前小说或已删除")
+            return MCPToolResult(
+                success=True,
+                data={"deleted": True, "location_id": location_id},
+                metadata={"tool": self.name, "novel_id": novel_id, "location_id": location_id}
+            )
+        except Exception as e:
+            return MCPToolResult(success=False, error=f"删除地点失败: {str(e)}")
+
+
 def register_location_tools(registry) -> None:
     registry.register(GetLocationListTool())
     registry.register(GetLocationDetailTool())
     registry.register(CreateLocationTool())
+    registry.register(UpdateLocationTool())
+    registry.register(DeleteLocationTool())

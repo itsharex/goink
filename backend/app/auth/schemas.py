@@ -16,6 +16,16 @@ class UserLogin(BaseModel):
     password: str
 
 
+class CurrentUser(BaseModel):
+    """当前用户信息（从JWT解析，不查数据库）"""
+    id: int
+    username: str = ""
+    email: str = ""
+    
+    class Config:
+        from_attributes = True
+
+
 class UserResponse(BaseModel):
     user_id: int
     username: str

@@ -8,6 +8,10 @@ from enum import Enum
 
 
 class TimelineEntryCategory(str, Enum):
+    """时间线条目分类。注意：foreshadowing(伏笔) 与 PlotLine/PlotNode(情节线) 是完全独立的两个系统：
+    - foreshadowing: Layer4 伏笔管理，追踪"埋下的钩子何时被回收"
+    - plot_node: Layer4 情节里程碑，标记关键转折点（与Layer2的PlotLine系统无关）
+    - PlotLine/PlotNode: Layer2 独立的情节规划结构（main/sub线+节点），有自己独立的表和API"""
     FORESHADOWING = "foreshadowing"
     PLOT_NODE = "plot_node"
     CHAPTER_PLAN = "chapter_plan"

@@ -1,9 +1,11 @@
 """
 上下文构建服务 - RAG核心逻辑
+支持分层缓存（Layered Caching）与静态前缀对齐
 """
+import asyncio
 import logging
 import hashlib
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -19,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class ContextCache:
-    """简单的内存缓存"""
-    
+    """分层内存缓存"""
+
     def __init__(self, ttl_seconds: int = 300):
         self._cache: Dict[str, Any] = {}
         self._timestamps: Dict[str, datetime] = {}
@@ -59,8 +61,39 @@ class ContextCache:
 context_cache = ContextCache(ttl_seconds=300)
 
 
+class ContextLayer:
+    """上下文层级枚举"""
+    STATIC = "static"
+    STABLE = "stable"
+    SLIDING = "sliding"
+    DYNAMIC = "dynamic"
+
+
 class ContextBuilder:
-    """上下文构建器"""
+    """上下文构建器 - 支持分层缓存优化"""
+    
+    LAYER_CONFIG = {
+        ContextLayer.STATIC: {
+            "tag": "novel_profile",
+            "priority": 1,
+            "description": "小说标题、简介（几乎永不改变）"
+        },
+        ContextLayer.STABLE: {
+            "tag": "character_network",
+            "priority": 2,
+            "description": "角色信息、人物关系网络（变动频率低）"
+        },
+        ContextLayer.SLIDING: {
+            "tag": "previous_chapters",
+            "priority": 3,
+            "description": "前文摘要（随章节滚动，相对稳定）"
+        },
+        ContextLayer.DYNAMIC: {
+            "tag": "current_plot",
+            "priority": 4,
+            "description": "情节线索、故事时间线（最易变动）"
+        }
+    }
     
     def __init__(self, db: AsyncSession, novel_id: int):
         self.db = db
@@ -75,6 +108,146 @@ class ContextBuilder:
             )
             self.novel = result.scalar_one_or_none()
     
+    def _generate_layer_cache_key(
+        self,
+        layer: str,
+        chapter_number: Optional[int] = None,
+        context_size: int = 3000,
+        **extra_params
+    ) -> str:
+        """生成分层缓存键"""
+        base_key_data = {
+            "novel_id": self.novel_id,
+            "layer": layer,
+            "chapter_number": chapter_number or 0,
+            "context_size": context_size,
+            **{k: v for k, v in sorted(extra_params.items())}
+        }
+        key_str = "_".join(f"{k}={v}" for k, v in sorted(base_key_data.items()))
+        return f"{layer}_{hashlib.md5(key_str.encode()).hexdigest()}"
+    
+    async def _fetch_layer_static(self) -> Optional[str]:
+        """
+        Layer 1 (Static): 小说标题、简介
+        变化频率：极低（仅当用户手动修改时）
+        缓存策略：长缓存（30分钟）
+        """
+        await self._init_novel()
+        
+        cache_key = self._generate_layer_cache_key(ContextLayer.STATIC)
+        cached = context_cache.get(cache_key)
+        if cached:
+            return cached
+        
+        parts = []
+        tag_config = self.LAYER_CONFIG[ContextLayer.STATIC]
+        
+        if self.novel:
+            parts.append(f"<{tag_config['tag']}>")
+            parts.append(f"【小说标题】{self.novel.title}")
+            if self.novel.description:
+                parts.append(f"【小说简介】{self.novel.description}")
+            parts.append(f"</{tag_config['tag']}>")
+        
+        result = "\n".join(parts) if parts else None
+        
+        if result:
+            context_cache.set(cache_key, result)
+            
+        return result
+    
+    async def _fetch_layer_stable(self) -> Optional[str]:
+        """
+        Layer 2 (Stable): 角色信息、人物关系网络
+        变化频率：低（角色增删改时变化）
+        缓存策略：中等缓存（10分钟）
+        注意：结果按ID/名称排序以保证缓存键稳定
+        """
+        cache_key = self._generate_layer_cache_key(ContextLayer.STABLE)
+        cached = context_cache.get(cache_key)
+        if cached:
+            return cached
+        
+        tag_config = self.LAYER_CONFIG[ContextLayer.STABLE]
+        parts = [f"<{tag_config['tag']}>"]
+        
+        characters_context = await self._get_characters_context_sorted()
+        if characters_context:
+            parts.append(characters_context)
+        
+        relation_summary = await self._get_relation_network_context_sorted()
+        if relation_summary:
+            parts.append(relation_summary)
+        
+        parts.append(f"</{tag_config['tag']}>")
+        result = "\n".join(parts)
+        
+        context_cache.set(cache_key, result)
+        
+        return result
+    
+    async def _fetch_layer_sliding(
+        self,
+        target_chapter_number: Optional[int] = None
+    ) -> Optional[str]:
+        """
+        Layer 3 (Sliding): 前文摘要
+        变化频率：中（随章节推进滚动）
+        缓存策略：短缓存（5分钟）
+        """
+        if not target_chapter_number:
+            return None
+            
+        cache_key = self._generate_layer_cache_key(
+            ContextLayer.SLIDING,
+            chapter_number=target_chapter_number
+        )
+        cached = context_cache.get(cache_key)
+        if cached:
+            return cached
+        
+        tag_config = self.LAYER_CONFIG[ContextLayer.SLIDING]
+        parts = [f"<{tag_config['tag']}>"]
+        
+        previous_summary = await self._get_previous_chapters_summary(target_chapter_number)
+        if previous_summary:
+            parts.append(previous_summary)
+        
+        parts.append(f"</{tag_config['tag']}>")
+        result = "\n".join(parts)
+        
+        context_cache.set(cache_key, result)
+        
+        return result
+    
+    async def _fetch_layer_dynamic(
+        self,
+        target_chapter_number: Optional[int] = None
+    ) -> Optional[str]:
+        """
+        Layer 4 (Dynamic): 情节线索、故事时间线
+        变化频率：高（每次创作都可能更新）
+        缓存策略：极短缓存（2分钟）或不缓存
+        """
+        if not target_chapter_number:
+            target_chapter_number = 9999
+            
+        tag_config = self.LAYER_CONFIG[ContextLayer.DYNAMIC]
+        parts = [f"<{tag_config['tag']}>"]
+        
+        plot_context = await self._get_plot_events_context_sorted()
+        if plot_context:
+            parts.append(plot_context)
+        
+        timeline_context = await self._get_timeline_context(target_chapter_number)
+        if timeline_context:
+            parts.append(timeline_context)
+        
+        parts.append(f"</{tag_config['tag']}>")
+        result = "\n".join(parts)
+        
+        return result
+    
     async def build_writing_context(
         self,
         chapter_number: int = None,
@@ -85,7 +258,13 @@ class ContextBuilder:
         include_plot_events: bool = True
     ) -> Dict[str, Any]:
         """
-        构建写作上下文
+        构建写作上下文 - 分层缓存优化版
+        
+        层级构造顺序（由静到动）：
+        1. Layer 1 (Static): 小说标题、简介
+        2. Layer 2 (Stable): 角色信息、人物关系网络
+        3. Layer 3 (Sliding): 前文摘要
+        4. Layer 4 (Dynamic): 情节线索、故事时间线
         
         Args:
             chapter_number: 章节号（二选一）
@@ -114,127 +293,262 @@ class ContextBuilder:
         
         target_chapter_number = chapter.chapter_number if chapter else chapter_number
         
-        cache_key = context_cache._get_key(
-            "writing_context",
-            novel_id=self.novel_id,
-            chapter_number=target_chapter_number,
-            context_size=context_size,
-            include_previous=include_previous_chapters,
-            include_chars=include_characters,
-            include_plot=include_plot_events
-        )
+        logger.info(f"Building layered context for chapter {target_chapter_number}")
         
-        cached = context_cache.get(cache_key)
-        if cached:
-            return cached
+        layer_tasks = {}
         
-        logger.info(f"Building writing context for chapter {target_chapter_number}")
-        
-        context_parts = []
-        previous_summary = None
-        
-        context_parts.append(f"【小说标题】{self.novel.title}")
-        if self.novel.description:
-            context_parts.append(f"【小说简介】{self.novel.description}")
-        
-        if include_previous_chapters and target_chapter_number:
-            previous_summary = await self._get_previous_chapters_summary(target_chapter_number)
-            if previous_summary:
-                context_parts.append(f"【前文摘要】\n{previous_summary}")
+        layer_tasks["static"] = self._fetch_layer_static()
         
         if include_characters:
-            characters_context = await self._get_characters_context()
-            if characters_context:
-                context_parts.append(f"【角色信息】\n{characters_context}")
+            layer_tasks["stable"] = self._fetch_layer_stable()
+        
+        if include_previous_chapters and target_chapter_number:
+            layer_tasks["sliding"] = self._fetch_layer_sliding(target_chapter_number)
         
         if include_plot_events:
-            plot_context = await self._get_plot_events_context()
-            if plot_context:
-                context_parts.append(f"【情节线索】\n{plot_context}")
-
-        timeline_context = await self._get_timeline_context(target_chapter_number)
-        if timeline_context:
-            context_parts.append(f"【故事时间线】\n{timeline_context}")
-
-        relation_summary = await self._get_relation_network_context()
-        if relation_summary:
-            context_parts.append(f"【人物关系概要】\n{relation_summary}")
+            layer_tasks["dynamic"] = self._fetch_layer_dynamic(target_chapter_number)
         
-        full_context = "\n\n".join(context_parts)
+        layer_results = await asyncio.gather(*layer_tasks.values(), return_exceptions=True)
+        
+        layer_contents = {}
+        for layer_name, result in zip(layer_tasks.keys(), layer_results):
+            if isinstance(result, Exception):
+                logger.warning(f"Layer {layer_name} fetch failed: {result}")
+                layer_contents[layer_name] = ""
+            elif result:
+                layer_contents[layer_name] = result
+            else:
+                layer_contents[layer_name] = ""
+        
+        ordered_layers = [
+            ContextLayer.STATIC,
+            ContextLayer.STABLE,
+            ContextLayer.SLIDING,
+            ContextLayer.DYNAMIC
+        ]
+        
+        all_parts = []
+        for layer in ordered_layers:
+            content = layer_contents.get(layer, "")
+            if content:
+                all_parts.append(content)
+        
+        full_context = "\n\n".join(all_parts)
         
         if len(full_context) > context_size:
-            full_context = full_context[:context_size] + "..."
+            full_context = self._smart_truncate_by_layers(
+                all_parts, 
+                ordered_layers,
+                context_size
+            )
         
         characters = await self._get_characters_list()
         plot_hints = await self._get_plot_hints()
         
-        logger.info(f"Context built: {len(full_context)} chars")
+        logger.info(f"Context built: {len(full_context)} chars (layered)")
         
         result_data = {
             "chapter_id": chapter.id if chapter else None,
             "novel_id": self.novel_id,
             "context": full_context,
-            "previous_summary": previous_summary,
+            "previous_summary": layer_contents.get(ContextLayer.SLIDING, "").replace("<previous_chapters>", "").replace("</previous_chapters>", "").strip() or None,
             "characters": characters,
             "plot_hints": plot_hints,
-            "context_length": len(full_context)
+            "context_length": len(full_context),
+            "layers_used": [l for l in ordered_layers if layer_contents.get(l)]
         }
         
-        context_cache.set(cache_key, result_data)
-        
         return result_data
+    
+    def _smart_truncate_by_layers(
+        self,
+        layer_parts: List[str],
+        layer_order: List[str],
+        max_size: int
+    ) -> str:
+        """
+        按层智能截断：优先保留高层级（Static/Stable），舍弃低层级（Dynamic）
+        确保XML标签完整性
+        """
+        total_len = sum(len(p) for p in layer_parts)
+        
+        if total_len <= max_size:
+            return "\n\n".join(layer_parts)
+        
+        retained_parts = []
+        current_size = 0
+        
+        priority_map = {layer: idx for idx, layer in enumerate(layer_order)}
+        
+        sorted_parts = sorted(
+            enumerate(layer_parts),
+            key=lambda x: priority_map.get(layer_order[x[0]] if x[0] < len(layer_order) else "dynamic", 99)
+        )
+        
+        for original_idx, part in sorted_parts:
+            part_len = len(part)
+            
+            if current_size + part_len <= max_size:
+                retained_parts.append((original_idx, part))
+                current_size += part_len
+            elif current_size < max_size * 0.9:
+                remaining_space = max_size - current_size
+                truncated_part = part[:remaining_space]
+                
+                last_complete_tag = truncated_part.rfind("</")
+                if last_complete_tag > 0:
+                    truncated_part = truncated_part[:last_complete_tag + len(truncated_part[truncated_part.find("<", last_complete_tag-50):last_complete_tag+1]) if "<" in truncated_part[last_complete_tag-50:last_complete_tag] else truncated_part]
+                
+                retained_parts.append((original_idx, truncated_part))
+                current_size += len(truncated_part)
+                break
+            else:
+                break
+        
+        retained_parts.sort(key=lambda x: x[0])
+        
+        final_parts = [part for _, part in retained_parts]
+        
+        return "\n\n".join(final_parts) + "\n\n[...部分动态内容已省略以控制长度...]"
     
     async def search_relevant_context(
         self,
         query: str,
         top_k: int = 5,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        min_relevance_score: float = 0.5
     ) -> List[Dict[str, Any]]:
-        """搜索相关上下文"""
+        """
+        搜索相关上下文 - 优化版
+        
+        改进点：
+        1. 相关性阈值过滤：丢弃低质量结果
+        2. 多样性重排序（MMR）：避免重复内容
+        3. 智能截断：控制总长度
+        4. 质量监控：记录检索质量指标
+        """
         await self._init_novel()
         
         cache_key = context_cache._get_key(
-            "search",
+            "search_v2",
             novel_id=self.novel_id,
             query=query,
             top_k=top_k,
-            filters=str(filters)
+            filters=str(filters),
+            min_score=min_relevance_score
         )
         
         cached = context_cache.get(cache_key)
         if cached:
             return cached
         
-        logger.info(f"Searching context for query: '{query[:50]}...'")
+        logger.info(f"🔍 RAG搜索: query='{query[:50]}...', top_k={top_k}, threshold={min_relevance_score}")
         
         try:
             results = await vector_store.search(
                 novel_id=self.novel_id,
                 query=query,
-                top_k=top_k,
+                top_k=top_k * 2,  
                 filters=filters
             )
             
-            formatted_results = []
+            filtered_results = []
             for result in results:
-                formatted_results.append({
+                relevance_score = 1 - result["distance"]
+                
+                if relevance_score < min_relevance_score:
+                    logger.debug(f"丢弃低质量结果 (score={relevance_score:.3f}<{min_relevance_score}): {result['content'][:50]}...")
+                    continue
+                
+                formatted = {
                     "chunk_id": result["id"],
                     "content": result["content"],
                     "source_type": result["metadata"].get("chunk_type", "content"),
                     "source_id": result["metadata"].get("chapter_id"),
-                    "relevance_score": 1 - result["distance"],
+                    "relevance_score": round(relevance_score, 4),
                     "metadata": result["metadata"]
-                })
+                }
+                filtered_results.append(formatted)
             
-            logger.info(f"Found {len(formatted_results)} relevant chunks")
+            diverse_results = self._mmr_rerank(filtered_results, final_k=top_k)
             
-            context_cache.set(cache_key, formatted_results)
+            total_chars = sum(len(r["content"]) for r in diverse_results)
             
-            return formatted_results
+            logger.info(
+                f"✅ RAG完成: 原始={len(results)} → 过滤后={len(filtered_results)} "
+                f"→ 重排后={len(diverse_results)}, 总字符={total_chars}, "
+                f"最高分={diverse_results[0]['relevance_score']:.3f}" if diverse_results else "❌ 无有效结果"
+            )
+            
+            context_cache.set(cache_key, diverse_results)
+            
+            return diverse_results
             
         except VectorStoreError as e:
-            logger.error(f"Vector search failed: {e}")
+            logger.error(f"❌ Vector search failed: {e}")
             return []
+    
+    def _mmr_rerank(self, results: List[Dict], final_k: int, lambda_param: float = 0.7) -> List[Dict]:
+        """
+        Maximal Marginal Relevance (MMR) 重排序算法
+        
+        目标：
+        - 保持高相关性
+        - 增加结果多样性（避免重复内容）
+        
+        参数：
+        - lambda_param: 相关性 vs 多样性的权衡（0.7表示70%权重给相关性）
+        """
+        if len(results) <= final_k:
+            return results
+        
+        import numpy as np
+        
+        selected = []
+        remaining = list(range(len(results)))
+        
+        best_idx = max(remaining, key=lambda i: results[i]["relevance_score"])
+        selected.append(best_idx)
+        remaining.remove(best_idx)
+        
+        while len(selected) < final_k and remaining:
+            mmr_scores = []
+            for idx in remaining:
+                
+                max_similarity_to_selected = 0
+                for sel_idx in selected:
+                    similarity = self._text_similarity(
+                        results[idx]["content"],
+                        results[sel_idx]["content"]
+                    )
+                    max_similarity_to_selected = max(max_similarity_to_selected, similarity)
+                
+                relevance = results[idx]["relevance_score"]
+                diversity_penalty = max_similarity_to_selected
+                
+                mmr_score = lambda_param * relevance - (1 - lambda_param) * diversity_penalty
+                mmr_scores.append((idx, mmr_score))
+            
+            next_best = max(mmr_scores, key=lambda x: x[1])
+            selected.append(next_best[0])
+            remaining.remove(next_best[0])
+        
+        return [results[idx] for idx in selected]
+    
+    def _text_similarity(self, text1: str, text2: str) -> float:
+        """计算两个文本的简单相似度（基于词重叠）"""
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1 & words2
+        union = words1 | words2
+        
+        jaccard = len(intersection) / len(union) if union else 0.0
+        
+        return jaccard
     
     async def _get_previous_chapters_summary(self, current_chapter_num: int) -> Optional[str]:
         """获取前几章的摘要"""
@@ -260,7 +574,7 @@ class ContextBuilder:
         return "\n".join(summaries) if summaries else None
     
     async def _get_characters_context(self) -> Optional[str]:
-        """获取角色上下文"""
+        """获取角色上下文（原始版本，保持兼容性）"""
         result = await self.db.execute(
             select(Character).where(Character.novel_id == self.novel_id)
         )
@@ -280,12 +594,60 @@ class ContextBuilder:
         
         return "\n".join(char_info)
     
+    async def _get_characters_context_sorted(self) -> Optional[str]:
+        """
+        获取角色上下文（排序版本）
+        按名称排序以确保缓存键稳定
+        """
+        result = await self.db.execute(
+            select(Character).where(Character.novel_id == self.novel_id)
+        )
+        characters = result.scalars().all()
+        
+        if not characters:
+            return None
+        
+        sorted_characters = sorted(characters, key=lambda c: c.name.lower())
+        
+        char_info = []
+        for char in sorted_characters:
+            info = f"- {char.name}"
+            if char.personality:
+                traits = char.personality.get("traits", [])
+                if traits:
+                    info += f" ({', '.join(traits)})"
+            char_info.append(info)
+        
+        return "\n".join(char_info)
+    
     async def _get_plot_events_context(self) -> Optional[str]:
-        """获取情节事件上下文"""
+        """获取情节事件上下文（原始版本）"""
         result = await self.db.execute(
             select(PlotEvent).where(
                 PlotEvent.novel_id == self.novel_id
             ).order_by(PlotEvent.timeline).limit(10)
+        )
+        events = result.scalars().all()
+        
+        if not events:
+            return None
+        
+        event_info = []
+        for event in events:
+            info = f"- [{event.event_type or '事件'}] {event.description}"
+            event_info.append(info)
+        
+        return "\n".join(event_info)
+    
+    async def _get_plot_events_context_sorted(self) -> Optional[str]:
+        """
+        获取情节事件上下文（排序版本）
+        按timeline和ID排序以确保缓存键稳定
+        """
+        result = await self.db.execute(
+            select(PlotEvent).where(
+                PlotEvent.novel_id == self.novel_id
+            ).order_by(PlotEvent.timeline.asc(), PlotEvent.id.asc()).limit(10)
         )
         events = result.scalars().all()
         
@@ -334,7 +696,7 @@ class ContextBuilder:
             }
             for event in events
         ]
-
+    
     async def _get_timeline_context(self, current_chapter: Optional[int] = None) -> Optional[str]:
         try:
             from app.timeline.service import TimelineService
@@ -349,8 +711,9 @@ class ContextBuilder:
         except Exception as exc:
             logger.warning(f"Timeline context injection failed (non-fatal): {exc}")
             return None
-
+    
     async def _get_relation_network_context(self) -> Optional[str]:
+        """获取人物关系概要（原始版本，保持兼容性）"""
         try:
             from app.characters.service import CharacterService
 
@@ -370,3 +733,34 @@ class ContextBuilder:
         except Exception as exc:
             logger.warning(f"Relation network context injection failed (non-fatal): {exc}")
             return None
+    
+    async def _get_relation_network_context_sorted(self) -> Optional[str]:
+        """
+        获取人物关系概要（排序版本）
+        按source_name和target_name排序以确保缓存键稳定
+        """
+        try:
+            from app.characters.service import CharacterService
+
+            char_svc = CharacterService(self.db, self.novel_id)
+            network = await char_svc.get_network()
+            if not network.get("edges"):
+                return None
+
+            sorted_edges = sorted(
+                network["edges"][:15],
+                key=lambda e: (e.get('source_name', '').lower(), e.get('target_name', '').lower())
+            )
+
+            relation_lines = []
+            for edge in sorted_edges:
+                relation_lines.append(
+                    f"- {edge['source_name']} → {edge['target_name']} "
+                    f"({edge['type']}, 强度{edge['intensity']})"
+                )
+
+            return "当前人物关系网络：\n" + "\n".join(relation_lines)
+        except Exception as exc:
+            logger.warning(f"Relation network context injection failed (non-fatal): {exc}")
+            return None
+

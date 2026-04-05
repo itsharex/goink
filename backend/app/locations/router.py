@@ -6,27 +6,28 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.database import get_db, get_current_user
+from app.core.database import get_db
+from app.core.auth import CurrentUser
 from app.core.response import ApiResponse
 from app.core.exceptions import NotFoundException, BadRequestException
-from app.core.auth import CurrentUser
 from .models import Location
 from .schemas import (
     LocationCreate, LocationUpdate, LocationResponse, LocationNetworkResponse,
 )
+from .service import LocationService
 
 router = APIRouter(prefix="/locations", tags=["地点管理"])
 
 
 @router.get("")
 async def list_locations(
+    user: CurrentUser,
     novel_id: int = Query(...),
     location_type: Optional[str] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = Depends(),
 ):
     query = select(Location).where(Location.novel_id == novel_id)
     
@@ -69,9 +70,12 @@ async def list_locations(
 
 
 @router.post("", status_code=201)
-async def create_location(data: LocationCreate, db: AsyncSession = Depends(get_db), user: CurrentUser = Depends()):
+async def create_location(
+    user: CurrentUser,
+    data: LocationCreate,
+    db: AsyncSession = Depends(get_db),
+):
     svc = LocationService(db, data.novel_id if hasattr(data, 'novel_id') else 0)
-    # novel_id 需要从外部获取，这里简化处理
     from app.novels.models import Novel
     novel_result = await db.execute(select(Novel))
     novels = novel_result.scalars().first()
@@ -85,14 +89,22 @@ async def create_location(data: LocationCreate, db: AsyncSession = Depends(get_d
 
 
 @router.get("/network")
-async def get_location_network(novel_id: int = Query(...), db: AsyncSession = Depends(get_db), user: CurrentUser = Depends()):
+async def get_location_network(
+    user: CurrentUser,
+    novel_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
     svc = LocationService(db, novel_id)
     network = await svc.get_network()
     return ApiResponse.success(network)
 
 
 @router.get("/{location_id}")
-async def get_location_detail(location_id: int, db: AsyncSession = Depends(get_db), user: CurrentUser = Depends()):
+async def get_location_detail(
+    user: CurrentUser,
+    location_id: int,
+    db: AsyncSession = Depends(get_db),
+):
     location = await db.get(Location, location_id)
     if not location:
         raise NotFoundException("地点不存在")
@@ -113,7 +125,12 @@ async def get_location_detail(location_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.put("/{location_id}")
-async def update_location(location_id: int, data: LocationUpdate, db: AsyncSession = Depends(get_db), user: CurrentUser = Depends()):
+async def update_location(
+    user: CurrentUser,
+    location_id: int,
+    data: LocationUpdate,
+    db: AsyncSession = Depends(get_db),
+):
     svc = LocationService(db, 0)
     location = await svc.update(location_id, data)
     if not location:
@@ -122,7 +139,11 @@ async def update_location(location_id: int, data: LocationUpdate, db: AsyncSessi
 
 
 @router.delete("/{location_id}")
-async def delete_location(location_id: int, db: AsyncSession = Depends(get_db), user: CurrentUser = Depends()):
+async def delete_location(
+    user: CurrentUser,
+    location_id: int,
+    db: AsyncSession = Depends(get_db),
+):
     svc = LocationService(db, 0)
     success = await svc.delete(location_id)
     if not success:

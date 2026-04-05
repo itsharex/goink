@@ -13,6 +13,7 @@ from app.chapters.models import Chapter
 from app.editor.service import get_edit_session_manager
 from app.editor.models import EditSession, EditSessionStatus, EditChange
 from app.core.context_builder import ContextBuilder
+from app.core.permissions import verify_novel_ownership
 
 
 def _validate_chapter_access(db: AsyncSession, chapter_id: int, novel_id: int) -> tuple[bool, Optional[Chapter], str]:
@@ -57,10 +58,10 @@ class StartEditSessionTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        novel_id: int,
+        user_id: int,
         chapter_id: Optional[int] = None,
         session_id: str = "",
-        novel_id: int = 0,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -69,6 +70,10 @@ class StartEditSessionTool(BaseMCPTool):
                     success=False,
                     error="无法确定要编辑的章节，请先选择一个章节或提供chapter_id"
                 )
+            
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
             
             result = await db.execute(
                 select(Chapter).where(Chapter.id == chapter_id)
@@ -80,14 +85,6 @@ class StartEditSessionTool(BaseMCPTool):
             
             if chapter.novel_id != novel_id:
                 return MCPToolResult(success=False, error="无权编辑此章节：章节不属于当前小说")
-            
-            if user_id:
-                novel_result = await db.execute(select(Novel).where(Novel.id == novel_id))
-                novel = novel_result.scalar_one_or_none()
-                if not novel:
-                    return MCPToolResult(success=False, error=f"小说不存在: {novel_id}")
-                if novel.author_id != user_id:
-                    return MCPToolResult(success=False, error="无权编辑此章节")
             
             manager = get_edit_session_manager(db)
             existing = await manager.get_edit_session(chapter_id)
@@ -185,6 +182,7 @@ class ApplyEditTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        user_id: int,
         edit_session_id: str,
         change_type: str,
         new_content: str,
@@ -192,7 +190,6 @@ class ApplyEditTool(BaseMCPTool):
         end_line: Optional[int] = None,
         search_text: Optional[str] = None,
         reason: Optional[str] = None,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -209,13 +206,9 @@ class ApplyEditTool(BaseMCPTool):
             if not chapter:
                 return MCPToolResult(success=False, error="章节不存在")
             
-            if user_id:
-                novel_result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-                novel = novel_result.scalar_one_or_none()
-                if not novel:
-                    return MCPToolResult(success=False, error="小说不存在")
-                if novel.author_id != user_id:
-                    return MCPToolResult(success=False, error="无权编辑此章节")
+            novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
 
             effective_start_line = start_line
             effective_end_line = end_line
@@ -321,6 +314,7 @@ class EditChapterContentTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        user_id: int,
         session_id: str,
         chapter_id: int,
         change_type: str,
@@ -328,7 +322,6 @@ class EditChapterContentTool(BaseMCPTool):
         start_line: Optional[int] = None,
         end_line: Optional[int] = None,
         reason: Optional[str] = None,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -339,13 +332,9 @@ class EditChapterContentTool(BaseMCPTool):
             if not chapter:
                 return MCPToolResult(success=False, error="章节不存在")
             
-            if user_id:
-                novel_result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-                novel = novel_result.scalar_one_or_none()
-                if not novel:
-                    return MCPToolResult(success=False, error="小说不存在")
-                if novel.author_id != user_id:
-                    return MCPToolResult(success=False, error="无权编辑此章节")
+            novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
             
             manager = get_edit_session_manager(db)
             edit_session = await manager.get_edit_session(chapter_id)
@@ -412,9 +401,9 @@ class GetEditStatusTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        user_id: int,
         chapter_id: int,
         include_line_numbers: bool = True,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -422,19 +411,15 @@ class GetEditStatusTool(BaseMCPTool):
             edit_session = await manager.get_edit_session(chapter_id)
             
             if edit_session:
-                if user_id:
-                    result = await db.execute(
-                        select(Chapter).where(Chapter.id == chapter_id)
-                    )
-                    chapter = result.scalar_one_or_none()
-                    if not chapter:
-                        return MCPToolResult(success=False, error="章节不存在")
-                    novel_result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-                    novel = novel_result.scalar_one_or_none()
-                    if not novel:
-                        return MCPToolResult(success=False, error="小说不存在")
-                    if novel.author_id != user_id:
-                        return MCPToolResult(success=False, error="无权访问此章节")
+                result = await db.execute(
+                    select(Chapter).where(Chapter.id == chapter_id)
+                )
+                chapter = result.scalar_one_or_none()
+                if not chapter:
+                    return MCPToolResult(success=False, error="章节不存在")
+                novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
+                if not novel:
+                    return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
                 diff_data = await manager.get_diff(edit_session.edit_session_id)
                 changes_result = await db.execute(
                     select(EditChange)
@@ -463,13 +448,10 @@ class GetEditStatusTool(BaseMCPTool):
                 select(Chapter).where(Chapter.id == chapter_id)
             )
             chapter = result.scalar_one_or_none()
-            if user_id and chapter:
-                novel_result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-                novel = novel_result.scalar_one_or_none()
+            if chapter:
+                novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
                 if not novel:
-                    return MCPToolResult(success=False, error="小说不存在")
-                if novel.author_id != user_id:
-                    return MCPToolResult(success=False, error="无权访问此章节")
+                    return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
             
             return MCPToolResult(
                 success=True,
@@ -528,6 +510,7 @@ class RunAgentTaskTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        user_id: int,
         task_type: str,
         novel_id: int,
         chapter_id: Optional[int] = None,
@@ -535,7 +518,6 @@ class RunAgentTaskTool(BaseMCPTool):
         agent_role: Optional[str] = None,
         agent_id: Optional[str] = None,
         model: Optional[str] = None,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -549,12 +531,9 @@ class RunAgentTaskTool(BaseMCPTool):
                 "foreshadowing": "manage_foreshadowing"
             }
             normalized_type = task_type_map.get(task_type, task_type)
-            novel_result = await db.execute(select(Novel).where(Novel.id == novel_id))
-            novel = novel_result.scalar_one_or_none()
+            novel = await verify_novel_ownership(db, novel_id, user_id)
             if not novel:
-                return MCPToolResult(success=False, error="小说不存在")
-            if user_id and novel.author_id != user_id:
-                return MCPToolResult(success=False, error="无权访问此小说")
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
             
             from app.agents.base import AgentTask, TaskType
             from app.agents.factory import create_default_coordinator
@@ -654,20 +633,22 @@ class GetPendingChangesTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        user_id: int ,
         chapter_id: Optional[int] = None,
         session_id: Optional[str] = None,
         limit: int = 10,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
+            if not user_id:
+                return MCPToolResult(success=False, error="未提供用户身份信息")
+            
             query = select(EditSession).options(selectinload(EditSession.chapter))
-            if user_id:
-                query = (
-                    query.join(Chapter, EditSession.chapter_id == Chapter.id)
-                    .join(Novel, Chapter.novel_id == Novel.id)
-                    .where(Novel.author_id == user_id)
-                )
+            query = (
+                query.join(Chapter, EditSession.chapter_id == Chapter.id)
+                .join(Novel, Chapter.novel_id == Novel.id)
+                .where(Novel.author_id == user_id)
+            )
             
             query = query.where(EditSession.status == EditSessionStatus.PENDING)
             
@@ -725,8 +706,8 @@ class ReadChapterForEditTool(BaseMCPTool):
     async def execute(
         self,
         db: AsyncSession,
+        user_id: int,
         chapter_id: int,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -738,13 +719,9 @@ class ReadChapterForEditTool(BaseMCPTool):
             if not chapter:
                 return MCPToolResult(success=False, error="章节不存在")
             
-            if user_id:
-                novel_result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-                novel = novel_result.scalar_one_or_none()
-                if not novel:
-                    return MCPToolResult(success=False, error="小说不存在")
-                if novel.author_id != user_id:
-                    return MCPToolResult(success=False, error="无权访问此章节")
+            novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
             
             content = chapter.content or ""
             lines = content.splitlines()

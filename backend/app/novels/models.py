@@ -30,6 +30,7 @@ class Novel(Base):
     plot_outline = relationship("PlotOutline", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     creative_profile = relationship("NovelCreativeProfile", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     timeline_entries = relationship("TimelineEntry", back_populates="novel", cascade="all, delete-orphan")
+    locations = relationship("Location", back_populates="novel")
     
     __table_args__ = (
         Index('idx_novel_title_genre', 'title', 'genre'),

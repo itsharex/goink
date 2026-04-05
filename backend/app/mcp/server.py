@@ -694,5 +694,38 @@ async def create_location(
     )
 
 
+@mcp.tool()
+async def update_location(
+    novel_id: int,
+    location_id: int,
+    name: Optional[str] = None,
+    location_type: Optional[str] = None,
+    description: Optional[str] = None,
+    tags: Optional[List] = None,
+    parent_location_id: Optional[int] = None,
+    ctx: Context = None
+) -> dict:
+    import json as _json
+    _tags = json.dumps(tags) if tags else None
+    return await _execute_tool(
+        "update_location", ctx,
+        novel_id=novel_id, location_id=location_id,
+        name=name, location_type=location_type, description=description,
+        tags=_tags, parent_location_id=parent_location_id
+    )
+
+
+@mcp.tool()
+async def delete_location(
+    novel_id: int,
+    location_id: int,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "delete_location", ctx,
+        novel_id=novel_id, location_id=location_id
+    )
+
+
 def get_mcp_transport():
     return mcp.streamable_http_app()

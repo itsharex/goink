@@ -3,7 +3,7 @@
 ## 环境要求
 
 ### Python虚拟环境
-**必须**先激活虚拟环境再运行任何Python命令：
+**必须**先激活虚拟环境再运行任何Python命令(位于项目根目录而非backend/)：
 ```bash
 
 source venv/bin/activate  # Linux/Mac

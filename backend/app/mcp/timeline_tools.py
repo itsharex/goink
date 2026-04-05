@@ -1,6 +1,11 @@
 """
-故事时间线MCP工具集
+故事时间线MCP工具集（Layer4 TimelineEntry）
 供AI调用的5个核心工具：查询/添加/更新/解决/获取上下文
+
+注意与 Layer2 PlotLine/PlotNode 的区分：
+- 本模块管理的是 TimelineEntry（伏笔追踪/情节里程碑/章节计划/用户指令）
+- PlotLine/PlotNode 是独立的情节规划系统（main/sub/character/background线），不在本模块中
+- 两者数据独立、表不同，不要混淆
 """
 from typing import Any, Dict, List, Optional
 from enum import Enum
@@ -13,6 +18,7 @@ from app.timeline.schemas import (
     TimelineEntryResolve,
 )
 from app.timeline.service import TimelineService
+from app.core.permissions import verify_novel_ownership
 
 
 class GetStoryTimelineTool(BaseMCPTool):
@@ -54,6 +60,7 @@ class GetStoryTimelineTool(BaseMCPTool):
         self,
         db,
         novel_id: int,
+        user_id: int,
         category: Optional[str] = None,
         status: Optional[str] = None,
         time_horizon: Optional[str] = None,
@@ -63,6 +70,10 @@ class GetStoryTimelineTool(BaseMCPTool):
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             service = TimelineService(db, novel_id)
             items, total = await service.get_timeline(
                 page=page, page_size=page_size, category=category,
@@ -125,6 +136,7 @@ class AddTimelineEntryTool(BaseMCPTool):
         self,
         db,
         novel_id: int,
+        user_id: int,
         category: str,
         title: str,
         description: Optional[str] = None,
@@ -137,6 +149,10 @@ class AddTimelineEntryTool(BaseMCPTool):
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             data = TimelineEntryCreate(
                 category=category,
                 title=title,
@@ -199,6 +215,7 @@ class UpdateTimelineEntryTool(BaseMCPTool):
         self,
         db,
         novel_id: int,
+        user_id: int,
         entry_id: int,
         title: Optional[str] = None,
         description: Optional[str] = None,
@@ -211,6 +228,10 @@ class UpdateTimelineEntryTool(BaseMCPTool):
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             update_data = {}
             if title is not None:
                 update_data["title"] = title
@@ -268,12 +289,17 @@ class ResolveTimelineEntryTool(BaseMCPTool):
         self,
         db,
         novel_id: int,
+        user_id: int,
         entry_id: int,
         resolved_chapter_id: Optional[int] = None,
         resolution_notes: Optional[str] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             data = TimelineEntryResolve(
                 resolved_chapter_id=resolved_chapter_id,
                 resolution_notes=resolution_notes,
@@ -320,11 +346,16 @@ class GetTimelineContextTool(BaseMCPTool):
         self,
         db,
         novel_id: int,
+        user_id: int,
         current_chapter: int,
         max_entries: int = 15,
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             service = TimelineService(db, novel_id)
             entries, summary_text = await service.get_context_for_generation(current_chapter, max_entries)
             return MCPToolResult(

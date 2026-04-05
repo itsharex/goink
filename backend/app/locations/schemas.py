@@ -4,7 +4,7 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from enum import Enum
-
+from datetime import datetime
 
 class LocationType(str, Enum):
     CITY = "city"

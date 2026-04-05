@@ -12,6 +12,7 @@ from app.characters.schemas import (
     RelationStatus,
 )
 from app.characters.service import CharacterService
+from app.core.permissions import verify_novel_ownership
 
 
 class GetCharacterNetworkTool(BaseMCPTool):
@@ -35,11 +36,15 @@ class GetCharacterNetworkTool(BaseMCPTool):
     async def execute(
         self,
         db,
-        novel_id: int = 0,
-        user_id=None,
+        novel_id: int,
+        user_id: int,
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             service = CharacterService(db, novel_id)
             network_data = await service.get_network()
             return MCPToolResult(
@@ -60,6 +65,7 @@ class GetCharacterRelationshipsTool(BaseMCPTool):
         "\n返回该角色作为'发起方'或'接受方'的所有关系，包含对方角色名、关系类型、强度、状态、演变来源等。"
         "\n适用场景：写某个角色的戏份前了解他/她与他人的关系定位、检查关系一致性时调用。"
         "\n如果需要整本书的关系全景图，用 get_character_network 更直观。"
+    )
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
@@ -73,13 +79,17 @@ class GetCharacterRelationshipsTool(BaseMCPTool):
     async def execute(
         self,
         db,
-        novel_id: int = 0,
-        user_id=None,
-        character_id: int = 0,
+        novel_id: int,
+        user_id: int,
+        character_id: int,
         include_inactive: bool = False,
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             service = CharacterService(db, novel_id)
             relationships = await service.get_character_relationships(
                 character_id=character_id,
@@ -139,8 +149,8 @@ class UpdateCharacterRelationTool(BaseMCPTool):
     async def execute(
         self,
         db,
-        novel_id: int = 0,
-        user_id=None,
+        novel_id: int,
+        user_id: int,
         source_character_id: Optional[int] = None,
         target_character_id: Optional[int] = None,
         relation_id: Optional[int] = None,
@@ -154,6 +164,10 @@ class UpdateCharacterRelationTool(BaseMCPTool):
         **kwargs
     ) -> MCPToolResult:
         try:
+            novel = await verify_novel_ownership(db, novel_id, user_id)
+            if not novel:
+                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
+            
             service = CharacterService(db, novel_id)
 
             if relation_id and evolve:

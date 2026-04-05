@@ -192,7 +192,6 @@ _TOOL_SYNC_NAMES = {
     "apply_edit": "应用修改内容",
     "get_creative_profile": "查看创作规则",
     "update_creative_profile": "设置创作规则",
-    "search_memory": "搜索情节内容",
     "search_plot_memory": "搜索情节内容",
     "get_recent_context": "获取写作上下文",
     "get_character_memory": "回顾角色经历",
@@ -205,6 +204,8 @@ _TOOL_SYNC_NAMES = {
     "get_location_list": "查看地点列表",
     "get_location_detail": "查看地点详情",
     "create_location": "创建新地点",
+    "update_location": "更新地点设定",
+    "delete_location": "删除地点",
     "run_review": "执行审查",
     "get_novel_summary": "查看小说概况",
     "get_novel_progress": "查看写作进度",
@@ -236,7 +237,6 @@ _TOOL_SYNC_KINDS = {
     "apply_edit": "edit",
     "get_creative_profile": "memory",
     "update_creative_profile": "memory",
-    "search_memory": "browse",
     "search_plot_memory": "browse",
     "get_recent_context": "memory",
     "get_character_memory": "memory",
@@ -249,6 +249,8 @@ _TOOL_SYNC_KINDS = {
     "get_location_list": "view",
     "get_location_detail": "view",
     "create_location": "create",
+    "update_location": "edit",
+    "delete_location": "delete",
     "run_review": "review",
     "get_novel_summary": "view",
     "get_novel_progress": "view",
@@ -270,12 +272,17 @@ async def _build_tool_call_presentation(
     novel_id: int,
     tool_name: str,
     arguments: Optional[Dict[str, Any]] = None,
-    result_payload: Optional[Dict[str, Any]] = None,
+    result_payload: Optional[Any] = None,
     status: str = "executing"
 ) -> Dict[str, Any]:
     arguments = arguments or {}
-    result_payload = result_payload or {}
+    
+    if not isinstance(result_payload, dict):
+        result_payload = {}
+    
     data_payload = result_payload.get("data") or {}
+    if not isinstance(data_payload, dict):
+        data_payload = {}
 
     chapter_id = arguments.get("chapter_id") or data_payload.get("chapter_id")
     if not chapter_id and tool_name in {"create_new_chapter", "generate_chapter_draft"}:
@@ -319,7 +326,6 @@ async def _build_tool_call_presentation(
         "apply_edit": (f"修改 {chapter_label}" if chapter_label else "应用修改内容", "edit"),
         "get_creative_profile": ("查看创作规则", "memory"),
         "update_creative_profile": ("设置创作规则", "memory"),
-        "search_memory": ("搜索情节内容", "browse"),
         "search_plot_memory": ("搜索情节内容", "browse"),
         "get_recent_context": ("获取写作上下文", "memory"),
         "get_character_memory": ("回顾角色经历", "memory"),
@@ -333,6 +339,8 @@ async def _build_tool_call_presentation(
         "get_location_list": ("查看地点列表", "view"),
         "get_location_detail": ("查看地点详情", "view"),
         "create_location": ("创建新地点", "create"),
+        "update_location": ("更新地点设定", "edit"),
+        "delete_location": ("删除地点", "delete"),
         "get_novel_summary": ("查看小说概况", "view"),
         "get_novel_progress": ("查看写作进度", "view"),
         "get_character_list": ("查看角色列表", "view"),
@@ -1150,7 +1158,7 @@ async def _run_chat_with_tools(
     websocket: WebSocket,
     task_flags: Dict[str, bool]
 ):
-    """执行支持工具调用的对话"""
+    """执行支持工具调用的对话 - 优化版：支持前缀缓存"""
     try:
         logger.info(f"Starting chat task {task_id}, mode={session.edit_mode}")
         
@@ -1164,8 +1172,11 @@ async def _run_chat_with_tools(
         
         async with AsyncSessionLocal() as db:
             registry = get_mcp_registry()
-            extra_context = ""
+            
+            extra_context_for_user = ""
             creative_profile_text = ""
+            conditional_reminders = []
+            
             try:
                 if session_manager.compressor.should_compress(session) and session_manager.config.enable_auto_summary:
                     summary_prompt = session_manager.compressor._generate_summary_prompt(session.messages)
@@ -1174,6 +1185,7 @@ async def _run_chat_with_tools(
                         system_prompt="你是对话摘要助手，请提炼关键信息与设定。"
                     )
                     session_manager.compress_session(session, summary=summary)
+                
                 context_builder = ContextBuilder(db, novel_id)
                 retrieved = await context_builder.search_relevant_context(query=user_message, top_k=5)
                 if retrieved:
@@ -1181,7 +1193,8 @@ async def _run_chat_with_tools(
                         f"- {item.get('content','')[:200]}"
                         for item in retrieved
                     )
-                    extra_context = f"【相关记忆检索】\n{formatted}"
+                    extra_context_for_user = f"\n\n【相关记忆检索】\n{formatted}"
+                
                 profile_result = await db.execute(
                     select(NovelCreativeProfile).where(NovelCreativeProfile.novel_id == novel_id)
                 )
@@ -1190,38 +1203,49 @@ async def _run_chat_with_tools(
                     formatted_profile = _format_creative_profile_for_prompt(creative_profile)
                     if formatted_profile:
                         creative_profile_text = f"【当前已沉淀的作者长期创作配置】\n{formatted_profile}"
+                
+                if edit_mode == EditMode.AGENT and not _looks_like_authoring_intent(user_message):
+                    conditional_reminders.append(
+                        "用户这次更像是在闲聊、反馈、确认或提问，而不是明确要求你开始写正文或修改章节。"
+                        "请先正常对话回应，不要主动创建章节、生成正文或修改正文，除非用户随后明确提出创作或编辑请求。"
+                    )
+                
+                if edit_mode == EditMode.AGENT and _looks_like_long_term_rule(user_message):
+                    conditional_reminders.append(
+                        "用户这次很可能在表达长期创作规则或全局偏好。"
+                        "如果这些要求不是只针对当前这一章，而是希望后续持续生效，"
+                        "请优先先读取 get_creative_profile，再用 update_creative_profile 做增量沉淀。"
+                    )
             except Exception:
-                extra_context = ""
+                extra_context_for_user = ""
                 creative_profile_text = ""
+                conditional_reminders = []
+            
             all_tools = registry.get_openai_functions() if tools_enabled else None
+            tools = all_tools  # ✅ 修复：统一变量名
             
-            if all_tools and edit_mode != EditMode.AGENT:
-                allowed_tool_names = EditModeConfig.filter_tools(edit_mode, [t["function"]["name"] for t in all_tools])
-                tools = [t for t in all_tools if t["function"]["name"] in allowed_tool_names]
-                logger.info(f"Mode {edit_mode.value}: filtered {len(all_tools)} tools to {len(tools)}")
-            else:
-                tools = all_tools
+            base_system_prompt = EditModeConfig.get_system_prompt(edit_mode)
             
-            logger.debug(f"Tools enabled: {tools_enabled}, tools count: {len(tools) if tools else 0}")
+            prefix_messages = []
+            prefix_messages.append({"role": "system", "content": base_system_prompt})
             
-            system_prompt = EditModeConfig.get_system_prompt(edit_mode)
             if creative_profile_text:
-                system_prompt = f"{system_prompt}\n\n{creative_profile_text}"
-            if edit_mode == EditMode.AGENT and not _looks_like_authoring_intent(user_message):
-                system_prompt = (
-                    f"{system_prompt}\n\n"
-                    "【本轮额外提醒】\n"
-                    "用户这次更像是在闲聊、反馈、确认或提问，而不是明确要求你开始写正文或修改章节。"
-                    "请先正常对话回应，不要主动创建章节、生成正文或修改正文，除非用户随后明确提出创作或编辑请求。"
+                prefix_messages.append({"role": "system", "content": creative_profile_text})
+            
+            if conditional_reminders:
+                reminder_text = "\n\n".join(
+                    f"【本轮额外提醒】\n{reminder}" for reminder in conditional_reminders
                 )
-            if edit_mode == EditMode.AGENT and _looks_like_long_term_rule(user_message):
-                system_prompt = (
-                    f"{system_prompt}\n\n"
-                    "【本轮额外提醒】\n"
-                    "用户这次很可能在表达长期创作规则或全局偏好。"
-                    "如果这些要求不是只针对当前这一章，而是希望后续持续生效，"
-                    "请优先先读取 get_creative_profile，再用 update_creative_profile 做增量沉淀。"
-                )
+                prefix_messages.append({"role": "system", "content": reminder_text})
+            
+            history_messages = session_manager.get_messages_for_api(session, include_context=False)
+            
+            enhanced_user_content = user_message + (extra_context_for_user or "")
+            full_messages = (
+                prefix_messages +
+                history_messages +
+                [{"role": "user", "content": enhanced_user_content}]
+            )
             
             full_response = ""
             response_buffer = ""
@@ -1238,10 +1262,10 @@ async def _run_chat_with_tools(
                 if tools:
                     tools = [t for t in tools if t["function"]["name"] not in disabled_tools]
                 async for event in llm_service.chat_stream_with_tools(
-                    messages=session_manager.get_messages_for_api(session, extra_context=extra_context),
+                    messages=full_messages,
                     model=session.model,
                     tools=tools,
-                    system_prompt=system_prompt
+                    system_prompt=None
                 ):
                     if not task_flags.get(task_id):
                         logger.info(f"Task {task_id} cancelled")
@@ -1539,6 +1563,14 @@ async def _run_chat_with_tools(
                                         tool_cache.pop(stale_key, None)
 
                                 if tool_name == "create_location":
+                                    stale_keys = [
+                                        key for key in list(tool_cache.keys())
+                                        if key.startswith(("get_location_list:", "get_location_detail:"))
+                                    ]
+                                    for stale_key in stale_keys:
+                                        tool_cache.pop(stale_key, None)
+
+                                if tool_name in ("update_location", "delete_location"):
                                     stale_keys = [
                                         key for key in list(tool_cache.keys())
                                         if key.startswith(("get_location_list:", "get_location_detail:"))

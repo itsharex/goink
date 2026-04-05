@@ -35,7 +35,7 @@ class Location(Base):
     created_at: datetime = Column(TIMESTAMP, server_default=func.now())
     updated_at: datetime = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
-    novel = relationship("Novel")
+    novel = relationship("Novel", back_populates="locations")
     parent = relationship("Location", remote_side=[id], backref="children")
     first_appearance_chapter = relationship("Chapter")
 

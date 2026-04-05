@@ -15,6 +15,7 @@ from app.novels.models import Novel
 from app.chapters.models import Chapter
 from app.characters.models import Character
 from app.plot_events.models import PlotEvent
+from app.core.permissions import verify_novel_ownership
 
 
 class SearchPlotMemoryTool(BaseMCPTool):
@@ -41,18 +42,15 @@ class SearchPlotMemoryTool(BaseMCPTool):
         self,
         db: AsyncSession,
         novel_id: int,
+        user_id: int,
         query: str,
         top_k: int = 10,
         chapter_ids: Optional[List[int]] = None,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
-        result = await db.execute(select(Novel).where(Novel.id == novel_id))
-        novel = result.scalar_one_or_none()
+        novel = await verify_novel_ownership(db, novel_id, user_id)
         if not novel:
-            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
-        if user_id and novel.author_id != user_id:
-            return MCPToolResult(success=False, error="无权访问此小说")
+            return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
         
         try:
             filters = None
@@ -112,17 +110,14 @@ class GetCharacterMemoryTool(BaseMCPTool):
         self,
         db: AsyncSession,
         novel_id: int,
+        user_id: int,
         character_id: int,
         include_plot_events: bool = True,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
-        result = await db.execute(select(Novel).where(Novel.id == novel_id))
-        novel = result.scalar_one_or_none()
+        novel = await verify_novel_ownership(db, novel_id, user_id)
         if not novel:
-            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
-        if user_id and novel.author_id != user_id:
-            return MCPToolResult(success=False, error="无权访问此小说")
+            return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
         
         result = await db.execute(
             select(Character).where(Character.id == character_id, Character.novel_id == novel_id)
@@ -203,18 +198,15 @@ class GetTimelineTool(BaseMCPTool):
         self,
         db: AsyncSession,
         novel_id: int,
+        user_id: int,
         start_chapter: Optional[int] = None,
         end_chapter: Optional[int] = None,
         event_types: Optional[List[str]] = None,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
-        result = await db.execute(select(Novel).where(Novel.id == novel_id))
-        novel = result.scalar_one_or_none()
+        novel = await verify_novel_ownership(db, novel_id, user_id)
         if not novel:
-            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
-        if user_id and novel.author_id != user_id:
-            return MCPToolResult(success=False, error="无权访问此小说")
+            return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
         
         query = select(PlotEvent).where(PlotEvent.novel_id == novel_id)
         
@@ -293,18 +285,15 @@ class GetRecentContextTool(BaseMCPTool):
         self,
         db: AsyncSession,
         novel_id: int,
+        user_id: int,
         chapter_id: int,
         window_size: int = 3,
         context_size: int = 3000,
-        user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
-        result = await db.execute(select(Novel).where(Novel.id == novel_id))
-        novel = result.scalar_one_or_none()
+        novel = await verify_novel_ownership(db, novel_id, user_id)
         if not novel:
-            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
-        if user_id and novel.author_id != user_id:
-            return MCPToolResult(success=False, error="无权访问此小说")
+            return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
         
         result = await db.execute(
             select(Chapter).where(Chapter.id == chapter_id, Chapter.novel_id == novel_id)

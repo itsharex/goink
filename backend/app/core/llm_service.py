@@ -1,13 +1,17 @@
 """
 LLM 服务 - 支持 DeepSeek 和 GLM 多模型
 支持多模型选择、流式输出、多轮对话、会话管理、工具调用
+内置Prompt Cache监控
 """
 import os
 import logging
+import hashlib
 import httpx
 import json
 from typing import Dict, Any, List, Optional, AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from collections import defaultdict
 
 from app.core.prompt_templates import LLMModel
 from app.core.session_manager import (
@@ -17,6 +21,94 @@ from app.core.session_manager import (
 from app.core.session_storage import session_storage
 
 logger = logging.getLogger(__name__)
+
+
+class PromptCacheMonitor:
+    """Prompt Cache命中率监控器"""
+    
+    def __init__(self):
+        self._stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+            "total_calls": 0,
+            "cache_hit_calls": 0,
+            "total_input_tokens": 0,
+            "cache_hit_tokens": 0,
+            "prefix_hashes": set(),
+            "last_seen": None
+        })
+    
+    def compute_prefix_hash(self, messages: List[Dict], tools: Optional[List] = None) -> str:
+        """计算消息前缀的hash（用于识别是否命中缓存）"""
+        prefix_data = {
+            "messages": json.dumps(messages[:3], ensure_ascii=False, sort_keys=True) if messages else "",
+            "tools_count": len(tools) if tools else 0,
+            "model": ""
+        }
+        return hashlib.md5(json.dumps(prefix_data, sort_keys=True).encode()).hexdigest()[:12]
+    
+    def record_call(
+        self,
+        model: str,
+        prefix_hash: str,
+        usage: Optional[Dict[str, Any]] = None
+    ):
+        """记录一次API调用及其缓存情况"""
+        stats = self._stats[model]
+        stats["total_calls"] += 1
+        stats["prefix_hashes"].add(prefix_hash)
+        stats["last_seen"] = datetime.now().isoformat()
+        
+        if usage:
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            cache_tokens = usage.get("prompt_cache_hit_tokens", 0) or usage.get("cached_tokens", 0)
+            
+            stats["total_input_tokens"] += prompt_tokens
+            
+            if cache_tokens > 0:
+                stats["cache_hit_calls"] += 1
+                stats["cache_hit_tokens"] += cache_tokens
+                
+                hit_rate = (cache_tokens / prompt_tokens * 100) if prompt_tokens > 0 else 0
+                logger.info(
+                    f"🎯 CACHE HIT | model={model} | "
+                    f"prefix={prefix_hash} | "
+                    f"hit_tokens={cache_tokens}/{prompt_tokens} ({hit_rate:.1f}%)"
+                )
+            else:
+                logger.debug(
+                    f"❌ CACHE MISS | model={model} | "
+                    f"prefix={prefix_hash} | "
+                    f"tokens={prompt_tokens}"
+                )
+    
+    def get_stats(self, model: str) -> Dict[str, Any]:
+        """获取指定模型的缓存统计"""
+        stats = self._stats.get(model, {})
+        total_calls = stats.get("total_calls", 0)
+        hit_calls = stats.get("cache_hit_calls", 0)
+        total_tokens = stats.get("total_input_tokens", 0)
+        hit_tokens = stats.get("cache_hit_tokens", 0)
+        
+        return {
+            "model": model,
+            "total_calls": total_calls,
+            "cache_hit_calls": hit_calls,
+            "cache_hit_rate": (hit_calls / total_calls * 100) if total_calls > 0 else 0,
+            "total_input_tokens": total_tokens,
+            "cache_hit_tokens": hit_tokens,
+            "token_cache_hit_rate": (hit_tokens / total_tokens * 100) if total_tokens > 0 else 0,
+            "unique_prefixes": len(stats.get("prefix_hashes", set())),
+            "last_call": stats.get("last_seen")
+        }
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """获取所有模型的汇总统计"""
+        summary = {}
+        for model in self._stats.keys():
+            summary[model] = self.get_stats(model)
+        return summary
+
+
+cache_monitor = PromptCacheMonitor()
 
 
 class LLMServiceError(Exception):
@@ -261,8 +353,10 @@ class LLMService:
         
         _apply_reasoning_params(payload, selected_model)
         
+        prefix_hash = cache_monitor.compute_prefix_hash(messages, tools)
+        
         try:
-            logger.debug(f"Calling LLM API: model={selected_model}, messages={len(messages)}")
+            logger.debug(f"Calling LLM API: model={selected_model}, messages={len(messages)}, prefix={prefix_hash}")
             
             response = await self.client.post(url, json=payload, headers=headers)
             if response.is_error:
@@ -286,12 +380,15 @@ class LLMService:
                 content = message.get("content", "")
                 tool_calls = message.get("tool_calls", [])
                 
+                usage = result.get("usage", {})
+                cache_monitor.record_call(selected_model, prefix_hash, usage)
+                
                 logger.info(f"LLM response: model={selected_model}, {len(content)} chars, {len(tool_calls)} tool calls")
                 return {
                     "success": True,
                     "content": content,
                     "tool_calls": tool_calls,
-                    "usage": result.get("usage", {}),
+                    "usage": usage,
                     "model": result.get("model", selected_model)
                 }
             else:
@@ -594,7 +691,9 @@ class LLMService:
         if system_prompt:
             api_messages = [{"role": "system", "content": system_prompt}] + messages
         
-        logger.info(f"Sending to API: model={selected_model}, messages={len(api_messages)}, tools={len(tools) if tools else 0}")
+        prefix_hash = cache_monitor.compute_prefix_hash(api_messages, tools)
+        
+        logger.info(f"Sending to API: model={selected_model}, messages={len(api_messages)}, tools={len(tools) if tools else 0}, prefix={prefix_hash}")
         logger.debug(f"Messages: {api_messages[:3]}")  # 只记录前 3 条
         
         payload = {
