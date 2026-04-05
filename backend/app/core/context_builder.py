@@ -151,6 +151,14 @@ class ContextBuilder:
             plot_context = await self._get_plot_events_context()
             if plot_context:
                 context_parts.append(f"【情节线索】\n{plot_context}")
+
+        timeline_context = await self._get_timeline_context(target_chapter_number)
+        if timeline_context:
+            context_parts.append(f"【故事时间线】\n{timeline_context}")
+
+        relation_summary = await self._get_relation_network_context()
+        if relation_summary:
+            context_parts.append(f"【人物关系概要】\n{relation_summary}")
         
         full_context = "\n\n".join(context_parts)
         
@@ -326,3 +334,39 @@ class ContextBuilder:
             }
             for event in events
         ]
+
+    async def _get_timeline_context(self, current_chapter: Optional[int] = None) -> Optional[str]:
+        try:
+            from app.timeline.service import TimelineService
+            service = TimelineService(self.db, self.novel_id)
+            target_chapter = current_chapter or 9999
+            entries, summary_text = await service.get_context_for_generation(
+                current_chapter=target_chapter, max_entries=12
+            )
+            if not entries:
+                return None
+            return summary_text
+        except Exception as exc:
+            logger.warning(f"Timeline context injection failed (non-fatal): {exc}")
+            return None
+
+    async def _get_relation_network_context(self) -> Optional[str]:
+        try:
+            from app.characters.service import CharacterService
+
+            char_svc = CharacterService(self.db, self.novel_id)
+            network = await char_svc.get_network()
+            if not network.get("edges"):
+                return None
+
+            relation_lines = []
+            for edge in network["edges"][:15]:
+                relation_lines.append(
+                    f"- {edge['source_name']} → {edge['target_name']} "
+                    f"({edge['type']}, 强度{edge['intensity']})"
+                )
+
+            return "当前人物关系网络：\n" + "\n".join(relation_lines)
+        except Exception as exc:
+            logger.warning(f"Relation network context injection failed (non-fatal): {exc}")
+            return None

@@ -121,13 +121,13 @@ class MCPToolRegistry:
             return str(e)
         return None
     
-    async def execute(self, name: str, **kwargs) -> MCPToolResult:
+    async def execute(self, tool_name: str, **kwargs) -> MCPToolResult:
         """执行工具"""
-        tool = self.get(name)
+        tool = self.get(tool_name)
         if not tool:
             return MCPToolResult(
                 success=False,
-                error=f"Tool not found: {name}"
+                error=f"Tool not found: {tool_name}"
             )
         validation_params = {k: v for k, v in kwargs.items() if k != "db"}
         validation_error = self._validate_params(tool, validation_params)

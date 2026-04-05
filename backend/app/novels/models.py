@@ -25,11 +25,11 @@ class Novel(Base):
     characters = relationship("Character", back_populates="novel")
     chapters = relationship("Chapter", back_populates="novel")
     plot_events = relationship("PlotEvent", back_populates="novel")
-    foreshadowings = relationship("Foreshadowing", back_populates="novel")
     plot_lines = relationship("PlotLine", back_populates="novel", cascade="all, delete-orphan")
     plot_nodes = relationship("PlotNode", back_populates="novel", cascade="all, delete-orphan")
     plot_outline = relationship("PlotOutline", back_populates="novel", uselist=False, cascade="all, delete-orphan")
     creative_profile = relationship("NovelCreativeProfile", back_populates="novel", uselist=False, cascade="all, delete-orphan")
+    timeline_entries = relationship("TimelineEntry", back_populates="novel", cascade="all, delete-orphan")
     
     __table_args__ = (
         Index('idx_novel_title_genre', 'title', 'genre'),
@@ -57,3 +57,21 @@ class NovelCreativeProfile(Base):
     updated_at: Optional[datetime] = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     novel = relationship("Novel", back_populates="creative_profile")
+
+
+class UserCreativeProfile(Base):
+    """作者全局创作偏好（跨书生效）"""
+    __tablename__ = "user_creative_profiles"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    user_id: int = Column(Integer, unique=True, nullable=False, index=True)
+
+    global_writing_style: Optional[str] = Column(Text)
+    preferred_sentence_length: Optional[str] = Column(String(50))
+    default_pov: Optional[str] = Column(String(50))
+    global_must_keep: Optional[List[str]] = Column(JSON)
+    global_must_avoid: Optional[List[str]] = Column(JSON)
+    extra_metadata: Optional[Dict[str, Any]] = Column(JSON)
+
+    created_at: datetime = Column(TIMESTAMP, server_default=func.now())
+    updated_at: datetime = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

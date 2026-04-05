@@ -826,6 +826,275 @@
   display: flex;
 }
 
+.chatTurn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chatTurnAssistant {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.chatMsgUser {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: linear-gradient(135deg, #f8d28c 0%, #efb75e 100%);
+  color: #4e3213;
+  border-bottom-right-radius: 6px;
+}
+
+.editorPageDark .chatMsgUser {
+  background: linear-gradient(135deg, #c98a2e 0%, #a06a1f 100%);
+  color: #fff8ef;
+}
+
+.assistantTextBlock {
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(251, 245, 237, 0.96) 100%);
+  color: #332f2a;
+  border-bottom-left-radius: 6px;
+  font-family: "Noto Serif SC", "Source Han Serif SC", serif;
+  box-shadow: 0 10px 24px rgba(116, 85, 43, 0.06);
+}
+
+.thinkingBlock {
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: rgba(120, 110, 95, 0.06);
+  border: 1px solid rgba(140, 130, 110, 0.15);
+  overflow: visible;
+  transition: all 0.2s ease;
+}
+
+.thinkingBlock[open] {
+  background: rgba(120, 110, 95, 0.09);
+}
+
+.thinkingBlock summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9a8b78;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.thinkingBlock summary:hover {
+  color: #7a6d5c;
+}
+
+.thinkingBlock[open] .thinkingToggle::before {
+  content: '收起';
+}
+
+.thinkingBlock[open] summary {
+  position: relative;
+}
+
+.thinkingBlock[open] summary::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 2px;
+  background: #c9850e;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.thinkingThinking .thinkingBlock[open] summary::before {
+  opacity: 1;
+  animation: thinkingBorderPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes thinkingBorderPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(201, 133, 14, 0.3); }
+  50% { opacity: 0.5; box-shadow: 0 0 10px rgba(201, 133, 14, 0.15); }
+}
+
+.thinkingToggle {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.thinkingActive {
+  opacity: 1;
+  color: #c9850e;
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(201, 133, 14, 0.35);
+  animation: thinkingPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes thinkingPulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.97); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.thinkingBlock[open] .thinkingToggle::before {
+  content: '收起';
+}
+
+.thinkingContent {
+  padding: 0 12px 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #6a6054;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  width: 100%;
+}
+
+.thinkingContent pre {
+  margin: 0;
+  font-family: "Noto Sans SC", -apple-system, sans-serif;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.editorPageDark .assistantTextBlock {
+  background: linear-gradient(180deg, rgba(36, 43, 57, 0.98) 0%, rgba(28, 35, 48, 0.98) 100%);
+  color: #f1ece5;
+}
+
+.assistantToolList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  padding-left: 2px;
+}
+
+.toolInlineCompact {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(184, 151, 113, 0.14);
+  font-size: 12px;
+  animation: toolCardAppear 200ms ease-out;
+  transition: background 0.15s;
+}
+
+.editorPageDark .toolInlineCompact {
+  background: rgba(31, 39, 53, 0.85);
+  border-color: rgba(111, 136, 175, 0.15);
+}
+
+.toolInlineActive {
+  background: linear-gradient(135deg, rgba(255, 244, 224, 0.92) 0%, rgba(255, 251, 243, 0.82) 100%);
+  border-color: rgba(219, 164, 77, 0.24);
+}
+
+.editorPageDark .toolInlineActive {
+  background: linear-gradient(135deg, rgba(62, 45, 22, 0.6) 0%, rgba(28, 35, 48, 0.9) 100%);
+  border-color: rgba(214, 157, 65, 0.2);
+}
+
+.toolCompactIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(222, 173, 90, 0.13);
+  color: #a85f14;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.editorPageDark .toolCompactIcon {
+  background: rgba(214, 157, 65, 0.12);
+  color: #ffd18d;
+}
+
+.toolCompactName {
+  font-weight: 600;
+  color: #3e3a34;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.editorPageDark .toolCompactName {
+  color: #f6efe6;
+}
+
+.toolCompactStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.toolCompactRunning {
+  color: #b26b17;
+  background: rgba(179, 107, 23, 0.08);
+}
+
+.toolCompactDone {
+  color: #26824d;
+  background: rgba(38, 130, 77, 0.08);
+}
+
+.toolCompactFailed {
+  color: #d34c43;
+  background: rgba(211, 76, 67, 0.08);
+}
+
+.toolCompactError {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c14c42;
+  padding: 3px 0 0;
+  border-top: 1px dashed rgba(193, 76, 66, 0.2);
+}
+
+.assistantThinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #999;
+}
+
 .toolInlineWrap {
   display: flex;
   justify-content: flex-start;

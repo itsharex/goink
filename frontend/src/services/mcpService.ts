@@ -159,17 +159,17 @@ export const mcpApi = {
   listUnresolvedPlots: async (
     novelId: number,
     minImportance?: number,
-    daysPending?: number
   ): Promise<ApiResponse<{ items: any[]; total: number }>> => {
-    return apiClient.get(`/mcp/novels/${novelId}/foreshadowing/unresolved`, {
+    return apiClient.get(`/timeline/novels/${novelId}`, {
       params: {
-        min_importance: minImportance,
-        days_pending: daysPending,
+        category: 'foreshadowing',
+        status: 'pending',
+        page_size: minImportance ? undefined : 100,
       },
     })
   },
 
   getForeshadowingStatus: async (novelId: number): Promise<ApiResponse<ForeshadowingStatusResult>> => {
-    return apiClient.get(`/mcp/novels/${novelId}/foreshadowing/status`)
+    return apiClient.get(`/timeline/novels/${novelId}/stats`)
   },
 }

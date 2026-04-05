@@ -41,15 +41,20 @@ async def _execute_tool(name: str, ctx: Optional[Context] = None, **params) -> d
     user_id = await _get_user_id_from_context(ctx)
     if not user_id:
         return {"success": False, "error": "Unauthorized"}
-    async with AsyncSessionLocal() as db:
-        registry = get_mcp_registry()
-        result = await registry.execute(
-            name,
-            db=db,
-            user_id=user_id,
-            **params
-        )
-        return result.model_dump()
+    try:
+        async with AsyncSessionLocal() as db:
+            registry = get_mcp_registry()
+            result = await registry.execute(
+                name,
+                db=db,
+                user_id=user_id,
+                **params
+            )
+            return result.model_dump()
+    except Exception as e:
+        import logging
+        logging.getLogger("mcp.server").error(f"Tool '{name}' execution failed: {e}", exc_info=True)
+        return {"success": False, "error": f"工具执行失败: {str(e)}"}
 
 
 @mcp.tool()
@@ -143,8 +148,61 @@ async def get_character_list(
 
 
 @mcp.tool()
-async def get_character_detail(character_id: int, ctx: Context) -> dict:
-    return await _execute_tool("get_character_detail", ctx, character_id=character_id)
+async def get_character_detail(novel_id: int, character_id: int, ctx: Context = None) -> dict:
+    return await _execute_tool("get_character_detail", ctx, novel_id=novel_id, character_id=character_id)
+
+
+@mcp.tool()
+async def get_writing_characters(
+    novel_id: int,
+    include_relations: bool = True,
+    include_recent_events: bool = True,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "get_writing_characters",
+        ctx,
+        novel_id=novel_id,
+        include_relations=include_relations,
+        include_recent_events=include_recent_events
+    )
+
+
+@mcp.tool()
+async def create_character(
+    novel_id: int,
+    name: str,
+    personality: Optional[str] = None,
+    abilities: Optional[str] = None,
+    ctx: Context = None
+) -> dict:
+    import json as _json
+    _personality = json.loads(personality) if personality else None
+    _abilities = json.loads(abilities) if abilities else None
+    return await _execute_tool(
+        "create_character", ctx,
+        novel_id=novel_id, name=name,
+        personality=_personality, abilities=_abilities
+    )
+
+
+@mcp.tool()
+async def update_character(
+    novel_id: int,
+    character_id: int,
+    name: Optional[str] = None,
+    personality: Optional[str] = None,
+    abilities: Optional[str] = None,
+    ctx: Context = None
+) -> dict:
+    import json as _json
+    _personality = json.loads(personality) if personality else None
+    _abilities = json.loads(abilities) if abilities else None
+    return await _execute_tool(
+        "update_character", ctx,
+        novel_id=novel_id, character_id=character_id,
+        name=name, personality=_personality, abilities=_abilities
+    )
 
 
 @mcp.tool()
@@ -278,70 +336,166 @@ async def get_recent_context(
 
 
 @mcp.tool()
-async def check_character_consistency(
+async def run_review(
     novel_id: int,
+    scope: str = "full",
     chapter_ids: Optional[List[int]] = None,
-    character_id: Optional[int] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "check_character_consistency",
-        ctx,
-        novel_id=novel_id,
-        chapter_ids=chapter_ids,
-        character_id=character_id
-    )
-
-
-@mcp.tool()
-async def check_plot_consistency(
-    novel_id: int,
-    chapter_ids: Optional[List[int]] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "check_plot_consistency",
-        ctx,
-        novel_id=novel_id,
-        chapter_ids=chapter_ids
-    )
-
-
-@mcp.tool()
-async def run_full_consistency_check(
-    novel_id: int,
-    chapter_ids: Optional[List[int]] = None,
-    check_types: Optional[List[str]] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "run_full_consistency_check",
-        ctx,
-        novel_id=novel_id,
-        chapter_ids=chapter_ids,
-        check_types=check_types
-    )
-
-
-@mcp.tool()
-async def list_unresolved_plots(
-    novel_id: int,
     min_importance: Optional[int] = None,
-    days_pending: Optional[int] = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
-        "list_unresolved_plots",
+        "run_review",
         ctx,
         novel_id=novel_id,
-        min_importance=min_importance,
-        days_pending=days_pending
+        scope=scope,
+        chapter_ids=chapter_ids,
+        min_importance=min_importance
     )
 
 
 @mcp.tool()
-async def get_foreshadowing_status(novel_id: int, ctx: Context) -> dict:
-    return await _execute_tool("get_foreshadowing_status", ctx, novel_id=novel_id)
+async def get_story_timeline(
+    novel_id: int,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    time_horizon: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "get_story_timeline", ctx,
+        novel_id=novel_id, category=category, status=status,
+        time_horizon=time_horizon, search=search, page=page, page_size=page_size
+    )
+
+
+@mcp.tool()
+async def add_timeline_entry(
+    novel_id: int,
+    category: str,
+    title: str,
+    description: Optional[str] = None,
+    detail_json: Optional[dict] = None,
+    target_chapter: Optional[int] = None,
+    time_horizon: Optional[str] = None,
+    importance: int = 3,
+    source_chapter_id: Optional[int] = None,
+    tags: Optional[List[str]] = None,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "add_timeline_entry", ctx,
+        novel_id=novel_id, category=category, title=title,
+        description=description, detail_json=detail_json,
+        target_chapter=target_chapter, time_horizon=time_horizon,
+        importance=importance, source_chapter_id=source_chapter_id, tags=tags
+    )
+
+
+@mcp.tool()
+async def update_timeline_entry(
+    novel_id: int,
+    entry_id: int,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    detail_json: Optional[dict] = None,
+    target_chapter: Optional[int] = None,
+    time_horizon: Optional[str] = None,
+    status: Optional[str] = None,
+    importance: Optional[int] = None,
+    tags: Optional[List[str]] = None,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "update_timeline_entry", ctx,
+        novel_id=novel_id, entry_id=entry_id, title=title,
+        description=description, detail_json=detail_json,
+        target_chapter=target_chapter, time_horizon=time_horizon,
+        status=status, importance=importance, tags=tags
+    )
+
+
+@mcp.tool()
+async def resolve_timeline_entry(
+    novel_id: int,
+    entry_id: int,
+    resolved_chapter_id: Optional[int] = None,
+    resolution_notes: Optional[str] = None,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "resolve_timeline_entry", ctx,
+        novel_id=novel_id, entry_id=entry_id,
+        resolved_chapter_id=resolved_chapter_id, resolution_notes=resolution_notes
+    )
+
+
+@mcp.tool()
+async def get_timeline_context(
+    novel_id: int,
+    current_chapter: int,
+    max_entries: int = 15,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "get_timeline_context", ctx,
+        novel_id=novel_id, current_chapter=current_chapter, max_entries=max_entries
+    )
+
+
+@mcp.tool()
+async def get_character_network(novel_id: int, ctx: Context = None) -> dict:
+    return await _execute_tool("get_character_network", ctx, novel_id=novel_id)
+
+
+@mcp.tool()
+async def get_character_relationships(
+    novel_id: int,
+    character_id: int,
+    include_inactive: bool = False,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "get_character_relationships",
+        ctx,
+        novel_id=novel_id,
+        character_id=character_id,
+        include_inactive=include_inactive
+    )
+
+
+@mcp.tool()
+async def update_character_relationship(
+    novel_id: int,
+    source_character_id: Optional[int] = None,
+    target_character_id: Optional[int] = None,
+    relation_id: Optional[int] = None,
+    relationship_type: Optional[str] = None,
+    description: Optional[str] = None,
+    intensity: int = 3,
+    status: str = "active",
+    evolve: bool = False,
+    evolution_notes: Optional[str] = None,
+    established_chapter_id: Optional[int] = None,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "update_character_relationship",
+        ctx,
+        novel_id=novel_id,
+        source_character_id=source_character_id,
+        target_character_id=target_character_id,
+        relation_id=relation_id,
+        relationship_type=relationship_type,
+        description=description,
+        intensity=intensity,
+        status=status,
+        evolve=evolve,
+        evolution_notes=evolution_notes,
+        established_chapter_id=established_chapter_id
+    )
 
 
 @mcp.tool()
@@ -493,6 +647,51 @@ async def edit_mode_prompt(mode: str = "agent") -> list[dict]:
     except ValueError:
         edit_mode = EditMode.AGENT
     return [{"role": "system", "content": EditModeConfig.get_system_prompt(edit_mode)}]
+
+
+@mcp.tool()
+async def get_location_list(
+    novel_id: int,
+    location_type: Optional[str] = None,
+    search: Optional[str] = None,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "get_location_list", ctx,
+        novel_id=novel_id, location_type=location_type, search=search
+    )
+
+
+@mcp.tool()
+async def get_location_detail(
+    novel_id: int,
+    location_id: int,
+    ctx: Context = None
+) -> dict:
+    return await _execute_tool(
+        "get_location_detail", ctx,
+        novel_id=novel_id, location_id=location_id
+    )
+
+
+@mcp.tool()
+async def create_location(
+    novel_id: int,
+    name: str,
+    location_type: Optional[str] = None,
+    description: Optional[str] = None,
+    tags: Optional[List] = None,
+    parent_location_id: Optional[int] = None,
+    ctx: Context = None
+) -> dict:
+    import json as _json
+    _tags = json.dumps(tags) if tags else None
+    return await _execute_tool(
+        "create_location", ctx,
+        novel_id=novel_id, name=name,
+        location_type=location_type, description=description,
+        tags=_tags, parent_location_id=parent_location_id
+    )
 
 
 def get_mcp_transport():

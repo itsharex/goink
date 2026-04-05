@@ -16,8 +16,8 @@ from app.novels.models import Novel
 from app.chapters.models import Chapter
 from app.characters.models import Character
 from app.plot_events.models import PlotEvent
-from app.foreshadowing.models import Foreshadowing, ForeshadowingStatus
-from app.foreshadowing.schemas import ConsistencyIssue
+from app.timeline.models import TimelineEntry, TimelineEntryCategory, TimelineEntryStatus
+from app.consistency.schemas import ConsistencyIssue
 from app.core.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -419,47 +419,51 @@ class ConsistencyChecker:
     
     async def check_foreshadowing_status(self) -> List[ConsistencyIssue]:
         """
-        检查伏笔状态
-        
+        检查伏笔状态（通过时间线系统查询）
+
         检查内容:
         - 未解决的伏笔
         - 长期未填的坑
         """
         issues: List[ConsistencyIssue] = []
-        
+
         result = await self.db.execute(
-            select(Foreshadowing).where(
-                Foreshadowing.novel_id == self.novel_id,
-                Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
+            select(TimelineEntry).where(
+                TimelineEntry.novel_id == self.novel_id,
+                TimelineEntry.category == TimelineEntryCategory.FORESHADOWING.value,
+                TimelineEntry.status.in_([
+                    TimelineEntryStatus.PENDING.value,
+                    TimelineEntryStatus.ACTIVE.value,
+                ])
             )
         )
-        unresolved_foreshadowings = result.scalars().all()
-        
-        for fs in unresolved_foreshadowings:
-            days_pending = (datetime.now() - fs.created_at).days if fs.created_at else 0
-            
+        unresolved_entries = result.scalars().all()
+
+        for entry in unresolved_entries:
+            days_pending = (datetime.now() - entry.created_at).days if entry.created_at else 0
+
             severity = "info"
-            if fs.importance >= 4 and days_pending > 60:
+            if entry.importance >= 4 and days_pending > 60:
                 severity = "error"
-            elif fs.importance >= 4 and days_pending > 30:
+            elif entry.importance >= 4 and days_pending > 30:
                 severity = "warning"
-            
+
             issue = self._issue(
                 issue_type="foreshadowing",
                 severity=severity,
-                chapter_id=fs.created_chapter_id,
-                description=f"未解决的伏笔: {fs.title}",
+                chapter_id=entry.source_chapter_id,
+                description=f"未解决的伏笔/钩子: {entry.title}",
                 details={
-                    "foreshadowing_id": fs.id,
-                    "importance": fs.importance,
+                    "timeline_entry_id": entry.id,
+                    "importance": entry.importance,
                     "days_pending": days_pending,
-                    "description": fs.description
+                    "description": entry.description
                 },
-                suggestion=f"建议在后续章节中解决此伏笔" if fs.importance >= 3 else None
+                suggestion=f"建议在后续章节中解决此伏笔（可通过 get_timeline_context 或 resolve_timeline_entry 处理）" if entry.importance >= 3 else None
             )
             if issue:
                 issues.append(issue)
-        
+
         return issues
     
     def _generate_summary(self, issues: List[ConsistencyIssue]) -> Dict[str, Any]:

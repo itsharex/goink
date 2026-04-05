@@ -41,7 +41,18 @@ SYSTEM_PROMPTS: Dict[str, str] = {
 4. 不输出与正文无关的解释或评论
 
 输出目标：
-- 产出可直接作为章节内容的正文""",
+- 产出可直接作为章节内容的正文
+
+【章节输出格式要求 — 必须严格遵守】
+请在正文结束后，严格按以下格式输出完结标记：
+
+---【第X章完结】---
+
+注意：
+1. "第X章"中的X请替换为实际章节号
+2. 完结标记必须完整，不可在标记中间截断
+3. 正文结束后直接输出完结标记即可，不需要输出其他结构化信息
+4. 如果本章埋下了伏笔、有规划安排、或角色关系发生变化，请在输出完结标记后通过工具（add_timeline_entry / update_timeline_entry / resolve_timeline_entry / update_character_relationship）记录到时间线中，不要在正文中列出""",
 
     GenerationType.DIALOGUE: """你是一位对话写作专家。
 

@@ -85,7 +85,15 @@ class GetCharacterMemoryTool(BaseMCPTool):
     """获取角色记忆"""
     
     name = "get_character_memory"
-    description = "获取指定角色在小说中的所有相关信息和出场记录。无需传novel_id，系统会注入当前小说ID。"
+    description = (
+        "获取指定角色在小说中的所有相关信息和出场记录（动态信息）。"
+        "无需传novel_id，系统会注入当前小说ID。"
+        "\n与 get_character_detail 不同，此工具不仅返回静态档案，还返回该角色参与的情节事件、相关正文片段。"
+        "\n适用场景：写某个角色的戏份前调用，了解他/她最近做了什么、经历了什么。"
+        "\n参数说明：character_id 为必填项，需先从 get_character_list 获取；"
+        "include_plot_events 控制是否包含该角色参与的情节事件列表。"
+        "\n💡 提示：get_writing_characters 已包含各角色的最近动态，可优先使用。"
+    )
     category = MCPToolCategory.MEMORY_RETRIEVAL
     parameters_schema = {
         "type": "object",

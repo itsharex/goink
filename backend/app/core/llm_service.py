@@ -38,7 +38,12 @@ class LLMServiceError(Exception):
 
 
 def _provider_name(model: str) -> str:
-    return "GLM" if model.startswith("glm") else "DeepSeek"
+    model_lower = model.lower()
+    if any(q in model_lower for q in _QWEN_MODELS):
+        return "Qwen"
+    if model.startswith("glm"):
+        return "GLM"
+    return "DeepSeek"
 
 
 def _extract_error_message(payload: Dict[str, Any]) -> Optional[str]:
@@ -48,6 +53,29 @@ def _extract_error_message(payload: Dict[str, Any]) -> Optional[str]:
     if isinstance(error, str):
         return error
     return payload.get("message")
+
+
+_REASONING_MODELS = {
+    "deepseek-reasoner", "deepseek-r1",
+    "o1", "o1-mini", "o1-preview", "o3", "o3-mini",
+    "qwq", "qwen-qwq", "qwen3-235b-a22b",
+}
+
+_QWEN_MODELS = {"qwq", "qwen-qwq", "qwen3", "qwen3-235b-a22b", "qwen-plus", "qwen-turbo", "qwen-max", "qwen-long"}
+
+
+def _apply_reasoning_params(payload: Dict[str, Any], model: str) -> None:
+    model_lower = model.lower()
+    is_reasoning = any(r in model_lower for r in _REASONING_MODELS)
+    if not is_reasoning and "reasoner" not in model_lower:
+        return
+    if any(q in model_lower for q in _QWEN_MODELS):
+        payload["enable_thinking"] = True
+        payload["extra_body"] = {"enable_thinking": True}
+    elif "deepseek" in model_lower or "reasoner" in model_lower:
+        payload["reasoning_effort"] = "medium"
+    else:
+        payload["reasoning_effort"] = "medium"
 
 
 @dataclass
@@ -66,8 +94,8 @@ class LLMConfig:
     
     @classmethod
     def validate(cls):
-        if not cls.api_key and not cls.glm_api_key:
-            raise ValueError("DEEPSEEK_API_KEY or GLM_API_KEY is required")
+        if not cls.api_key and not cls.glm_api_key and not os.getenv("QWEN_API_KEY"):
+            raise ValueError("DEEPSEEK_API_KEY, GLM_API_KEY or QWEN_API_KEY is required")
 
 
 class LLMService:
@@ -97,12 +125,19 @@ class LLMService:
         """获取模型配置 (api_base, api_key, model)"""
         if not model:
             model = self.config.default_model
-        
-        # GLM 模型 - GLM API 端点已经是 /api/paas/v4，不需要再加 /v1
+
+        model_lower = model.lower()
+
+        if any(q in model_lower for q in _QWEN_MODELS):
+            return (
+                os.getenv("QWEN_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+                os.getenv("QWEN_API_KEY", ""),
+                model
+            )
+
         if model.startswith("glm") or model == self.config.glm_model:
             return self.config.glm_api_base, self.config.glm_api_key, self.config.glm_model
-        
-        # DeepSeek 模型
+
         return self.config.api_base, self.config.api_key, model
 
     def _build_llm_error(
@@ -168,7 +203,7 @@ class LLMService:
             )
         if status_code == 429:
             return LLMServiceError(
-                "当前请求有点多，请稍等一下再试。",
+                "当前服务繁忙，请稍后再试。",
                 status_code=429,
                 provider=provider,
                 retryable=True,
@@ -223,6 +258,8 @@ class LLMService:
         
         if tools:
             payload["tools"] = tools
+        
+        _apply_reasoning_params(payload, selected_model)
         
         try:
             logger.debug(f"Calling LLM API: model={selected_model}, messages={len(messages)}")
@@ -359,6 +396,8 @@ class LLMService:
             "stream": True
         }
         
+        _apply_reasoning_params(payload, selected_model)
+        
         logger.debug(f"Starting stream generation: model={selected_model}")
         
         try:
@@ -387,6 +426,11 @@ class LLMService:
                             chunk = json.loads(data)
                             if "choices" in chunk and len(chunk["choices"]) > 0:
                                 delta = chunk["choices"][0].get("delta", {})
+                                
+                                reasoning = delta.get("reasoning_content") or delta.get("reasoning", "")
+                                if reasoning:
+                                    yield {"type": "thinking", "content": reasoning}
+                                
                                 content = delta.get("content", "")
                                 if content:
                                     yield content
@@ -528,6 +572,7 @@ class LLMService:
         
         Yields:
             {"type": "content", "content": "..."} - 文本片段
+            {"type": "thinking", "content": "..."} - 思考/推理内容片段（DeepSeek Reasoner等模型）
             {"type": "tool_call_start", "tool_name": "..."} - 工具调用开始
             {"type": "tool_call_arguments", "arguments": {...}} - 工具参数
             {"type": "tool_call_end"} - 工具调用结束
@@ -563,6 +608,8 @@ class LLMService:
         if tools:
             payload["tools"] = tools
         
+        _apply_reasoning_params(payload, selected_model)
+        
         full_content = ""
         current_tool_calls = []
         
@@ -580,7 +627,11 @@ class LLMService:
                             chunk = json.loads(data)
                             if "choices" in chunk and len(chunk["choices"]) > 0:
                                 delta = chunk["choices"][0].get("delta", {})
-                                
+
+                                reasoning = delta.get("reasoning_content", "")
+                                if reasoning:
+                                    yield {"type": "thinking", "content": reasoning}
+
                                 content = delta.get("content", "")
                                 if content:
                                     full_content += content

@@ -179,12 +179,99 @@ async def _lookup_chapter_brief(
     }
 
 
+_TOOL_SYNC_NAMES = {
+    "get_chapter_list": "查看章节目录",
+    "read_chapter_for_edit": "读取待编辑原文",
+    "read_chapter": "读取章节正文",
+    "get_chapter_content": "读取章节正文",
+    "start_edit_session": "开始安全编辑",
+    "get_edit_status": "查看编辑状态",
+    "edit_chapter_content": "编辑章节内容",
+    "create_new_chapter": "创建新章节",
+    "generate_chapter_draft": "AI生成新章节",
+    "apply_edit": "应用修改内容",
+    "get_creative_profile": "查看创作规则",
+    "update_creative_profile": "设置创作规则",
+    "search_memory": "搜索情节内容",
+    "search_plot_memory": "搜索情节内容",
+    "get_recent_context": "获取写作上下文",
+    "get_character_memory": "回顾角色经历",
+    "get_timeline": "查看情节时间线",
+    "get_story_timeline": "查看故事追踪板",
+    "get_timeline_context": "获取AI写作参考",
+    "add_timeline_entry": "记录追踪条目",
+    "update_timeline_entry": "更新追踪条目",
+    "resolve_timeline_entry": "标记条目完成",
+    "get_location_list": "查看地点列表",
+    "get_location_detail": "查看地点详情",
+    "create_location": "创建新地点",
+    "run_review": "执行审查",
+    "get_novel_summary": "查看小说概况",
+    "get_novel_progress": "查看写作进度",
+    "get_character_list": "查看角色列表",
+    "get_character_detail": "查看角色档案",
+    "get_writing_characters": "整理角色阵容和关系",
+    "create_character": "创建新角色",
+    "update_character": "更新角色设定",
+    "get_character_network": "查看人物关系图",
+    "get_character_relationships": "查看角色关系详情",
+    "update_character_relationship": "更新人物关系",
+    "run_agent_task": "调度AI子任务",
+    "get_pending_changes": "查看待确认修改",
+}
+
+def _sync_tool_display_name(tool_name: str) -> str:
+    return _TOOL_SYNC_NAMES.get(tool_name, "处理创作任务")
+
+_TOOL_SYNC_KINDS = {
+    "get_chapter_list": "browse",
+    "read_chapter_for_edit": "view",
+    "read_chapter": "view",
+    "get_chapter_content": "view",
+    "start_edit_session": "edit",
+    "get_edit_status": "view",
+    "edit_chapter_content": "write",
+    "create_new_chapter": "create",
+    "generate_chapter_draft": "write",
+    "apply_edit": "edit",
+    "get_creative_profile": "memory",
+    "update_creative_profile": "memory",
+    "search_memory": "browse",
+    "search_plot_memory": "browse",
+    "get_recent_context": "memory",
+    "get_character_memory": "memory",
+    "get_timeline": "view",
+    "get_story_timeline": "view",
+    "get_timeline_context": "memory",
+    "add_timeline_entry": "write",
+    "update_timeline_entry": "edit",
+    "resolve_timeline_entry": "edit",
+    "get_location_list": "view",
+    "get_location_detail": "view",
+    "create_location": "create",
+    "run_review": "review",
+    "get_novel_summary": "view",
+    "get_novel_progress": "view",
+    "get_character_list": "view",
+    "get_character_detail": "view",
+    "get_writing_characters": "memory",
+    "create_character": "create",
+    "update_character": "edit",
+    "get_character_network": "view",
+    "get_character_relationships": "view",
+    "update_character_relationship": "edit",
+    "run_agent_task": "plan",
+    "get_pending_changes": "view",
+}
+
+
 async def _build_tool_call_presentation(
     db,
     novel_id: int,
     tool_name: str,
     arguments: Optional[Dict[str, Any]] = None,
-    result_payload: Optional[Dict[str, Any]] = None
+    result_payload: Optional[Dict[str, Any]] = None,
+    status: str = "executing"
 ) -> Dict[str, Any]:
     arguments = arguments or {}
     result_payload = result_payload or {}
@@ -216,49 +303,63 @@ async def _build_tool_call_presentation(
     elif chapter_title:
         chapter_label = str(chapter_title)
 
-    display_text = "处理中"
+    base_text = tool_name
     activity_kind = "general"
 
-    if tool_name in {"get_chapter_list"}:
-        display_text = "查看章节目录"
-        activity_kind = "browse"
-    elif tool_name in {"read_chapter_for_edit", "read_chapter"}:
-        display_text = f"查看 {chapter_label}" if chapter_label else "查看章节内容"
-        activity_kind = "view"
-    elif tool_name in {"start_edit_session", "get_edit_status"}:
-        display_text = f"准备修改 {chapter_label}" if chapter_label else "准备修改章节"
-        activity_kind = "edit"
-    elif tool_name in {"edit_chapter_content"}:
-        display_text = f"正在修改 {chapter_label}" if chapter_label else "正在修改章节"
-        activity_kind = "write"
-    elif tool_name in {"create_new_chapter"}:
-        display_text = f"创建 {chapter_label}" if chapter_label else "创建新章节"
-        activity_kind = "create"
-    elif tool_name in {"generate_chapter_draft"}:
-        display_text = f"正在撰写 {chapter_label}" if chapter_label else "正在撰写章节"
-        activity_kind = "write"
-    elif tool_name in {"get_creative_profile"}:
-        display_text = "查看长期创作规则"
-        activity_kind = "memory"
-    elif tool_name in {"update_creative_profile"}:
-        display_text = "更新长期创作规则"
-        activity_kind = "memory"
-    elif tool_name in {"search_memory", "get_recent_context"}:
-        display_text = "查找前文设定和记忆"
-        activity_kind = "memory"
-    elif tool_name in {"run_agent_task"}:
+    _TOOL_BASE_NAMES = {
+        "get_chapter_list": ("查看章节目录", "browse"),
+        "read_chapter_for_edit": (f"查看 {chapter_label}" if chapter_label else "读取待编辑原文", "view"),
+        "read_chapter": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
+        "get_chapter_content": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
+        "start_edit_session": (f"准备修改 {chapter_label}" if chapter_label else "开始安全编辑", "edit"),
+        "get_edit_status": (f"查看 {chapter_label} 的修改进度" if chapter_label else "查看编辑状态", "view"),
+        "edit_chapter_content": (f"修改 {chapter_label}" if chapter_label else "编辑章节内容", "write"),
+        "create_new_chapter": (f"创建 {chapter_label}" if chapter_label else "创建新章节", "create"),
+        "generate_chapter_draft": (f"撰写 {chapter_label}" if chapter_label else "AI生成新章节", "write"),
+        "apply_edit": (f"修改 {chapter_label}" if chapter_label else "应用修改内容", "edit"),
+        "get_creative_profile": ("查看创作规则", "memory"),
+        "update_creative_profile": ("设置创作规则", "memory"),
+        "search_memory": ("搜索情节内容", "browse"),
+        "search_plot_memory": ("搜索情节内容", "browse"),
+        "get_recent_context": ("获取写作上下文", "memory"),
+        "get_character_memory": ("回顾角色经历", "memory"),
+        "get_timeline": ("查看情节时间线", "view"),
+        "get_story_timeline": ("查看故事追踪板", "view"),
+        "get_timeline_context": ("获取AI写作参考", "memory"),
+        "add_timeline_entry": ("记录追踪条目", "write"),
+        "update_timeline_entry": ("更新追踪条目", "edit"),
+        "resolve_timeline_entry": ("标记条目完成", "edit"),
+        "run_review": ("执行审查", "review"),
+        "get_location_list": ("查看地点列表", "view"),
+        "get_location_detail": ("查看地点详情", "view"),
+        "create_location": ("创建新地点", "create"),
+        "get_novel_summary": ("查看小说概况", "view"),
+        "get_novel_progress": ("查看写作进度", "view"),
+        "get_character_list": ("查看角色列表", "view"),
+        "get_character_detail": ("查看角色档案", "view"),
+        "get_writing_characters": ("整理角色阵容和关系", "memory"),
+        "create_character": ("创建新角色", "create"),
+        "update_character": ("更新角色设定", "edit"),
+        "get_character_network": ("查看人物关系图", "view"),
+        "get_character_relationships": ("查看角色关系详情", "view"),
+        "update_character_relationship": ("更新人物关系", "edit"),
+        "run_agent_task": ("调度AI子任务", "plan"),
+        "start_edit_session": ("开始安全编辑", "edit"),
+        "read_chapter_for_edit": ("读取待编辑原文", "view"),
+        "get_pending_changes": ("查看待确认修改", "view"),
+    }
+
+    if tool_name in _TOOL_BASE_NAMES:
+        base_text, activity_kind = _TOOL_BASE_NAMES[tool_name]
+    elif tool_name == "run_agent_task":
         task_type = arguments.get("task_type")
         if task_type == "check_consistency":
-            display_text = "检查剧情一致性"
-            activity_kind = "review"
+            base_text, activity_kind = "检查剧情一致性", "review"
         elif task_type == "manage_foreshadowing":
-            display_text = "整理伏笔线索"
-            activity_kind = "review"
-        else:
-            display_text = "调用协作助手"
-            activity_kind = "plan"
-    else:
-        display_text = "处理创作任务"
+            base_text, activity_kind = "整理伏笔线索", "review"
+
+    is_active = status == "executing"
+    display_text = f"正在{base_text}" if is_active else base_text
 
     return {
         "display_text": display_text,
@@ -435,6 +536,27 @@ async def _execute_streaming_chapter_draft(
         await service._update_chapter_memory(chapter.id)
     except Exception as exc:
         logger.warning(f"Failed to update chapter memory after streamed generation: {exc}")
+
+    from app.core.chapter_post_processor import ChapterPostProcessor
+    try:
+        post_processor = ChapterPostProcessor(db, novel_id)
+        process_result = await post_processor.process(
+            content=chapter.content,
+            chapter_number=chapter.chapter_number,
+            chapter_id=chapter.id,
+            model=model
+        )
+        if process_result.get("was_truncated"):
+            chapter.content = process_result["final_content"]
+            chapter.word_count = len(chapter.content)
+            await db.commit()
+        logger.info(
+            f"Chapter {chapter.chapter_number} post-process completed: "
+            f"truncated={process_result['was_truncated']}, "
+            f"ending_completed={process_result['ending_completed']}"
+        )
+    except Exception as exc:
+        logger.warning(f"Chapter post-processing failed (non-fatal): {exc}")
 
     return {
         "success": True,
@@ -700,7 +822,7 @@ async def _handle_load_session(websocket, data, user_id):
         "message_count": session.get_message_count(),
         "recent_messages": [
             m.to_dict()
-            for m in session.messages[-30:]
+            for m in session.messages
             if m.role != MessageRole.TOOL
         ],
         "timestamp": datetime.now().isoformat()
@@ -1102,6 +1224,9 @@ async def _run_chat_with_tools(
                 )
             
             full_response = ""
+            response_buffer = ""
+            thinking_buffer = ""
+            is_thinking = False
             loop_count = 0
             
             tool_cache: Dict[str, Dict[str, Any]] = {}
@@ -1122,9 +1247,29 @@ async def _run_chat_with_tools(
                         logger.info(f"Task {task_id} cancelled")
                         return
                     
-                    if event["type"] == "content":
+                    if event["type"] == "thinking":
+                        thinking_content = event.get("content", "")
+                        if not is_thinking and thinking_content:
+                            is_thinking = True
+                        thinking_buffer += thinking_content
+                        await ws_manager.send_personal_message({
+                            "type": "thinking_chunk",
+                            "task_id": task_id,
+                            "chunk": thinking_content,
+                            "timestamp": datetime.now().isoformat()
+                        }, websocket)
+
+                    elif event["type"] == "content":
+                        if is_thinking:
+                            is_thinking = False
+                            await ws_manager.send_personal_message({
+                                "type": "thinking_done",
+                                "task_id": task_id,
+                                "timestamp": datetime.now().isoformat()
+                            }, websocket)
                         chunk = event["content"]
                         full_response += chunk
+                        response_buffer += chunk
                         
                         await ws_manager.send_personal_message({
                             "type": "content_chunk",
@@ -1135,6 +1280,21 @@ async def _run_chat_with_tools(
                         }, websocket)
                     
                     elif event["type"] == "tool_call_start":
+                        if is_thinking:
+                            is_thinking = False
+                            await ws_manager.send_personal_message({
+                                "type": "thinking_done",
+                                "task_id": task_id,
+                                "timestamp": datetime.now().isoformat()
+                            }, websocket)
+                        if response_buffer.strip():
+                            msg_meta = {}
+                            if thinking_buffer.strip():
+                                msg_meta["thinking_content"] = thinking_buffer
+                                thinking_buffer = ""
+                            session_manager.add_message(session, MessageRole.ASSISTANT, response_buffer, metadata=msg_meta or None)
+                            response_buffer = ""
+
                         tool_name = event.get("tool_name", "unknown")
                         tool_id = event.get("tool_id")
                         
@@ -1160,8 +1320,8 @@ async def _run_chat_with_tools(
                             "tool_name": tool_name,
                             "tool_id": tool_id,
                             "status": "executing",
-                            "display_text": "AI 正在准备操作",
-                            "activity_kind": "general",
+                            "display_text": f"正在{_sync_tool_display_name(tool_name)}",
+                            "activity_kind": _TOOL_SYNC_KINDS.get(tool_name, "general"),
                             "timestamp": datetime.now().isoformat()
                         }, websocket)
 
@@ -1197,7 +1357,7 @@ async def _run_chat_with_tools(
                         if not EditModeConfig.can_use_tool(edit_mode, tool_name):
                             logger.warning(f"Tool {tool_name} not allowed in mode {edit_mode.value}")
                             result_payload = {"success": False, "error": f"当前模式({edit_mode.value})不允许使用此工具"}
-                            presentation = await _build_tool_call_presentation(db, novel_id, tool_name, arguments, result_payload)
+                            presentation = await _build_tool_call_presentation(db, novel_id, tool_name, arguments, result_payload, status="failed")
                             await ws_manager.send_personal_message({
                                 "type": "tool_call",
                                 "task_id": task_id,
@@ -1294,7 +1454,8 @@ async def _run_chat_with_tools(
                                 novel_id,
                                 tool_name,
                                 clean_args,
-                                tool_result_payload
+                                tool_result_payload,
+                                status="completed" if tool_result_payload.get("success") else "failed"
                             )
 
                             await ws_manager.send_personal_message({
@@ -1352,6 +1513,46 @@ async def _run_chat_with_tools(
                                         MessageRole.SYSTEM,
                                         "已更新作者长期创作配置。" + (f" {'；'.join(summary_parts)}。" if summary_parts else "")
                                     )
+                                
+                                if tool_name in ("add_timeline_entry", "update_timeline_entry", "resolve_timeline_entry"):
+                                    stale_keys = [
+                                        key for key in list(tool_cache.keys())
+                                        if key.startswith("get_story_timeline:") or key.startswith("get_timeline_context:") or key.startswith("run_review:")
+                                    ]
+                                    for stale_key in stale_keys:
+                                        tool_cache.pop(stale_key, None)
+
+                                if tool_name in ("create_character", "update_character"):
+                                    stale_keys = [
+                                        key for key in list(tool_cache.keys())
+                                        if key.startswith(("get_character_list:", "get_character_detail:", "get_writing_characters:", "get_character_memory:", "get_character_network:", "get_character_relationships:"))
+                                    ]
+                                    for stale_key in stale_keys:
+                                        tool_cache.pop(stale_key, None)
+
+                                if tool_name == "update_character_relationship":
+                                    stale_keys = [
+                                        key for key in list(tool_cache.keys())
+                                        if key.startswith(("get_character_network:", "get_character_relationships:", "get_writing_characters:"))
+                                    ]
+                                    for stale_key in stale_keys:
+                                        tool_cache.pop(stale_key, None)
+
+                                if tool_name == "create_location":
+                                    stale_keys = [
+                                        key for key in list(tool_cache.keys())
+                                        if key.startswith(("get_location_list:", "get_location_detail:"))
+                                    ]
+                                    for stale_key in stale_keys:
+                                        tool_cache.pop(stale_key, None)
+
+                                if tool_name == "create_new_chapter":
+                                    stale_keys = [
+                                        key for key in list(tool_cache.keys())
+                                        if key.startswith(("get_chapter_list:", "get_novel_progress:"))
+                                    ]
+                                    for stale_key in stale_keys:
+                                        tool_cache.pop(stale_key, None)
                             
                             if tool_name == "start_edit_session" and tool_result_payload.get("success") and not session.metadata.get("edit_session_hint_sent"):
                                 await ws_manager.send_personal_message({
@@ -1426,10 +1627,24 @@ async def _run_chat_with_tools(
                     loop_count += 1
                     continue
                 
+                if is_thinking:
+                    await ws_manager.send_personal_message({
+                        "type": "thinking_done",
+                        "task_id": task_id,
+                        "timestamp": datetime.now().isoformat()
+                    }, websocket)
                 break
             
-            if full_response:
-                session_manager.add_message(session, MessageRole.ASSISTANT, full_response)
+            if response_buffer.strip():
+                final_meta = {}
+                if thinking_buffer.strip():
+                    final_meta["thinking_content"] = thinking_buffer
+                session_manager.add_message(session, MessageRole.ASSISTANT, response_buffer, metadata=final_meta or None)
+            elif full_response.strip():
+                final_meta = {}
+                if thinking_buffer.strip():
+                    final_meta["thinking_content"] = thinking_buffer
+                session_manager.add_message(session, MessageRole.ASSISTANT, full_response, metadata=final_meta or None)
             await session_manager.save_session(session)
             
             logger.info(f"Chat task {task_id} completed")

@@ -384,10 +384,10 @@ class GetNovelProgressTool(BaseMCPTool):
 
 
 class GetCreativeProfileTool(BaseMCPTool):
-    """获取作者创作配置"""
+    """获取作者创作配置（双层：全局+单书）"""
 
     name = "get_creative_profile"
-    description = "获取当前小说的作者长期创作配置，包括作者意图、默认语气、长期必须保留/避免项、长线目标等。无需传novel_id，系统会注入当前小说ID。"
+    description = "获取当前小说的作者创作配置，包含两层：(1) 作者全局偏好 — 跨所有书的写作习惯；(2) 本书的专属偏好。无需传novel_id，系统会注入当前小说ID。当准备生成章节、规划情节、审阅方向时，应优先调用此工具确认长期规则。"
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
@@ -416,109 +416,154 @@ class GetCreativeProfileTool(BaseMCPTool):
         result = await db.execute(
             select(NovelCreativeProfile).where(NovelCreativeProfile.novel_id == novel_id)
         )
-        profile = result.scalar_one_or_none()
-        if not profile:
-            return MCPToolResult(
-                success=True,
-                data={
-                    "novel_id": novel_id,
-                    "author_intent": None,
-                    "preferred_tone": None,
-                    "collaboration_style": "ai_ide",
-                    "scene_planning_notes": None,
-                    "must_keep": [],
-                    "must_avoid": [],
-                    "long_term_goals": [],
-                    "extra_metadata": {},
-                    "profile_summary": ""
-                },
-                metadata={"tool": self.name, "novel_id": novel_id}
-            )
+        novel_profile = result.scalar_one_or_none()
 
-        profile_summary = (
-            (profile.extra_metadata or {}).get("llm_brief")
-            or _build_creative_profile_summary(
-                author_intent=profile.author_intent,
-                preferred_tone=profile.preferred_tone,
-                scene_planning_notes=profile.scene_planning_notes,
-                must_keep=profile.must_keep or [],
-                must_avoid=profile.must_avoid or [],
-                long_term_goals=profile.long_term_goals or []
+        user_profile = None
+        if user_id:
+            from app.novels.models import UserCreativeProfile
+            up_result = await db.execute(
+                select(UserCreativeProfile).where(UserCreativeProfile.user_id == user_id)
             )
-        )
+            user_profile = up_result.scalar_one_or_none()
+
+        merged_must_keep: List[str] = []
+        merged_must_avoid: List[str] = []
+
+        if user_profile and user_profile.global_must_keep:
+            merged_must_keep.extend(user_profile.global_must_keep)
+        if novel_profile and novel_profile.must_keep:
+            merged_must_keep.extend(novel_profile.must_keep)
+
+        if user_profile and user_profile.global_must_avoid:
+            merged_must_avoid.extend(user_profile.global_must_avoid)
+        if novel_profile and novel_profile.must_avoid:
+            merged_must_avoid.extend(novel_profile.must_avoid)
+
+        seen_keep, seen_avoid = set(), set()
+        unique_keep = []
+        for item in merged_must_keep:
+            text = str(item).strip()
+            if text and text not in seen_keep:
+                unique_keep.append(text)
+                seen_keep.add(text)
+        unique_avoid = []
+        for item in merged_must_avoid:
+            text = str(item).strip()
+            if text and text not in seen_avoid:
+                unique_avoid.append(text)
+                seen_avoid.add(text)
+
+        profile_summary_parts: List[str] = []
+        if user_profile and user_profile.global_writing_style:
+            profile_summary_parts.append(f"全局风格：{user_profile.global_writing_style.strip()}")
+        if novel_profile and novel_profile.author_intent:
+            profile_summary_parts.append(f"本书意图：{novel_profile.author_intent.strip()}")
+        if novel_profile and novel_profile.preferred_tone:
+            profile_summary_parts.append(f"默认语气：{novel_profile.preferred_tone.strip()}")
+        if unique_keep:
+            profile_summary_parts.append("必须保留：" + "；".join(unique_keep[:8]))
+        if unique_avoid:
+            profile_summary_parts.append("必须避免：" + "；".join(unique_avoid[:8]))
+        if novel_profile and novel_profile.long_term_goals:
+            goals_str = "；".join(str(g).strip() for g in (novel_profile.long_term_goals or [])[:5] if str(g).strip())
+            if goals_str:
+                profile_summary_parts.append(f"长线目标：{goals_str}")
+        profile_summary = "\n".join(profile_summary_parts[:6])
+
         return MCPToolResult(
             success=True,
             data={
-                "id": profile.id,
-                "novel_id": profile.novel_id,
-                "author_intent": profile.author_intent,
-                "preferred_tone": profile.preferred_tone,
-                "collaboration_style": profile.collaboration_style,
-                "scene_planning_notes": profile.scene_planning_notes,
-                "must_keep": profile.must_keep or [],
-                "must_avoid": profile.must_avoid or [],
-                "long_term_goals": profile.long_term_goals or [],
-                "extra_metadata": profile.extra_metadata or {},
+                "novel_id": novel_id,
+                "user_global": {
+                    "global_writing_style": user_profile.global_writing_style if user_profile else None,
+                    "preferred_sentence_length": user_profile.preferred_sentence_length if user_profile else None,
+                    "default_pov": user_profile.default_pov if user_profile else None,
+                    "global_must_keep": user_profile.global_must_keep if user_profile else [],
+                    "global_must_avoid": user_profile.global_must_avoid if user_profile else [],
+                    "exists": user_profile is not None,
+                } if user_profile else {"exists": False},
+                "novel_specific": {
+                    "author_intent": novel_profile.author_intent if novel_profile else None,
+                    "preferred_tone": novel_profile.preferred_tone if novel_profile else None,
+                    "collaboration_style": novel_profile.collaboration_style if novel_profile else "ai_ide",
+                    "scene_planning_notes": novel_profile.scene_planning_notes if novel_profile else None,
+                    "must_keep": novel_profile.must_keep or [] if novel_profile else [],
+                    "must_avoid": novel_profile.must_avoid or [] if novel_profile else [],
+                    "long_term_goals": novel_profile.long_term_goals or [] if novel_profile else [],
+                    "exists": novel_profile is not None,
+                },
+                "merged": {
+                    "must_keep": unique_keep,
+                    "must_avoid": unique_avoid,
+                },
                 "profile_summary": profile_summary,
-                "created_at": profile.created_at.isoformat() if profile.created_at else None,
-                "updated_at": profile.updated_at.isoformat() if profile.updated_at else None
             },
             metadata={"tool": self.name, "novel_id": novel_id}
         )
 
 
 class UpdateCreativeProfileTool(BaseMCPTool):
-    """更新作者创作配置"""
+    """更新作者创作配置（双层 + 防膨胀）"""
 
     name = "update_creative_profile"
-    description = "更新当前小说的作者长期创作配置。无需传novel_id，系统会注入当前小说ID。默认会和已有配置做增量合并，适合在作者明确表达长期要求后调用，把要求沉淀为后续章节默认遵守的规则。若准备修改已有长期规则，建议先调用 get_creative_profile。"
+    description = (
+        "更新当前小说的作者创作配置。无需传novel_id，系统会注入当前小说ID。"
+        "\n⚠️ 重要规则："
+        "\n- must_keep 和 must_avoid 每类最多 15 条，超出时自动合并语义相近的条目。保持简洁，不要无限追加。"
+        "\n- 如果是'这本书的风格/目标/禁忌'，更新到本书偏好；如果是'我个人的写作习惯'，考虑是否应设为全局规则。"
+        "\n- 默认增量合并(merge_with_existing=true)；若要完全替换旧规则，传 merge_with_existing=false。"
+        "\n- 更新后会自动生成精简摘要(llm_brief)供后续上下文注入使用。"
+        "\n建议先调用 get_creative_profile 确认当前状态再修改。"
+    )
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
         "properties": {
             "author_intent": {
                 "type": "string",
-                "description": "作者长期创作意图"
+                "description": "作者长期创作意图（本书专属）"
             },
             "preferred_tone": {
                 "type": "string",
-                "description": "默认语气/文风偏好"
+                "description": "默认语气/文风偏好（本书专属）"
             },
-            "collaboration_style": {
+            "global_writing_style": {
                 "type": "string",
-                "description": "协作风格，例如 ai_ide"
-            },
-            "scene_planning_notes": {
-                "type": "string",
-                "description": "章节推进与场景规划备注"
+                "description": "全局写作风格习惯（跨所有书生效）"
             },
             "must_keep": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "长期必须保留、必须遵守的规则"
+                "description": "长期必须保留、必须遵守的规则（上限15条，本书专属）"
             },
             "must_avoid": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "长期必须避免的内容、走向或表达"
+                "description": "长期必须避免的内容（上限15条，本书专属）"
             },
             "long_term_goals": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "长线创作目标"
-            },
-            "extra_metadata": {
-                "type": "object",
-                "description": "额外协作配置"
+                "description": "长线创作目标（本书专属）"
             },
             "merge_with_existing": {
                 "type": "boolean",
                 "default": True,
-                "description": "是否与现有长期配置增量合并；默认 true"
+                "description": "是否与现有配置增量合并；默认 true"
             }
         },
         "required": []
     }
+
+    MAX_LIST_ITEMS = 15
+
+    @staticmethod
+    def _enforce_limit(items: Optional[List[str]], limit: int = MAX_LIST_ITEMS) -> List[str]:
+        if items is None:
+            return []
+        if len(items) <= limit:
+            return [str(i).strip() for i in items if str(i).strip()]
+        return [str(i).strip() for i in items[:limit] if str(i).strip()]
 
     @staticmethod
     def _merge_unique_list(existing: Optional[List[str]], incoming: Optional[List[str]]) -> Optional[List[str]]:
@@ -547,12 +592,10 @@ class UpdateCreativeProfileTool(BaseMCPTool):
         novel_id: int = 0,
         author_intent: Optional[str] = None,
         preferred_tone: Optional[str] = None,
-        collaboration_style: Optional[str] = None,
-        scene_planning_notes: Optional[str] = None,
+        global_writing_style: Optional[str] = None,
         must_keep: Optional[List[str]] = None,
         must_avoid: Optional[List[str]] = None,
         long_term_goals: Optional[List[str]] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
         merge_with_existing: bool = True,
         user_id: Optional[int] = None,
         **kwargs
@@ -568,6 +611,20 @@ class UpdateCreativeProfileTool(BaseMCPTool):
         if user_id and novel.author_id != user_id:
             return MCPToolResult(success=False, error="无权更新此小说")
 
+        must_keep_limited = self._enforce_limit(must_keep)
+        must_avoid_limited = self._enforce_limit(must_avoid)
+
+        if global_writing_style and user_id:
+            from app.novels.models import UserCreativeProfile
+            up_result = await db.execute(
+                select(UserCreativeProfile).where(UserCreativeProfile.user_id == user_id)
+            )
+            user_profile = up_result.scalar_one_or_none()
+            if not user_profile:
+                user_profile = UserCreativeProfile(user_id=user_id)
+                db.add(user_profile)
+            user_profile.global_writing_style = global_writing_style
+
         result = await db.execute(
             select(NovelCreativeProfile).where(NovelCreativeProfile.novel_id == novel_id)
         )
@@ -575,7 +632,7 @@ class UpdateCreativeProfileTool(BaseMCPTool):
         if not profile:
             profile = NovelCreativeProfile(
                 novel_id=novel_id,
-                collaboration_style=collaboration_style or "ai_ide"
+                collaboration_style="ai_ide"
             )
             db.add(profile)
 
@@ -583,25 +640,21 @@ class UpdateCreativeProfileTool(BaseMCPTool):
             profile.author_intent = author_intent
         if preferred_tone is not None:
             profile.preferred_tone = preferred_tone
-        if collaboration_style is not None:
-            profile.collaboration_style = collaboration_style
-        if scene_planning_notes is not None:
-            profile.scene_planning_notes = scene_planning_notes
 
         if merge_with_existing:
-            profile.must_keep = self._merge_unique_list(profile.must_keep, must_keep)
-            profile.must_avoid = self._merge_unique_list(profile.must_avoid, must_avoid)
+            profile.must_keep = self._merge_unique_list(profile.must_keep, must_keep_limited)
+            profile.must_avoid = self._merge_unique_list(profile.must_avoid, must_avoid_limited)
             profile.long_term_goals = self._merge_unique_list(profile.long_term_goals, long_term_goals)
-            profile.extra_metadata = self._merge_dict(profile.extra_metadata, extra_metadata)
         else:
-            if must_keep is not None:
-                profile.must_keep = self._merge_unique_list([], must_keep)
-            if must_avoid is not None:
-                profile.must_avoid = self._merge_unique_list([], must_avoid)
+            if must_keep_limited is not None:
+                profile.must_keep = self._merge_unique_list([], must_keep_limited)
+            if must_avoid_limited is not None:
+                profile.must_avoid = self._merge_unique_list([], must_avoid_limited)
             if long_term_goals is not None:
                 profile.long_term_goals = self._merge_unique_list([], long_term_goals)
-            if extra_metadata is not None:
-                profile.extra_metadata = dict(extra_metadata)
+
+        profile.must_keep = self._enforce_limit(profile.must_keep)
+        profile.must_avoid = self._enforce_limit(profile.must_avoid)
 
         profile_summary = _build_creative_profile_summary(
             author_intent=profile.author_intent,
@@ -641,7 +694,12 @@ class GetCharacterListTool(BaseMCPTool):
     """获取角色列表"""
     
     name = "get_character_list"
-    description = "获取小说的角色列表。无需提供novel_id。"
+    description = (
+        "获取小说的角色列表。无需提供novel_id，系统会注入当前小说ID。"
+        "\n适用场景：写作前了解角色阵容、确认角色基本信息、获取character_id用于详情查询。"
+        "\n返回信息：角色名、性格（personality）、能力（abilities）、关系概要（relationships）。"
+        "\n生成章节或规划情节前应优先调用此工具了解角色。"
+    )
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
@@ -711,17 +769,28 @@ class GetCharacterDetailTool(BaseMCPTool):
     """获取角色详情"""
     
     name = "get_character_detail"
-    description = "获取指定角色的详细信息"
+    description = (
+        "获取指定角色的详细信息。"
+        "\n适用场景：需要深入了解某个角色的完整档案时调用。"
+        "\n返回信息：姓名、性格详情（personality）、能力列表（abilities）、人物关系（relationships）、所属小说。"
+        "\n写作价值：帮助AI准确把握角色的言行风格、能力边界、与其他角色的关系定位。"
+        "\n提示：先用 get_character_list 获取 character_id，再用此工具查询详情。"
+        "\n💡 如果只是写作前快速了解角色阵容，用 get_writing_characters 更方便（一步到位）。"
+    )
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
         "properties": {
+            "novel_id": {
+                "type": "integer",
+                "description": "小说ID"
+            },
             "character_id": {
                 "type": "integer",
                 "description": "角色ID"
             }
         },
-        "required": ["character_id"]
+        "required": ["novel_id", "character_id"]
     }
     
     async def execute(
@@ -731,6 +800,7 @@ class GetCharacterDetailTool(BaseMCPTool):
         user_id: Optional[int] = None,
         **kwargs
     ) -> MCPToolResult:
+        novel_id = kwargs.get("novel_id")
         result = await db.execute(
             select(Character)
             .options(selectinload(Character.novel))
@@ -742,6 +812,12 @@ class GetCharacterDetailTool(BaseMCPTool):
             return MCPToolResult(
                 success=False,
                 error=f"Character not found: {character_id}"
+            )
+
+        if novel_id is not None and character.novel_id != novel_id:
+            return MCPToolResult(
+                success=False,
+                error=f"Character {character_id} does not belong to novel {novel_id}"
             )
         
         if user_id and character.novel and character.novel.author_id != user_id:
@@ -766,6 +842,302 @@ class GetCharacterDetailTool(BaseMCPTool):
             data=data,
             metadata={"tool": self.name, "character_id": character_id}
         )
+
+
+class GetWritingCharactersTool(BaseMCPTool):
+    """获取写作用角色概览（一步到位）"""
+
+    name = "get_writing_characters"
+    description = (
+        "获取当前小说的角色写作概览，一步返回所有关键信息。"
+        "无需传novel_id，系统会注入当前小说ID。"
+        "\n这是写作前最推荐调用的角色工具——一次调用即可获得："
+        "\n1. 角色名单（姓名+核心性格标签+角色定位）"
+        "\n2. 人物关系网络概要（谁和谁是什么关系）"
+        "\n3. 各角色的最近动态（近期参与的事件/章节）"
+        "\n适用场景：开始写新章节、规划情节走向、需要回忆角色设定时。"
+        "\n如果只需要某个角色的深度信息，再用 get_character_detail 或 get_character_memory 查询。"
+    )
+    category = MCPToolCategory.NOVEL_MANAGEMENT
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "include_relations": {
+                "type": "boolean",
+                "default": True,
+                "description": "是否包含人物关系网络"
+            },
+            "include_recent_events": {
+                "type": "boolean",
+                "default": True,
+                "description": "是否包含各角色的最近动态"
+            },
+        },
+        "required": []
+    }
+
+    @staticmethod
+    def _extract_personality_summary(personality: Optional[Dict[str, Any]]) -> str:
+        if not personality or not isinstance(personality, dict):
+            return ""
+        parts: List[str] = []
+        for key, value in personality.items():
+            text = str(value).strip()
+            if text and len(text) < 200:
+                parts.append(f"{key}：{text}")
+        return "；".join(parts[:5])
+
+    async def execute(
+        self,
+        db: AsyncSession,
+        novel_id: int = 0,
+        include_relations: bool = True,
+        include_recent_events: bool = True,
+        user_id: Optional[int] = None,
+        **kwargs
+    ) -> MCPToolResult:
+        novel_id = novel_id or kwargs.get("novel_id", 0)
+        if not novel_id:
+            return MCPToolResult(success=False, error="novel_id is required")
+
+        result = await db.execute(select(Novel).where(Novel.id == novel_id))
+        novel = result.scalar_one_or_none()
+        if not novel:
+            return MCPToolResult(success=False, error=f"Novel not found: {novel_id}")
+        if user_id and novel.author_id != user_id:
+            return MCPToolResult(success=False, error="无权访问此小说")
+
+        result = await db.execute(
+            select(Character).where(Character.novel_id == novel_id)
+        )
+        characters = result.scalars().all()
+
+        char_id_map = {c.id: c for c in characters}
+
+        characters_data = [
+            {
+                "id": c.id,
+                "name": c.name,
+                "personality_summary": self._extract_personality_summary(c.personality),
+                "abilities": c.abilities or [],
+                "role_hint": "",
+            }
+            for c in characters
+        ]
+
+        relations_data = []
+        if include_relations and characters:
+            try:
+                from app.characters.models import CharacterRelation
+                rel_result = await db.execute(
+                    select(CharacterRelation).where(
+                        CharacterRelation.novel_id == novel_id,
+                        CharacterRelation.status == "active"
+                    )
+                )
+                all_relations = rel_result.scalars().all()
+                for rel in all_relations:
+                    source_name = char_id_map.get(rel.source_character_id)
+                    target_name = char_id_map.get(rel.target_character_id)
+                    if source_name and target_name:
+                        relations_data.append({
+                            "source_name": source_name.name,
+                            "target_name": target_name.name,
+                            "type": rel.relationship_type,
+                            "intensity": rel.intensity,
+                            "status": rel.status,
+                        })
+            except Exception:
+                pass
+
+        recent_events_summary = ""
+        if include_recent_events and characters:
+            try:
+                from app.plot_events.models import PlotEvent
+                char_ids = [c.id for c in characters]
+                event_result = await db.execute(
+                    select(PlotEvent)
+                    .where(PlotEvent.novel_id == novel_id)
+                    .order_by(PlotEvent.timeline.desc())
+                    .limit(20)
+                )
+                all_events = event_result.scalars().all()
+                relevant_events = [
+                    e for e in all_events
+                    if e.characters_involved and any(cid in (e.characters_involved or []) for cid in char_ids)
+                ]
+                if relevant_events:
+                    event_lines = []
+                    for ev in relevant_events[:10]:
+                        involved_names = [
+                            char_id_map[cid].name
+                            for cid in (ev.characters_involved or [])
+                            if cid in char_id_map
+                        ]
+                        line = f"[{ev.event_type}] {'、'.join(involved_names)} — {ev.description}"
+                        event_lines.append(line)
+                    recent_events_summary = "\n".join(event_lines)
+                else:
+                    recent_events_summary = "暂无相关事件记录。"
+            except Exception:
+                recent_events_summary = ""
+
+        return MCPToolResult(
+            success=True,
+            data={
+                "characters": characters_data,
+                "relations": relations_data,
+                "recent_events_summary": recent_events_summary,
+                "total_characters": len(characters),
+            },
+            metadata={"tool": self.name, "novel_id": novel_id}
+        )
+
+
+class CreateCharacterTool(BaseMCPTool):
+    """创建新角色"""
+
+    name = "create_character"
+    description = (
+        "为当前小说创建一个新角色。无需传novel_id，系统会注入当前小说ID。"
+        "\n适用场景：用户要求添加新角色、AI写作时发现需要新角色、规划角色阵容时。"
+        "\n创建后可通过 get_character_detail 查看详情，通过 update_character 修改设定。"
+        "\n注意：name 为必填；personality 建议包含 role(角色定位)、traits(性格特点)、background(背景) 等字段。"
+    )
+    category = MCPToolCategory.NOVEL_MANAGEMENT
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "角色名称（必填）"},
+            "personality": {
+                "type": "object",
+                "description": "角色性格/设定字典，建议包含: role(定位), traits(性格), background(背景), motivation(动机), appearance(外貌)"
+            },
+            "abilities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "角色能力/技能列表"
+            },
+        },
+        "required": ["name"]
+    }
+
+    async def execute(
+        self,
+        db,
+        novel_id: int,
+        name: str,
+        personality: Optional[Dict] = None,
+        abilities: Optional[List[str]] = None,
+        user_id=None,
+        **kwargs
+    ) -> MCPToolResult:
+        try:
+            result = await db.execute(select(Novel).where(Novel.id == novel_id))
+            novel = result.scalar_one_or_none()
+            if not novel:
+                return MCPToolResult(success=False, error=f"小说 {novel_id} 不存在")
+
+            from app.characters.models import Character
+            character = Character(
+                novel_id=novel_id,
+                name=name,
+                personality=personality or {},
+                abilities=abilities or [],
+            )
+            db.add(character)
+            await db.commit()
+            await db.refresh(character)
+
+            return MCPToolResult(
+                success=True,
+                data={
+                    "id": character.id,
+                    "name": character.name,
+                    "novel_id": character.novel_id,
+                    "personality": character.personality,
+                    "abilities": character.abilities,
+                },
+                metadata={"tool": self.name, "novel_id": novel_id, "character_id": character.id}
+            )
+        except Exception as e:
+            return MCPToolResult(success=False, error=f"创建角色失败: {str(e)}")
+
+
+class UpdateCharacterTool(BaseMCPTool):
+    """更新角色信息"""
+
+    name = "update_character"
+    description = (
+        "更新已有角色的设定信息。无需传novel_id，系统会注入当前小说ID。"
+        "\n适用场景：用户要求修改角色设定、AI写作中发现需要调整角色属性时。"
+        "\n只需传入要修改的字段，未传入的字段保持不变。"
+        "\n修改后相关缓存会自动失效，下次查询获取最新数据。"
+    )
+    category = MCPToolCategory.NOVEL_MANAGEMENT
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "character_id": {"type": "integer", "description": "角色ID（必填）"},
+            "name": {"type": "string", "description": "新的名称"},
+            "personality": {
+                "type": "object",
+                "description": "新的性格/设定字典（完全替换旧的）"
+            },
+            "abilities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "新的能力列表（完全替换旧的）"
+            },
+        },
+        "required": ["character_id"]
+    }
+
+    async def execute(
+        self,
+        db,
+        novel_id: int,
+        character_id: int,
+        name: Optional[str] = None,
+        personality: Optional[Dict] = None,
+        abilities: Optional[List[str]] = None,
+        user_id=None,
+        **kwargs
+    ) -> MCPToolResult:
+        try:
+            from app.characters.models import Character
+            result = await db.execute(
+                select(Character).where(Character.id == character_id)
+            )
+            character = result.scalar_one_or_none()
+            if not character:
+                return MCPToolResult(success=False, error=f"角色 {character_id} 不存在")
+            if character.novel_id != novel_id:
+                return MCPToolResult(success=False, error=f"角色不属于当前小说")
+
+            if name is not None:
+                character.name = name
+            if personality is not None:
+                character.personality = personality
+            if abilities is not None:
+                character.abilities = abilities
+
+            await db.commit()
+            await db.refresh(character)
+
+            return MCPToolResult(
+                success=True,
+                data={
+                    "id": character.id,
+                    "name": character.name,
+                    "novel_id": character.novel_id,
+                    "personality": character.personality,
+                    "abilities": character.abilities,
+                },
+                metadata={"tool": self.name, "novel_id": novel_id, "character_id": character_id}
+            )
+        except Exception as e:
+            return MCPToolResult(success=False, error=f"更新角色失败: {str(e)}")
 
 
 class CreateNewChapterTool(BaseMCPTool):
@@ -883,6 +1255,9 @@ class GenerateChapterDraftTool(BaseMCPTool):
     description = (
         "直接创建并生成一个新章节正文。无需传novel_id，系统会注入当前小说ID。"
         "chapter_number 可省略，系统会自动生成下一章。适合需要大模型直接开始写新章节时调用。"
+        "\n⚠️ 重要提示：如果目标章节号已有内容（之前写过或创建过空章节），"
+        "必须显式设置 overwrite_existing=true 才能覆盖重写，否则会返回错误。"
+        "建议调用前先通过 get_chapter_list 确认章节状态。"
     )
     category = MCPToolCategory.WRITING_ASSISTANT
     parameters_schema = {
@@ -1082,5 +1457,8 @@ class NovelManagementTools:
         registry.register(UpdateCreativeProfileTool())
         registry.register(GetCharacterListTool())
         registry.register(GetCharacterDetailTool())
+        registry.register(GetWritingCharactersTool())
+        registry.register(CreateCharacterTool())
+        registry.register(UpdateCharacterTool())
         registry.register(CreateNewChapterTool())
         registry.register(GenerateChapterDraftTool())

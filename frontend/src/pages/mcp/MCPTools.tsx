@@ -1,14 +1,27 @@
 import { useState, useEffect } from 'react'
-import { Card, Tabs, Table, Button, Tag, Collapse, Input, message, Spin, Descriptions, List, Divider, Row, Col, Statistic, Alert } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, FileTextOutlined, TeamOutlined, CheckCircleOutlined } from '@ant-design/icons'
+import { Card, Tabs, Table, Button, Tag, Collapse, Input, message, Spin, Descriptions, List, Divider, Row, Col, Statistic, Alert, Badge, Tooltip, Space } from 'antd'
+import {
+  PlayCircleOutlined, SearchOutlined, TeamOutlined,
+  CheckCircleOutlined, BookOutlined, BarChartOutlined,
+  ExperimentOutlined, AlertOutlined,
+  RobotOutlined,
+  InfoCircleOutlined, LoadingOutlined,
+} from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
 import { mcpApi } from '@/services/mcpService'
 import { getErrorMessage } from '@/types/error'
 import type { MCPToolInfo } from '@/types/mcp'
+import {
+  getToolDisplayName,
+  getToolDisplayDescription,
+  getToolIcon,
+  getToolColor,
+  getToolUserAction,
+  toolDisplayMap,
+} from '@/utils/toolDisplayMap'
 
 const { Panel } = Collapse
 const { Search } = Input
-const { TabPane } = Tabs
 
 interface ExecuteResult {
   type: string
@@ -54,50 +67,35 @@ function MCPTools() {
     }
   }
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case 'novel_management':
-        return <FileTextOutlined />
-      case 'memory_retrieval':
-        return <SearchOutlined />
-      case 'consistency_check':
-        return <CheckCircleOutlined />
-      case 'writing_assistant':
-        return <TeamOutlined />
-      default:
-        return <PlayCircleOutlined />
+  const getCategoryConfig = (category: string) => {
+    const configs: Record<string, { icon: React.ReactNode; label: string; color: string; description: string }> = {
+      novel_management: {
+        icon: <BookOutlined />,
+        label: '资料查阅',
+        color: '#1890ff',
+        description: '读取小说、章节、角色、进度等基础信息',
+      },
+      memory_retrieval: {
+        icon: <SearchOutlined />,
+        label: '记忆检索',
+        color: '#eb2f96',
+        description: '搜索已有内容、回顾角色经历、获取写作上下文',
+      },
+      consistency_check: {
+        icon: <CheckCircleOutlined />,
+        label: '质量检查',
+        color: '#ff4d4f',
+        description: '检查角色一致性、情节逻辑、伏笔状态等',
+      },
+      writing_assistant: {
+        icon: <TeamOutlined />,
+        label: '创作执行',
+        color: '#fa8c16',
+        description: 'AI生成、编辑修改、时间线管理、任务调度',
+      },
     }
+    return configs[category] || { icon: <PlayCircleOutlined />, label: category, color: '#999', description: '' }
   }
-
-  const getCategoryLabel = (category: string) => {
-    const labels: Record<string, string> = {
-      novel_management: '小说管理',
-      memory_retrieval: '记忆检索',
-      consistency_check: '一致性检查',
-      writing_assistant: '写作助手',
-    }
-    return labels[category] || category
-  }
-
-  const toolColumns = [
-    { title: '工具名称', dataIndex: 'name', key: 'name' },
-    { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
-    {
-      title: '分类',
-      dataIndex: 'category',
-      key: 'category',
-      render: (category: string) => <Tag>{getCategoryLabel(category)}</Tag>,
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (_: unknown, record: MCPToolInfo) => (
-        <Button type="link" onClick={() => setSelectedTool(record)}>
-          查看详情
-        </Button>
-      ),
-    },
-  ]
 
   const onSearchMemory = async (query: string) => {
     if (!novelId || !query) return
@@ -183,7 +181,7 @@ function MCPTools() {
       case 'memory_search': {
         const searchData = data as { query: string; total: number; results: Array<{ type: string; relevance_score: number; content: string }> }
         return (
-          <Card title="记忆搜索结果" size="small">
+          <Card title="搜索结果" size="small">
             <p>查询: {searchData.query}</p>
             <p>结果数: {searchData.total}</p>
             <List
@@ -191,7 +189,7 @@ function MCPTools() {
               renderItem={(item) => (
                 <List.Item>
                   <List.Item.Meta
-                    title={`[${item.type}] 相关度: ${(item.relevance_score * 100).toFixed(1)}%`}
+                    title={`相关度: ${(item.relevance_score * 100).toFixed(1)}%`}
                     description={item.content.substring(0, 200) + '...'}
                   />
                 </List.Item>
@@ -203,7 +201,7 @@ function MCPTools() {
       case 'novel_summary': {
         const summaryData = data as { title: string; genre: string; status: string; chapter_count: number; word_count: number; character_count: number; description: string }
         return (
-          <Card title="小说摘要" size="small">
+          <Card title="小说概况" size="small">
             <Descriptions column={2}>
               <Descriptions.Item label="标题">{summaryData.title}</Descriptions.Item>
               <Descriptions.Item label="类型">{summaryData.genre}</Descriptions.Item>
@@ -220,7 +218,7 @@ function MCPTools() {
       case 'novel_progress': {
         const progressData = data as { total_chapters: number; completed_chapters: number; total_words: number; completion_percentage: number }
         return (
-          <Card title="小说进度" size="small">
+          <Card title="写作进度" size="small">
             <Row gutter={16}>
               <Col span={6}>
                 <Statistic title="总章节" value={progressData.total_chapters} />
@@ -241,9 +239,9 @@ function MCPTools() {
       case 'consistency_check': {
         const checkData = data as { passed: boolean; issues: Array<{ type: string; severity: string; description: string; suggestion: string }> }
         return (
-          <Card title="一致性检查结果" size="small">
+          <Card title="体检报告" size="small">
             <Alert
-              title={checkData.passed ? '检查通过' : '发现问题'}
+              title={checkData.passed ? '全部通过' : '发现问题'}
               type={checkData.passed ? 'success' : 'warning'}
               showIcon
               style={{ marginBottom: 16 }}
@@ -268,13 +266,13 @@ function MCPTools() {
       case 'foreshadowing_status': {
         const foreshadowData = data as { total: number; resolved: number; pending: number; abandoned: number }
         return (
-          <Card title="伏笔状态" size="small">
+          <Card title="伏笔追踪" size="small">
             <Row gutter={16}>
               <Col span={6}>
                 <Statistic title="总数" value={foreshadowData.total} />
               </Col>
               <Col span={6}>
-                <Statistic title="已解决" value={foreshadowData.resolved} />
+                <Statistic title="已回收" value={foreshadowData.resolved} />
               </Col>
               <Col span={6}>
                 <Statistic title="待处理" value={foreshadowData.pending} />
@@ -291,6 +289,13 @@ function MCPTools() {
     }
   }
 
+  const quickTools = [
+    { key: 'summary', icon: <BookOutlined style={{ fontSize: 24, color: '#1890ff' }} />, title: '查看小说概况', desc: '获取基本信息、章节数、字数等', onClick: onGetNovelSummary },
+    { key: 'progress', icon: <BarChartOutlined style={{ fontSize: 24, color: '#52c41a' }} />, title: '查看写作进度', desc: '完成率、总字数、最新章节统计', onClick: onGetNovelProgress },
+    { key: 'check', icon: <ExperimentOutlined style={{ fontSize: 24, color: '#ff4d4f' }} />, title: '全面体检', desc: '角色+情节+时间线+伏笔综合检查', onClick: onCheckConsistency },
+    { key: 'foreshadowing', icon: <AlertOutlined style={{ fontSize: 24, color: '#faad14' }} />, title: '伏笔追踪', desc: '已回收/待处理/已放弃的统计', onClick: onGetForeshadowingStatus },
+  ]
+
   if (loading && tools.length === 0) {
     return (
       <Card>
@@ -302,140 +307,265 @@ function MCPTools() {
   }
 
   return (
-    <Card title="MCP工具集">
-      <Tabs defaultActiveKey="quick">
-        <TabPane tab="快捷工具" key="quick">
-          <Row gutter={[16, 16]}>
-            <Col span={8}>
-              <Card hoverable onClick={onGetNovelSummary}>
-                <Card.Meta
-                  avatar={<FileTextOutlined style={{ fontSize: 24 }} />}
-                  title="小说摘要"
-                  description="获取小说整体摘要信息"
-                />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card hoverable onClick={onGetNovelProgress}>
-                <Card.Meta
-                  avatar={<FileTextOutlined style={{ fontSize: 24 }} />}
-                  title="小说进度"
-                  description="查看小说写作进度"
-                />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card hoverable onClick={onCheckConsistency}>
-                <Card.Meta
-                  avatar={<CheckCircleOutlined style={{ fontSize: 24 }} />}
-                  title="一致性检查"
-                  description="执行完整一致性检查"
-                />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card hoverable onClick={onGetForeshadowingStatus}>
-                <Card.Meta
-                  avatar={<CheckCircleOutlined style={{ fontSize: 24 }} />}
-                  title="伏笔状态"
-                  description="查看伏笔统计信息"
-                />
-              </Card>
-            </Col>
-            <Col span={16}>
-              <Card>
-                <Card.Meta
-                  avatar={<SearchOutlined style={{ fontSize: 24 }} />}
-                  title="记忆搜索"
-                  description="搜索小说情节记忆"
-                />
-                <Search
-                  placeholder="输入搜索关键词..."
-                  enterButton="搜索"
-                  size="large"
-                  onSearch={onSearchMemory}
-                  style={{ marginTop: 16 }}
-                />
-              </Card>
-            </Col>
-          </Row>
-
-          {executeResult && (
-            <>
-              <Divider>执行结果</Divider>
-              {renderResult()}
-            </>
-          )}
-        </TabPane>
-
-        <TabPane tab="工具列表" key="list">
-          <Table columns={toolColumns} dataSource={tools} rowKey="name" />
-        </TabPane>
-
-        <TabPane tab="按分类" key="categories">
-          <Collapse accordion>
-            {Object.entries(categories).map(([category, categoryTools]) => (
-              <Panel
-                header={
-                  <span>
-                    {getCategoryIcon(category)} {getCategoryLabel(category)} ({categoryTools.length})
-                  </span>
-                }
-                key={category}
-              >
-                <List
-                  dataSource={categoryTools}
-                  renderItem={(tool) => (
-                    <List.Item
-                      actions={[<Button key="detail" type="link" onClick={() => setSelectedTool(tool)}>详情</Button>]}
-                    >
-                      <List.Item.Meta
-                        title={tool.name}
-                        description={tool.description}
+    <div>
+      <Card
+        title={
+          <Space>
+            <RobotOutlined />
+            <span>AI工具箱</span>
+            <Badge count={tools.length} style={{ backgroundColor: '#1890ff' }} />
+          </Space>
+        }
+        extra={
+          <Tooltip title="这些是AI在创作过程中可以调用的工具，点击可了解每个工具的具体用途">
+            <InfoCircleOutlined style={{ color: '#999' }} />
+          </Tooltip>
+        }
+      >
+        <Tabs defaultActiveKey="quick" items={[
+          {
+            key: 'quick',
+            label: '快捷操作',
+            children: (
+              <>
+                <Row gutter={[16, 16]}>
+                  {quickTools.map((t) => (
+                    <Col span={6} key={t.key}>
+                      <Card hoverable onClick={t.onClick}>
+                        <Card.Meta avatar={t.icon} title={t.title} description={t.desc} />
+                      </Card>
+                    </Col>
+                  ))}
+                  <Col span={12}>
+                    <Card>
+                      <Card.Meta
+                        avatar={<SearchOutlined style={{ fontSize: 24, color: '#eb2f96' }} />}
+                        title="搜索情节内容"
+                        description="用自然语言搜索小说中已有的相关片段"
                       />
-                    </List.Item>
-                  )}
-                />
-              </Panel>
-            ))}
-          </Collapse>
-        </TabPane>
-      </Tabs>
+                      <Search
+                        placeholder="输入关键词，如「主角在码头遇到了谁」…"
+                        enterButton="搜索"
+                        size="large"
+                        onSearch={onSearchMemory}
+                        style={{ marginTop: 16 }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
 
-      {selectedTool && (
-        <Card title={`工具详情: ${selectedTool.name}`} style={{ marginTop: 16 }}>
-          <Descriptions column={1}>
-            <Descriptions.Item label="名称">{selectedTool.name}</Descriptions.Item>
-            <Descriptions.Item label="描述">{selectedTool.description}</Descriptions.Item>
-            <Descriptions.Item label="分类">
-              <Tag>{getCategoryLabel(selectedTool.category)}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="返回值">{selectedTool.returns}</Descriptions.Item>
-          </Descriptions>
-          <Divider>参数</Divider>
-          <Table
-            dataSource={selectedTool.parameters}
-            rowKey="name"
-            pagination={false}
-            size="small"
-            columns={[
-              { title: '参数名', dataIndex: 'name' },
-              { title: '类型', dataIndex: 'type' },
-              { title: '必填', dataIndex: 'required', render: (v: boolean) => v ? <Tag color="red">是</Tag> : <Tag>否</Tag> },
-              { title: '描述', dataIndex: 'description' },
-              { title: '默认值', dataIndex: 'default' },
-            ]}
-          />
-          <Button style={{ marginTop: 16 }} onClick={() => setSelectedTool(null)}>
-            关闭
-          </Button>
-        </Card>
-      )}
+                {executeResult && (
+                  <>
+                    <Divider>执行结果</Divider>
+                    {renderResult()}
+                  </>
+                )}
+              </>
+            ),
+          },
+          {
+            key: 'list',
+            label: `全部工具 (${tools.length})`,
+            children: (
+              <Table
+                dataSource={tools}
+                rowKey="name"
+                pagination={false}
+                columns={[
+                  {
+                    title: '工具',
+                    dataIndex: 'name',
+                    key: 'name',
+                    width: 200,
+                    render: (name: string) => (
+                      <Space>
+                        <span style={{ color: getToolColor(name), fontSize: 16 }}>{getToolIcon(name)}</span>
+                        <span style={{ fontWeight: 500 }}>{getToolDisplayName(name)}</span>
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: '功能说明',
+                    dataIndex: 'description',
+                    key: 'description',
+                    ellipsis: true,
+                    render: (_desc: string, record: MCPToolInfo) => (
+                      <Tooltip title={getToolDisplayDescription(record.name)}>
+                        <span>{getToolDisplayDescription(record.name)}</span>
+                      </Tooltip>
+                    ),
+                  },
+                  {
+                    title: '分类',
+                    dataIndex: 'category',
+                    key: 'category',
+                    width: 110,
+                    render: (category: string) => {
+                        const cfg = getCategoryConfig(category)
+                        return <Tag color={cfg.color}>{cfg.label}</Tag>
+                      },
+                  },
+                  {
+                    title: 'AI调用时显示',
+                    key: 'action',
+                    width: 220,
+                    render: (_: unknown, record: MCPToolInfo) => (
+                      <Tag color={getToolColor(record.name)} style={{ maxWidth: 200 }}>
+                        {getToolUserAction(record.name)}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: '',
+                    key: 'detail',
+                    width: 80,
+                    render: (_: unknown, record: MCPToolInfo) => (
+                      <Button type="link" size="small" onClick={() => setSelectedTool(record)}>
+                        详情
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
+            ),
+          },
+          {
+            key: 'categories',
+            label: '按类别浏览',
+            children: (
+              <Collapse accordion>
+                {Object.entries(categories).map(([category, categoryTools]) => {
+                  const cfg = getCategoryConfig(category)
+                  return (
+                    <Panel
+                      header={
+                        <Space>
+                          <span style={{ color: cfg.color }}>{cfg.icon}</span>
+                          <strong>{cfg.label}</strong>
+                          <Tag color={cfg.color}>{categoryTools.length}个工具</Tag>
+                          <span style={{ color: '#999', fontSize: 13 }}>{cfg.description}</span>
+                        </Space>
+                      }
+                      key={category}
+                    >
+                      <List
+                        dataSource={categoryTools}
+                        renderItem={(tool) => {
+                          const info = toolDisplayMap[tool.name]
+                          return (
+                            <List.Item
+                              actions={[
+                                <Button key="detail" type="link" size="small" onClick={() => setSelectedTool(tool)}>详情</Button>,
+                              ]}
+                            >
+                              <List.Item.Meta
+                                avatar={
+                                  <div style={{
+                                    width: 40, height: 40, borderRadius: 8,
+                                    background: `${info?.color || '#eee'}15`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: info?.color || '#999', fontSize: 18,
+                                  }}>
+                                    {getToolIcon(tool.name)}
+                                  </div>
+                                }
+                                title={
+                                  <Space>
+                                    <span style={{ fontWeight: 500 }}>{getToolDisplayName(tool.name)}</span>
+                                    <Tag color={info?.color} style={{ fontSize: 11, marginLeft: 4 }}>
+                                      {getToolUserAction(tool.name)}
+                                    </Tag>
+                                  </Space>
+                                }
+                                description={getToolDisplayDescription(tool.name)}
+                              />
+                            </List.Item>
+                          )
+                        }}
+                      />
+                    </Panel>
+                  )
+                })}
+              </Collapse>
+            ),
+          },
+        ]} />
 
-      <div style={{ marginTop: 16 }}>
-        <Button onClick={() => navigate(`/novels/${novelId}`)}>返回小说详情</Button>
-      </div>
-    </Card>
+        {selectedTool && (
+          <Card
+            title={
+              <Space>
+                {getToolIcon(selectedTool.name)}
+                <span>{getToolDisplayName(selectedTool.name)}</span>
+                <Tag color={getToolColor(selectedTool.name)}>{getCategoryConfig(selectedTool.category).label}</Tag>
+              </Space>
+            }
+            style={{ marginTop: 16 }}
+          >
+            <Alert
+              type="info"
+              showIcon
+              icon={<LoadingOutlined />}
+              message="AI调用此工具时用户看到的提示"
+              description={
+                <Tag color={getToolColor(selectedTool.name)} style={{ fontSize: 14, padding: '4px 12px' }}>
+                  {getToolUserAction(selectedTool.name)}
+                </Tag>
+              }
+              style={{ marginBottom: 16 }}
+            />
+
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="友好名称">
+                <span style={{ fontWeight: 500, fontSize: 15 }}>{getToolDisplayName(selectedTool.name)}</span>
+              </Descriptions.Item>
+              <Descriptions.Item label="功能说明">
+                {getToolDisplayDescription(selectedTool.name)}
+              </Descriptions.Item>
+              <Descriptions.Item label="所属分类">
+                <Tag color={getCategoryConfig(selectedTool.category).color}>
+                  {getCategoryConfig(selectedTool.category).label}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="原始名称（系统内部）">
+                <code style={{ background: '#f5f5f5', padding: '2px 8px', borderRadius: 4, color: '#999' }}>
+                  {selectedTool.name}
+                </code>
+              </Descriptions.Item>
+              <Descriptions.Item label="原始描述">
+                <span style={{ color: '#666', fontSize: 13 }}>{selectedTool.description}</span>
+              </Descriptions.Item>
+              <Descriptions.Item label="返回值">
+                {selectedTool.returns || '-'}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Divider>参数定义</Divider>
+            <Table
+              dataSource={selectedTool.parameters}
+              rowKey="name"
+              pagination={false}
+              size="small"
+              columns={[
+                { title: '参数名', dataIndex: 'name' },
+                { title: '类型', dataIndex: 'type', render: (t: string) => <Tag>{t}</Tag> },
+                { title: '必填', dataIndex: 'required', render: (v: boolean) => v ? <Tag color="red">必填</Tag> : <Tag>可选</Tag> },
+                { title: '说明', dataIndex: 'description', ellipsis: true },
+                { title: '默认值', dataIndex: 'default', render: (v: any) => v !== undefined ? String(v) : '-' },
+              ]}
+            />
+
+            <Button style={{ marginTop: 16 }} onClick={() => setSelectedTool(null)}>
+              关闭
+            </Button>
+          </Card>
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <Button onClick={() => navigate(`/novels/${novelId}`)}>返回小说详情</Button>
+        </div>
+      </Card>
+    </div>
   )
 }
 

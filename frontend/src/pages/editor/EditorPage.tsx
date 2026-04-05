@@ -28,9 +28,13 @@ import {
 import { wsEditorService } from '@/services/wsEditorService'
 import { editorApi } from '@/services/editorService'
 import { chapterApi } from '@/services/chapterService'
+import {
+  getToolDisplayName as mapToolName,
+  getToolUserAction,
+} from '@/utils/toolDisplayMap'
 import type {
   ServerMsg, Scope, ScopeType, DiffData, EditMode,
-  SessionCreatedMsg, SessionListMsg, ContentChunkMsg,
+  SessionCreatedMsg, SessionListMsg, ContentChunkMsg, ThinkingChunkMsg, ThinkingDoneMsg,
   ToolCallMsg,
   EditStartedMsg, EditAppliedMsg, EditAcceptedMsg, EditRejectedMsg,
   ErrorMsg,
@@ -66,6 +70,8 @@ interface ChatMessage {
   taskId?: string
   timestamp?: number
   kind?: 'message' | 'tool'
+  thinkingContent?: string
+  thinkingDone?: boolean
 }
 
 interface ToolCallInfo {
@@ -92,6 +98,9 @@ const SCOPE_OPTIONS: Array<{ value: ScopeType; label: string }> = [
 const MODEL_OPTIONS = [
   { value: 'deepseek-chat', label: 'DeepSeek Chat' },
   { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
+  { value: 'qwen-max', label: 'Qwen Max (阿里)' },
+  { value: 'qwen-plus', label: 'Qwen Plus (阿里)' },
+  { value: 'qwq', label: 'QwQ 推理 (阿里)' },
   { value: 'glm-4.7-flash', label: 'GLM-4.7 Flash' },
 ]
 
@@ -112,23 +121,40 @@ function getToolDisplayName(toolName: string, chapterNumber?: number, chapterTit
     ? `第${chapterNumber}章${chapterTitle ? ` ${chapterTitle}` : ''}`
     : chapterTitle || ''
 
-  const mapping: Record<string, string> = {
-    get_chapter_list: '查看章节目录',
-    read_chapter_for_edit: chapterLabel ? `查看 ${chapterLabel}` : '查看章节内容',
-    read_chapter: chapterLabel ? `查看 ${chapterLabel}` : '查看章节内容',
-    start_edit_session: chapterLabel ? `准备修改 ${chapterLabel}` : '准备修改章节',
-    get_edit_status: chapterLabel ? `查看 ${chapterLabel} 的修改进度` : '查看修改进度',
-    edit_chapter_content: chapterLabel ? `正在修改 ${chapterLabel}` : '正在修改章节',
-    create_new_chapter: chapterLabel ? `创建 ${chapterLabel}` : '创建新章节',
-    generate_chapter_draft: chapterLabel ? `正在撰写 ${chapterLabel}` : '正在撰写章节',
-    get_creative_profile: '查看长期创作规则',
-    update_creative_profile: '更新长期创作规则',
-    search_memory: '查找前文设定和记忆',
-    get_recent_context: '回看最近创作上下文',
-    run_agent_task: '调用协作助手',
+  const chapterAwareMap: Record<string, (label: string) => string> = {
+    read_chapter_for_edit: (l) => l ? `查看 ${l}` : '读取待编辑原文',
+    read_chapter: (l) => l ? `查看 ${l}` : '读取章节正文',
+    get_chapter_content: (l) => l ? `查看 ${l}` : '读取章节正文',
+    start_edit_session: (l) => l ? `准备修改 ${l}` : '开始安全编辑',
+    edit_chapter_content: (l) => l ? `正在修改 ${l}` : '编辑章节内容',
+    create_new_chapter: (l) => l ? `创建 ${l}` : '创建新章节',
+    generate_chapter_draft: (l) => l ? `正在撰写 ${l}` : 'AI生成新章节',
+    apply_edit: (l) => l ? `正在修改 ${l}` : '应用修改内容',
+    get_edit_status: (l) => l ? `查看 ${l} 的修改进度` : '查看编辑状态',
   }
 
-  return mapping[toolName] || '处理创作任务'
+  if (chapterAwareMap[toolName]) {
+    return chapterAwareMap[toolName](chapterLabel)
+  }
+
+  const name = mapToolName(toolName)
+  if (name !== toolName) return name
+
+  return getToolUserAction(toolName).replace(/正在|正在/g, '').replace(/[…。]/g, '')
+}
+
+function sanitizeToolError(rawError: string | undefined): string | undefined {
+  if (!rawError) return undefined
+  const cleaned = rawError
+    .replace(/^工具\s+\w+\s+失败[：:]\s*/, '')
+    .replace(/\s*请修正参数后重试。?\s*$/g, '')
+    .replace(/[a-zA-Z_]*Error[(:][^)]*[)]?\s*:?\s*/gi, '')
+    .replace(/name\s+['"][\w']+['"]\s+is\s+not\s+defined/gi, '内部配置错误')
+    .replace(/源角色或目标角色不存在/gi, '角色不存在')
+    .replace(/操作人物关系失败/gi, '')
+    .replace(/更新时间线条目失败/gi, '')
+    .trim()
+  return cleaned || undefined
 }
 
 function getActivityVisual(activityKind?: ToolCallInfo['activity_kind']) {
@@ -314,12 +340,13 @@ export default function EditorPage() {
               })
             }
             
-            if (msg.content) {
+            if (msg.content || msg.metadata?.thinking_content) {
               history.push({
                 id: msgId,
                 role: msg.role as 'user' | 'assistant',
-                content: msg.content,
+                content: msg.content || '',
                 timestamp: timelineOrderRef.current++,
+                thinkingContent: msg.metadata?.thinking_content || undefined,
               })
             }
           })
@@ -346,6 +373,31 @@ export default function EditorPage() {
           timestamp: timelineOrderRef.current++,
         }
         setChatMessages(prev => [...prev, newMsg])
+        break
+      }
+      case 'thinking_chunk': {
+        const m = msg as ThinkingChunkMsg
+        if (!m.chunk?.trim()) break
+        setChatMessages(prev => {
+          const taskId = m.task_id || currentTaskId || undefined
+          const existingIndex = prev.findIndex(item => item.taskId === taskId && item.role === 'assistant' && item.isStreaming)
+          if (existingIndex >= 0) {
+            return prev.map((item, index) => index === existingIndex
+              ? { ...item, thinkingContent: (item.thinkingContent || '') + m.chunk }
+              : item)
+          }
+          return prev
+        })
+        break
+      }
+      case 'thinking_done': {
+        void (msg as ThinkingDoneMsg)
+        setChatMessages(prev => prev.map(item => {
+          if (item.isStreaming && item.thinkingContent) {
+            return { ...item, thinkingDone: true }
+          }
+          return item
+        }))
         break
       }
       case 'content_chunk': {
@@ -868,10 +920,68 @@ export default function EditorPage() {
   const activePendingSessionId = latestPendingEditSessionId || editSessionId
   const hasPendingChanges = changeCount > 0 || workingContent !== originalContent
   const hasPendingReview = Boolean(activePendingSessionId || hasActiveEdit) && hasPendingChanges
-  const timelineItems = [
-    ...chatMessages.map(item => ({ type: 'message' as const, order: item.timestamp || 0, item })),
-    ...toolCalls.map(item => ({ type: 'tool' as const, order: item.order, item })),
+  interface ConversationTurnItem {
+    type: 'message' | 'tool'
+    item: ChatMessage | ToolCallInfo
+  }
+
+  interface ConversationTurn {
+    id: string
+    role: 'user' | 'assistant'
+    userMessage?: ChatMessage
+    items: ConversationTurnItem[]
+    order: number
+  }
+
+function buildConversationTurns(
+  msgs: ChatMessage[],
+  calls: ToolCallInfo[]
+): ConversationTurn[] {
+  const sorted = [
+    ...msgs.map(m => ({ type: 'message' as const, order: m.timestamp || 0, item: m })),
+    ...calls.map(t => ({ type: 'tool' as const, order: t.order, item: t })),
   ].sort((a, b) => a.order - b.order)
+
+  const turns: ConversationTurn[] = []
+  let currentTurn: ConversationTurn | null = null
+
+  for (const entry of sorted) {
+    if (entry.type === 'message') {
+      const msg = entry.item as ChatMessage
+      if (msg.role === 'user') {
+        if (currentTurn) turns.push(currentTurn)
+        currentTurn = {
+          id: msg.id,
+          role: 'user',
+          userMessage: msg,
+          items: [],
+          order: entry.order,
+        }
+      } else {
+        if (currentTurn && currentTurn.role === 'user') {
+          turns.push(currentTurn)
+          currentTurn = null
+        }
+        if (!currentTurn) {
+          currentTurn = { id: msg.id, role: 'assistant', items: [], order: entry.order }
+        }
+        currentTurn.items.push({ type: 'message', item: msg })
+      }
+    } else {
+      const tc = entry.item as ToolCallInfo
+      if (currentTurn && currentTurn.role === 'user') {
+        turns.push(currentTurn)
+        currentTurn = null
+      }
+      if (!currentTurn) {
+        currentTurn = { id: tc.tool_id || `tc_${tc.order}`, role: 'assistant', items: [], order: entry.order }
+      }
+      currentTurn.items.push({ type: 'tool', item: tc })
+    }
+  }
+  if (currentTurn) turns.push(currentTurn)
+  return turns
+}
 
   return (
     <div className={`${styles.editorPage} ${darkMode ? styles.editorPageDark : ''}`}>
@@ -1105,51 +1215,85 @@ export default function EditorPage() {
                 <div style={{ fontSize: 12 }}>AI 可以帮你修改章节内容</div>
               </div>
             )}
-            {timelineItems.map((entry) => {
-              if (entry.type === 'message') {
-                const msg = entry.item as ChatMessage
+            {buildConversationTurns(chatMessages, toolCalls).map((turn) => {
+              if (turn.role === 'user') {
                 return (
-                  <div key={msg.id} className={styles.chatEntry}>
-                    <div
-                      className={`${styles.chatMsg} ${msg.role === 'user' ? styles.chatMsgUser : msg.isStreaming ? styles.chatMsgStreaming : styles.chatMsgAssistant}`}
-                    >
-                      <Markdown>{msg.content}</Markdown>
+                  <div key={turn.id} className={styles.chatTurn}>
+                    <div className={styles.chatMsgUser}>
+                      <Markdown>{turn.userMessage?.content || ''}</Markdown>
                     </div>
                   </div>
                 )
               }
 
-              const activity = entry.item as ToolCallInfo
-              const activityKey = activity.tool_id || `${activity.task_id || 'no_task'}_${activity.tool_name}_${activity.order || activity.timestamp || Date.now()}`
-              const visual = getActivityVisual(activity.activity_kind)
+              const hasAnyContent = turn.items.length > 0
+              if (!hasAnyContent) return null
+
+              const isCurrentlyStreaming = turn.items.some(
+                it => it.type === 'message' && (it.item as ChatMessage).isStreaming
+              )
+
               return (
-                <div key={activityKey} className={styles.toolInlineWrap}>
-                  <div className={`${styles.activityCard} ${activity.status === 'executing' ? styles.activityCardActive : ''}`}>
-                    <div className={styles.activityIconWrap}>
-                      <span className={styles.activityIcon}>{visual.icon}</span>
-                      {activity.status === 'executing' && <span className={styles.activityPulse} />}
-                    </div>
-                    <div className={styles.activityBody}>
-                      <div className={styles.activityLine}>
-                        <span className={styles.activityName}>
-                          {activity.display_text || getToolDisplayName(activity.tool_name, activity.chapter_number, activity.chapter_title)}
-                        </span>
-                        <span className={`${styles.activityState} ${activity.status === 'executing' ? styles.activityStateRunning : activity.status === 'completed' ? styles.activityStateDone : styles.activityStateFailed}`}>
-                          {activity.status === 'executing' && <LoadingOutlined spin />}
-                          {activity.status === 'completed' && <CheckCircleOutlined />}
-                          {(activity.status === 'failed' || activity.status === 'rejected') && <CloseCircleOutlined />}
-                          {activity.status === 'executing' ? visual.badge : activity.status === 'completed' ? '已完成' : '未完成'}
-                        </span>
-                      </div>
-                      {(activity.chapter_number || activity.chapter_title) && (
-                        <div className={styles.activityMeta}>
-                          {activity.chapter_number ? `第${activity.chapter_number}章` : ''}
-                          {activity.chapter_title ? ` · ${activity.chapter_title}` : ''}
+                <div key={turn.id} className={`${styles.chatTurn} ${styles.chatTurnAssistant}`}>
+                  {turn.items.map((it, idx) => {
+                    if (it.type === 'message') {
+                      const msg = it.item as ChatMessage
+                      if (!msg.content && !msg.thinkingContent) return null
+                      return (
+                        <div key={`msg_${msg.id || idx}`}>
+                          {msg.thinkingContent && (
+                            <details className={`${styles.thinkingBlock} ${!msg.thinkingDone && msg.isStreaming ? styles.thinkingThinking : ''}`} open={msg.isStreaming ? true : !msg.thinkingDone}>
+                              <summary className={styles.thinkingSummary}>
+                                <ReadOutlined /> 思考过程
+                                {msg.thinkingDone || (!msg.isStreaming && msg.content)
+                                  ? <span className={styles.thinkingToggle}>展开</span>
+                                  : <span className={`${styles.thinkingToggle} ${styles.thinkingActive}`}>思考中…</span>
+                                }
+                              </summary>
+                              <div className={styles.thinkingContent}>
+                                <pre>{msg.thinkingContent}</pre>
+                              </div>
+                            </details>
+                          )}
+                          {msg.content && (
+                            <div className={styles.assistantTextBlock}>
+                              <Markdown>{msg.content}</Markdown>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {activity.error && <div className={styles.activityError}>{activity.error}</div>}
+                      )
+                    }
+
+                    const tc = it.item as ToolCallInfo
+                    const visual = getActivityVisual(tc.activity_kind)
+                    return (
+                      <div
+                        key={`tool_${tc.tool_id || `${tc.task_id}_${tc.order}`}`}
+                        className={`${styles.toolInlineCompact} ${tc.status === 'executing' ? styles.toolInlineActive : ''}`}
+                      >
+                        <span className={styles.toolCompactIcon}>{visual.icon}</span>
+                        <span className={styles.toolCompactName}>
+                          {tc.display_text || getToolDisplayName(tc.tool_name, tc.chapter_number, tc.chapter_title)}
+                        </span>
+                        <span className={`${styles.toolCompactStatus} ${tc.status === 'executing' ? styles.toolCompactRunning : tc.status === 'completed' ? styles.toolCompactDone : styles.toolCompactFailed}`}>
+                          {tc.status === 'executing' && <LoadingOutlined spin />}
+                          {tc.status === 'completed' && <CheckCircleOutlined />}
+                          {(tc.status === 'failed' || tc.status === 'rejected') && <CloseCircleOutlined />}
+                          {tc.status === 'executing'
+                            ? visual.badge
+                            : tc.status === 'completed'
+                              ? '完成'
+                              : '失败'}
+                        </span>
+                        {tc.error && <span className={styles.toolCompactError}>{sanitizeToolError(tc.error)}</span>}
+                      </div>
+                    )
+                  })}
+                  {isCurrentlyStreaming && !turn.items.some(it => it.type === 'message' && (it.item as ChatMessage).content) && (
+                    <div className={styles.assistantThinking}>
+                      <LoadingOutlined spin /> 思考中…
                     </div>
-                  </div>
+                  )}
                 </div>
               )
             })}

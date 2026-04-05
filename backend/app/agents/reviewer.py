@@ -10,7 +10,8 @@ from sqlalchemy import select
 from .base import BaseAgent, AgentTask, AgentResult, AgentRole, TaskType
 from app.core.database import AsyncSessionLocal
 from app.consistency.service import ConsistencyChecker
-from app.foreshadowing.models import Foreshadowing, ForeshadowingStatus
+from app.timeline.models import TimelineEntry, TimelineEntryCategory, TimelineEntryStatus, TimeHorizon
+from app.timeline.schemas import TimelineEntryCreate, TimelineEntryResolve
 from app.chapters.models import Chapter
 
 logger = logging.getLogger(__name__)
@@ -263,96 +264,116 @@ class ReviewerAgent(BaseAgent):
             return [issue.model_dump() for issue in issues]
     
     async def _list_foreshadowing(self, task: AgentTask) -> List[Dict[str, Any]] | Dict[str, Any]:
-        """列出伏笔"""
+        """列出伏笔（通过时间线系统查询）"""
         parameters = task.parameters
         status = parameters.get("status")
         min_importance = parameters.get("min_importance")
         limit = parameters.get("limit", 20)
 
         async with AsyncSessionLocal() as db:
-            query = select(Foreshadowing).where(Foreshadowing.novel_id == task.novel_id)
+            query = select(TimelineEntry).where(
+                TimelineEntry.novel_id == task.novel_id,
+                TimelineEntry.category == TimelineEntryCategory.FORESHADOWING.value,
+            )
             if status:
-                query = query.where(Foreshadowing.status == status)
+                query = query.where(TimelineEntry.status == status)
             if min_importance is not None:
-                query = query.where(Foreshadowing.importance >= min_importance)
+                query = query.where(TimelineEntry.importance >= min_importance)
 
-            query = query.order_by(Foreshadowing.importance.desc(), Foreshadowing.created_at.desc()).limit(limit)
+            query = query.order_by(TimelineEntry.importance.desc(), TimelineEntry.created_at.desc()).limit(limit)
             result = await db.execute(query)
             items = result.scalars().all()
 
             return [
                 {
-                    "id": fs.id,
-                    "title": fs.title,
-                    "description": fs.description,
-                    "status": fs.status,
-                    "foreshadowing_type": fs.foreshadowing_type,
-                    "importance": fs.importance,
-                    "created_chapter_id": fs.created_chapter_id,
-                    "resolved_chapter_id": fs.resolved_chapter_id,
-                    "resolution_notes": fs.resolution_notes,
-                    "metadata": fs.extra_metadata,
-                    "created_at": fs.created_at.isoformat() if fs.created_at else None,
-                    "resolved_at": fs.resolved_at.isoformat() if fs.resolved_at else None
+                    "id": entry.id,
+                    "title": entry.title,
+                    "description": entry.description,
+                    "status": entry.status,
+                    "category": entry.category,
+                    "importance": entry.importance,
+                    "source_chapter_id": entry.source_chapter_id,
+                    "resolved_chapter_id": entry.resolved_chapter_id,
+                    "detail_json": entry.detail_json,
+                    "metadata": entry.extra_metadata,
+                    "created_at": entry.created_at.isoformat() if entry.created_at else None,
+                    "resolved_at": entry.resolved_at.isoformat() if entry.resolved_at else None
                 }
-                for fs in items
+                for entry in items
             ]
     
     async def _create_foreshadowing(self, task: AgentTask) -> Dict[str, Any]:
-        """创建伏笔"""
+        """创建伏笔（写入时间线系统）"""
         parameters = task.parameters
         title = parameters.get("title")
         if not title:
             return {"error": "缺少 title，无法创建伏笔"}
 
-        created_chapter_id = parameters.get("created_chapter_id", task.chapter_id)
+        source_chapter_id = parameters.get("created_chapter_id", task.chapter_id)
         async with AsyncSessionLocal() as db:
-            if created_chapter_id:
-                chapter_result = await db.execute(select(Chapter).where(Chapter.id == created_chapter_id))
+            if source_chapter_id:
+                chapter_result = await db.execute(select(Chapter).where(Chapter.id == source_chapter_id))
                 chapter = chapter_result.scalar_one_or_none()
                 if not chapter or chapter.novel_id != task.novel_id:
-                    return {"error": "created_chapter_id 无效或不属于当前小说"}
+                    return {"error": "source_chapter_id 无效或不属于当前小说"}
 
-            foreshadowing = Foreshadowing(
-                novel_id=task.novel_id,
-                created_chapter_id=created_chapter_id,
+            entry_data = TimelineEntryCreate(
+                category=TimelineEntryCategory.FORESHADOWING,
                 title=title,
                 description=parameters.get("description"),
-                foreshadowing_type=parameters.get("foreshadowing_type", "other"),
-                importance=parameters.get("importance", 1),
-                extra_metadata=parameters.get("metadata")
+                detail_json={
+                    "foreshadowing_type": parameters.get("foreshadowing_type", "other"),
+                    "expected_resolution": "",
+                },
+                target_chapter=None,
+                time_horizon=TimeHorizon.UNDEFINED,
+                importance=parameters.get("importance", 3),
+                source="ai_generated",
+                source_chapter_id=source_chapter_id,
             )
-            db.add(foreshadowing)
+            entry = TimelineEntry(
+                novel_id=task.novel_id,
+                category=entry_data.category.value,
+                title=entry_data.title,
+                description=entry_data.description,
+                detail_json=entry_data.detail_json,
+                target_chapter=entry_data.target_chapter,
+                time_horizon=entry_data.time_horizon.value if entry_data.time_horizon else None,
+                importance=entry_data.importance,
+                source=entry_data.source,
+                source_chapter_id=entry_data.source_chapter_id,
+            )
+            db.add(entry)
             await db.commit()
-            await db.refresh(foreshadowing)
+            await db.refresh(entry)
 
             return {
-                "id": foreshadowing.id,
-                "title": foreshadowing.title,
-                "status": foreshadowing.status,
-                "foreshadowing_type": foreshadowing.foreshadowing_type,
-                "importance": foreshadowing.importance,
-                "created_chapter_id": foreshadowing.created_chapter_id
+                "id": entry.id,
+                "title": entry.title,
+                "status": entry.status,
+                "category": entry.category,
+                "importance": entry.importance,
+                "source_chapter_id": entry.source_chapter_id
             }
-    
+
     async def _resolve_foreshadowing(self, task: AgentTask) -> Dict[str, Any]:
-        """解决伏笔"""
+        """解决伏笔（通过时间线系统更新状态）"""
         parameters = task.parameters
-        foreshadowing_id = parameters.get("foreshadowing_id")
-        if not foreshadowing_id:
+        entry_id = parameters.get("foreshadowing_id")
+        if not entry_id:
             return {"error": "缺少 foreshadowing_id，无法解决伏笔"}
 
         resolved_chapter_id = parameters.get("resolved_chapter_id", task.chapter_id)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
-                select(Foreshadowing).where(
-                    Foreshadowing.id == foreshadowing_id,
-                    Foreshadowing.novel_id == task.novel_id
+                select(TimelineEntry).where(
+                    TimelineEntry.id == entry_id,
+                    TimelineEntry.novel_id == task.novel_id
                 )
             )
-            foreshadowing = result.scalar_one_or_none()
-            if not foreshadowing:
-                return {"error": "伏笔不存在"}
+            entry = result.scalar_one_or_none()
+            if not entry:
+                return {"error": "时间线条目不存在"}
 
             if resolved_chapter_id:
                 chapter_result = await db.execute(select(Chapter).where(Chapter.id == resolved_chapter_id))
@@ -360,12 +381,14 @@ class ReviewerAgent(BaseAgent):
                 if not chapter or chapter.novel_id != task.novel_id:
                     return {"error": "resolved_chapter_id 无效或不属于当前小说"}
 
-            foreshadowing.status = ForeshadowingStatus.RESOLVED.value
-            foreshadowing.resolved_chapter_id = resolved_chapter_id
-            foreshadowing.resolution_notes = parameters.get("resolution_notes")
-            foreshadowing.resolved_at = datetime.now()
+            entry.status = TimelineEntryStatus.RESOLVED.value
+            entry.resolved_chapter_id = resolved_chapter_id
+            if not entry.detail_json:
+                entry.detail_json = {}
+            entry.detail_json["resolution_notes"] = parameters.get("resolution_notes")
+            entry.resolved_at = datetime.now()
             await db.commit()
-            await db.refresh(foreshadowing)
+            await db.refresh(entry)
 
             return {
                 "id": foreshadowing.id,

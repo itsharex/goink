@@ -14,7 +14,7 @@ from app.novels.models import Novel, NovelCreativeProfile
 from app.chapters.models import Chapter
 from app.characters.models import Character
 from app.plot_events.models import PlotEvent
-from app.foreshadowing.models import Foreshadowing, ForeshadowingStatus
+from app.timeline.models import TimelineEntry, TimelineEntryCategory, TimelineEntryStatus
 from app.planning.models import PlotOutline, PlotLine, PlotNode, PlotNodeStatus
 from app.workflows.langgraph_workflow import ChapterWorkflow, LANGGRAPH_AVAILABLE
 from app.core.llm_service import llm_service
@@ -263,13 +263,19 @@ class ChapterGenerationService:
             for node in upcoming_nodes
         ]
 
+        from app.timeline.models import TimelineEntry, TimelineEntryCategory, TimelineEntryStatus
+
         unresolved_result = await self.db.execute(
-            select(Foreshadowing)
+            select(TimelineEntry)
             .where(
-                Foreshadowing.novel_id == self.novel_id,
-                Foreshadowing.status == ForeshadowingStatus.UNRESOLVED.value
+                TimelineEntry.novel_id == self.novel_id,
+                TimelineEntry.category == TimelineEntryCategory.FORESHADOWING.value,
+                TimelineEntry.status.in_([
+                    TimelineEntryStatus.PENDING.value,
+                    TimelineEntryStatus.ACTIVE.value,
+                ])
             )
-            .order_by(Foreshadowing.importance.desc(), Foreshadowing.created_at.desc())
+            .order_by(TimelineEntry.importance.desc(), TimelineEntry.created_at.desc())
             .limit(8)
         )
         unresolved = list(unresolved_result.scalars().all())
@@ -279,7 +285,7 @@ class ChapterGenerationService:
                 "title": fs.title,
                 "description": fs.description,
                 "importance": fs.importance,
-                "created_chapter_id": fs.created_chapter_id
+                "source_chapter_id": fs.source_chapter_id
             }
             for fs in unresolved
         ]

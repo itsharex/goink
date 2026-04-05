@@ -135,12 +135,25 @@ export interface ConsistencyCheckMessage {
   issues: string[]
 }
 
+export interface PostProcessInfo {
+  was_truncated: boolean
+  ending_completed: boolean
+  structured_info_detected: boolean
+  timeline_entries_created?: Array<{
+    id: number
+    category: string
+    title: string
+  }>
+}
+
 export interface GenerationCompletedMessage {
   type: 'generation_completed'
   task_id: string
   content: string
   word_count: number
   chapter_id?: number
+  chapter_number?: number
+  post_process_info?: PostProcessInfo
 }
 
 export interface GenerationFailedMessage {

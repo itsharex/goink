@@ -17,6 +17,7 @@ from app.core.llm_service import LLMServiceError
 from app.auth.router import router as auth_router
 from app.novels.router import router as novels_router
 from app.characters.router import router as characters_router
+from app.locations.router import router as locations_router
 from app.chapters.router import router as chapters_router
 from app.plot_events.router import router as plot_events_router
 from app.memory.router import router as memory_router
@@ -30,6 +31,7 @@ from app.core.ws_chat import router as ws_chat_router
 from app.generation.router import router as generation_router
 from app.sessions.router import router as sessions_router
 from app.editor.router import router as editor_router
+from app.timeline.router import router as timeline_router
 
 from app.auth.models import User
 from app.novels.models import Novel
@@ -39,9 +41,10 @@ from app.plot_events.models import PlotEvent
 from app.memory.models import MemoryChunk
 from app.rag.models import RAGContext
 from app.agents.models import AgentTaskRecord
-from app.foreshadowing.models import Foreshadowing
 from app.planning.models import PlotLine, PlotNode, PlotOutline
 from app.editor.models import EditSession, EditChange
+from app.timeline.models import TimelineEntry
+from app.novels.models import UserCreativeProfile
 from app.chat.models import ChatSession, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -161,6 +164,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(novels_router, prefix="/api/v1")
 app.include_router(characters_router, prefix="/api/v1")
+app.include_router(locations_router, prefix="/api/v1")
 app.include_router(chapters_router, prefix="/api/v1")
 app.include_router(plot_events_router, prefix="/api/v1")
 app.include_router(memory_router, prefix="/api/v1")
@@ -172,6 +176,7 @@ app.include_router(mcp_router, prefix="/api/v1")
 app.include_router(generation_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(editor_router, prefix="/api/v1")
+app.include_router(timeline_router, prefix="/api/v1")
 app.include_router(ws_chat_router)
 app.mount("/mcp", get_mcp_transport())
 

@@ -38,7 +38,7 @@ class StartEditSessionTool(BaseMCPTool):
     """开始编辑会话（创建副本）"""
     
     name = "start_edit_session"
-    description = "开始编辑会话，创建一个副本用于AI和用户编辑。原内容保持不变，直到用户接受或拒绝。必须提供chapter_id；若不清楚章节ID，先调用 get_chapter_list 或 read_chapter_for_edit 获取。成功后应继续调用 apply_edit 写入正文。"
+    description = "开始编辑会话，创建一个副本用于AI和用户编辑。原内容保持不变，直到用户接受或拒绝。必须提供chapter_id；若不清楚章节ID，先调用 get_chapter_list 或 read_chapter_for_edit 获取。成功后应继续调用 apply_edit 写入正文。\n💡 提示：如果已有活跃编辑会话，会自动复用，无需重复创建。"
     category = MCPToolCategory.WRITING_ASSISTANT
     parameters_schema = {
         "type": "object",
@@ -132,7 +132,16 @@ class ApplyEditTool(BaseMCPTool):
     """应用编辑到副本"""
     
     name = "apply_edit"
-    description = "应用编辑到副本内容。必须先用 start_edit_session 获取 edit_session_id。支持全量替换、部分编辑、插入、删除。多次编辑会累积变更计数。编辑只修改副本，需用户确认后才生效。"
+    description = (
+        "应用编辑到副本内容。必须先用 start_edit_session 获取 edit_session_id（如有活跃会话可直接用）。"
+        "\n【变更类型选择指南】"
+        "\n- full_replace：你有完整的修改后全文，且改动幅度超过30% → 传 new_content 为完整替换文本"
+        "\n- search_replace（推荐）：你知道要改的是哪段原文 → 传 search_text(要找的原文) + new_content(替换内容)，无需知道行号"
+        "\n- partial_edit：你知道精确的行号范围，只改其中几段 → 传 start_line + end_line + new_content"
+        "\n- insert：在指定位置插入新内容"
+        "\n- delete：删除指定范围的内容"
+        "\n多次编辑会累积变更计数。编辑只修改副本，需用户确认后才生效。"
+    )
     category = MCPToolCategory.WRITING_ASSISTANT
     parameters_schema = {
         "type": "object",
@@ -143,12 +152,16 @@ class ApplyEditTool(BaseMCPTool):
             },
             "change_type": {
                 "type": "string",
-                "enum": ["full_replace", "partial_edit", "insert", "delete"],
-                "description": "变更类型"
+                "enum": ["full_replace", "partial_edit", "search_replace", "insert", "delete"],
+                "description": "变更类型（推荐用 search_replace 做局部修改）"
             },
             "new_content": {
                 "type": "string",
-                "description": "新内容"
+                "description": "新内容（search_replace模式为替换后的内容；full_replace为完整新文本）"
+            },
+            "search_text": {
+                "type": "string",
+                "description": "要搜索的原文片段（search_replace模式必填，用于定位要替换的位置）"
             },
             "start_line": {
                 "type": "integer",
@@ -177,6 +190,7 @@ class ApplyEditTool(BaseMCPTool):
         new_content: str,
         start_line: Optional[int] = None,
         end_line: Optional[int] = None,
+        search_text: Optional[str] = None,
         reason: Optional[str] = None,
         user_id: Optional[int] = None,
         **kwargs
@@ -202,13 +216,40 @@ class ApplyEditTool(BaseMCPTool):
                     return MCPToolResult(success=False, error="小说不存在")
                 if novel.author_id != user_id:
                     return MCPToolResult(success=False, error="无权编辑此章节")
-            
+
+            effective_start_line = start_line
+            effective_end_line = end_line
+
+            if change_type == "search_replace":
+                if not search_text:
+                    return MCPToolResult(
+                        success=False,
+                        error="search_replace 模式必须提供 search_text 参数（要搜索的原文片段）"
+                    )
+                working = edit_session.working_content or ""
+                if search_text not in working:
+                    return MCPToolResult(
+                        success=False,
+                        error=f"在副本内容中未找到 search_text。请确认搜索文本是否正确（区分大小写），或改用 partial_edit 模式通过行号指定范围。"
+                    )
+                lines = working.splitlines()
+                for i, line in enumerate(lines):
+                    if search_text in line:
+                        effective_start_line = i + 1
+                        effective_end_line = i + 1
+                        break
+                if effective_start_line is None:
+                    return MCPToolResult(
+                        success=False,
+                        error=f"未能在任何行中找到 search_text 内容"
+                    )
+
             await manager.apply_change(
                 edit_session=edit_session,
-                change_type=change_type,
+                change_type="partial_edit" if change_type == "search_replace" else change_type,
                 new_content=new_content,
-                start_line=start_line,
-                end_line=end_line,
+                start_line=effective_start_line,
+                end_line=effective_end_line,
                 reason=reason
             )
             

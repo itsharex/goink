@@ -155,6 +155,7 @@ export interface SessionLoadedMsg {
         }
         name?: string
       }>
+      thinking_content?: string
     }
   }>
 }
@@ -176,6 +177,18 @@ export interface ContentChunkMsg {
   chunk: string
   task_id?: string
   message_id?: string
+}
+
+export interface ThinkingChunkMsg {
+  type: 'thinking_chunk'
+  chunk: string
+  task_id?: string
+}
+
+export interface ThinkingDoneMsg {
+  type: 'thinking_done'
+  task_id?: string
+  timestamp?: string
 }
 
 export interface ToolCallMsg {
@@ -330,6 +343,8 @@ export type ServerMsg =
   | SessionLoadedMsg
   | SessionListMsg
   | ContentChunkMsg
+  | ThinkingChunkMsg
+  | ThinkingDoneMsg
   | ToolCallMsg
   | ChatStartedMsg
   | ChatCompletedMsg

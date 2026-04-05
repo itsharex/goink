@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, Descriptions, Tag, Button, Space, message, Divider, Row, Col } from 'antd'
-import { FileTextOutlined, UserOutlined, BulbOutlined, ToolOutlined, CheckCircleOutlined, BarChartOutlined, EditOutlined, RocketOutlined } from '@ant-design/icons'
+import { FileTextOutlined, UserOutlined, BulbOutlined, ToolOutlined, CheckCircleOutlined, BarChartOutlined, EditOutlined, RocketOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
 import { novelApi } from '@/services/novelService'
 import { getErrorMessage } from '@/types/error'
@@ -130,11 +130,11 @@ function NovelDetailPage() {
           </Card>
         </Col>
         <Col span={6}>
-          <Card hoverable onClick={() => navigate(`/novels/${id}/foreshadowings`)}>
+          <Card hoverable onClick={() => navigate(`/novels/${id}/tracker`)}>
             <Card.Meta
-              avatar={<BulbOutlined style={{ fontSize: 24, color: '#fa8c16' }} />}
-              title="伏笔管理"
-              description="追踪伏笔状态"
+              avatar={<ClockCircleOutlined style={{ fontSize: 24, color: '#fa8c16' }} />}
+              title="故事追踪"
+              description="伏笔/规划/指令统一时间线"
             />
           </Card>
         </Col>
