@@ -173,9 +173,10 @@ export interface ToolCallMessage {
   type: 'tool_call'
   task_id: string
   tool_name: string
-  status: 'executing' | 'completed' | 'failed' | 'rejected'
+  status: 'executing' | 'completed' | 'failed' | 'rejected' | 'loop_detected'
   tool_id?: string
   error?: string
+  message?: string
   timestamp: string
 }
 

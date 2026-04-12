@@ -64,3 +64,5 @@ chroma_db/
 dev_test/
 
 references/
+
+pyright_output.txt

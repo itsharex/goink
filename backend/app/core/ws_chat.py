@@ -1275,6 +1275,14 @@ async def _run_chat_with_tools(
             disabled_tools: set[str] = set()
             failed_tool_keys: Dict[str, int] = {}
             max_tool_retries = 3
+            recent_tool_patterns: List[str] = []
+            READ_ONLY_TOOLS = {
+                "search_story_memory", "prepare_story_brief", "get_novel_summary",
+                "get_chapter_list", "get_chapter_content", "get_character_list",
+                "get_character_detail", "get_writing_characters",
+                "get_timeline_context", "get_story_timeline", "run_review",
+                "get_location_list", "get_location_detail"
+            }
             while loop_count < 50:
                 tool_outputs: List[Dict[str, Any]] = []
                 if tools:
@@ -1559,7 +1567,7 @@ async def _run_chat_with_tools(
                                 if tool_name in ("add_timeline_entry", "update_timeline_entry", "resolve_timeline_entry"):
                                     stale_keys = [
                                         key for key in list(tool_cache.keys())
-                                        if key.startswith("get_story_timeline:") or key.startswith("get_timeline_context:") or key.startswith("run_review:")
+                                        if key.startswith(("get_story_timeline:", "get_timeline_context:", "run_review:", "prepare_story_brief:"))
                                     ]
                                     for stale_key in stale_keys:
                                         tool_cache.pop(stale_key, None)
@@ -1674,6 +1682,42 @@ async def _run_chat_with_tools(
                                 "tool_name": item["tool"]
                             }
                         )
+                    history_messages = session_manager.get_messages_for_api(session, include_context=False)
+                    full_messages = (
+                        prefix_messages +
+                        history_messages +
+                        [{"role": "user", "content": enhanced_user_content}]
+                    )
+                    
+                    current_pattern = "|".join(sorted(f"{item['tool']}:{json.dumps(item.get('arguments', {}), ensure_ascii=False, sort_keys=True)[:100]}" for item in tool_outputs))
+                    recent_tool_patterns.append(current_pattern)
+                    if len(recent_tool_patterns) > 6:
+                        recent_tool_patterns.pop(0)
+                    
+                    is_read_only_round = all(item["tool"] in READ_ONLY_TOOLS for item in tool_outputs)
+                    has_repetitive_pattern = len(recent_tool_patterns) >= 4 and len(set(recent_tool_patterns[-4:])) <= 2
+                    is_stuck_in_loop = is_read_only_round and has_repetitive_pattern and loop_count >= 4
+                    
+                    if is_stuck_in_loop:
+                        logger.warning(
+                            f"Detected potential infinite loop: {len(recent_tool_patterns)} rounds, "
+                            f"read_only={is_read_only_round}, repetitive={has_repetitive_pattern}, "
+                            f"pattern={current_pattern[:200]}"
+                        )
+                        await ws_manager.send_personal_message({
+                            "type": "tool_call",
+                            "task_id": task_id,
+                            "status": "loop_detected",
+                            "message": "检测到重复的工具调用模式，已自动停止。请基于已有信息继续创作或提出新的指令。",
+                            "timestamp": datetime.now().isoformat()
+                        }, websocket)
+                        session_manager.add_message(
+                            session,
+                            MessageRole.SYSTEM,
+                            "系统检测到你可能陷入了重复查询。请基于已获取的信息直接开始写作，或者明确告诉我你需要什么新的操作。"
+                        )
+                        break
+                    
                     loop_count += 1
                     continue
                 

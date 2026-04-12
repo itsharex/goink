@@ -26,7 +26,7 @@ type TimelineItemType = 'user' | 'assistant' | 'tool' | 'assistant_final'
 
 interface ToolCallInfo {
   tool_name: string
-  status: 'executing' | 'completed' | 'failed' | 'rejected'
+  status: 'executing' | 'completed' | 'failed' | 'rejected' | 'loop_detected'
   tool_id?: string
   error?: string
   timestamp: string
@@ -446,8 +446,31 @@ function ChatPage() {
         break
 
       case 'tool_call':
-        // 处理工具调用消息
         console.log('收到工具调用消息:', msg);
+
+        if (msg.status === 'loop_detected') {
+          message.warning(msg.message || '检测到重复的工具调用模式，已自动停止');
+          setTimelineItems(prev => {
+            const existingIndex = prev.findIndex(item => item.task_id === msg.task_id && item.type === 'tool');
+            if (existingIndex >= 0) {
+              const updated = [...prev];
+              const existingItem = updated[existingIndex];
+              if (!existingItem.tool_calls) {
+                existingItem.tool_calls = [];
+              }
+              existingItem.tool_calls.push({
+                tool_name: 'system',
+                status: 'loop_detected' as const,
+                timestamp: msg.timestamp || new Date().toISOString(),
+                error: msg.message
+              });
+              return updated;
+            }
+            return prev;
+          });
+          break;
+        }
+
         setTimelineItems(prev => {
           // 查找是否有对应的任务时间线项目
           const existingIndex = prev.findIndex(item => item.task_id === msg.task_id && item.type === 'tool');
@@ -1186,6 +1209,9 @@ function ChatPage() {
                                 )}
                                 {tool.status === 'rejected' && (
                                   <Tag color="warning">拒绝</Tag>
+                                )}
+                                {tool.status === 'loop_detected' && (
+                                  <Tag color="orange" icon={<CompressOutlined />}>循环检测</Tag>
                                 )}
                               </div>
                             </div>
