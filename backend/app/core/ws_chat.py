@@ -1344,6 +1344,7 @@ async def _run_chat_with_tools(
                                 thinking_buffer = ""
                             session_manager.add_message(session, MessageRole.ASSISTANT, response_buffer, metadata=msg_meta or None)
                             response_buffer = ""
+                            full_response = ""
 
                         tool_name = event.get("tool_name", "unknown")
                         tool_id = event.get("tool_id")

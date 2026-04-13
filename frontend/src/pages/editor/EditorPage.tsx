@@ -416,7 +416,7 @@ export default function EditorPage() {
           return [
             ...prev,
             {
-              id: taskId || `stream_${Date.now()}`,
+              id: `${taskId || 'unknown'}_round_${Date.now()}`,
               role: 'assistant' as const,
               content: m.chunk,
               isStreaming: true,

@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from sqlalchemy import select, func, and_, or_, desc, asc
+from sqlalchemy import select, func, and_, or_, desc, asc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.timeline.models import (
@@ -21,6 +21,8 @@ from app.timeline.schemas import (
     TimelineEntryUpdate,
     TimelineEntryResolve,
     TimelineContextRequest,
+    TimelineEntryCategory as SchemaTimelineEntryCategory,
+    TimeHorizon as SchemaTimeHorizon,
 )
 
 logger = logging.getLogger(__name__)
@@ -304,8 +306,8 @@ class TimelineService:
         self, summary_text: str, current_chapter: int
     ) -> str:
         try:
-            from app.characters.models import CharacterRelation, RelationStatus
-            from app.characters.models import Character
+            from app.characters.models import CharacterRelation, Character
+            from app.characters.schemas import RelationStatus
 
             threshold = max(1, current_chapter - 3)
             result = await self.db.execute(
@@ -366,8 +368,8 @@ class TimelineService:
             parsed = self._parse_foreshadowing_text(item_text)
             entry = await self._upsert_auto_entry(
                 category=TimelineEntryCategory.FORESHADOWING,
-                title=parsed.get("title", item_text[:50]),
-                description=parsed.get("description", item_text),
+                title=parsed.get("title") or item_text[:50],  # type: ignore[assignment]
+                description=parsed.get("description", item_text),  # type: ignore[assignment]
                 detail_json={
                     "foreshadowing_type": parsed.get("type", "plot"),
                     "hint_text": item_text,
@@ -450,10 +452,11 @@ class TimelineService:
             updated = await self.update_entry(
                 existing.id,
                 TimelineEntryUpdate(
+                    title=title,
                     description=description,
                     detail_json=detail_json,
                     target_chapter=target_chapter,
-                    time_horizon=time_horizon.value if time_horizon else None,
+                    time_horizon=SchemaTimeHorizon(time_horizon.value) if time_horizon else None,
                     importance=max(existing.importance, importance),
                 ),
                 editor="ai"
@@ -461,12 +464,12 @@ class TimelineService:
             return updated or existing
 
         return await self.add_entry(TimelineEntryCreate(
-            category=category,
+            category=SchemaTimelineEntryCategory(category.value),
             title=title,
             description=description,
             detail_json=detail_json,
             target_chapter=target_chapter,
-            time_horizon=time_horizon,
+            time_horizon=SchemaTimeHorizon(time_horizon.value) if time_horizon else None,
             importance=importance,
             source="ai_generated",
             source_chapter_id=chapter_id,
@@ -492,7 +495,7 @@ class TimelineService:
                     TimelineEntryStatus.DEFERRED.value,
                 ])
             )
-            .order_by(TimelineEntry.updated_at.desc().nulls_last(), TimelineEntry.id.desc())
+            .order_by(case((TimelineEntry.updated_at.is_(None), 0), else_=1), TimelineEntry.updated_at.desc(), TimelineEntry.id.desc())
             .limit(1)
         )
         return result.scalar_one_or_none()

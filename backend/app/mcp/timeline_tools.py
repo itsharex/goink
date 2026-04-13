@@ -9,6 +9,7 @@
 """
 from typing import Any, Dict, List, Optional
 from enum import Enum
+import asyncio
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from app.timeline.models import TimelineEntry
@@ -94,12 +95,12 @@ class GetStoryTimelineTool(BaseMCPTool):
 
 
 class AddTimelineEntryTool(BaseMCPTool):
-    """添加时间线条目"""
+    """添加时间线条目（支持并行批量）"""
 
     name = "add_timeline_entry"
     description = (
-        "向故事时间线中添加一条新条目。可以添加伏笔/钩子、章节规划、用户指令等。"
-        "无需传novel_id，系统会注入当前小说ID。"
+        "向故事时间线中添加一条或多条新条目。可以添加伏笔/钩子、章节规划、用户指令等。"
+        "无需传novel_id，系统会注入当前小说ID。所有条目会并行执行以提升效率。"
         "\n适用场景：章节生成后自动提取伏笔和规划、用户通过对话要求记录某个想法或安排时调用。"
         "\n分类说明："
         "- foreshadowing: 本章埋下的伏笔/钩子（待后续章节回收）"
@@ -111,25 +112,32 @@ class AddTimelineEntryTool(BaseMCPTool):
     parameters_schema = {
         "type": "object",
         "properties": {
-            "category": {
-                "type": "string",
-                "enum": ["foreshadowing", "plot_node", "chapter_plan", "user_directive"],
-                "description": "条目分类（必填）"
-            },
-            "title": {"type": "string", "description": "标题（必填）"},
-            "description": {"type": "string", "description": "详细描述"},
-            "detail_json": {"type": "object", "description": "结构化详情（因category而异）"},
-            "target_chapter": {"type": "integer", "description": "目标章节号（可选）"},
-            "time_horizon": {
-                "type": "string",
-                "enum": ["next", "near_term", "long_term", "undefined"],
-                "description": "时间范围"
-            },
-            "importance": {"type": "integer", "default": 3, "description": "重要程度1-5"},
-            "source_chapter_id": {"type": "integer", "description": "来源章节ID（如从某章提取）"},
-            "tags": {"type": "array", "items": {"type": "string"}, "description": "标签列表"},
+            "entries": {
+                "type": "array",
+                "description": "要添加的条目列表（1-6个），系统会并行执行",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "enum": ["foreshadowing", "plot_node", "chapter_plan", "user_directive"],
+                            "description": "条目分类（必填）"
+                        },
+                        "title": {"type": "string", "description": "标题（必填）"},
+                        "description": {"type": "string", "description": "详细描述"},
+                        "target_chapter": {"type": "integer", "description": "目标章节号（可选）"},
+                        "time_horizon": {
+                            "type": "string",
+                            "enum": ["next", "near_term", "long_term", "undefined"],
+                            "description": "时间范围"
+                        },
+                        "importance": {"type": "integer", "default": 3, "description": "重要程度1-5"},
+                    },
+                    "required": ["category", "title"]
+                }
+            }
         },
-        "required": ["category", "title"],
+        "required": ["entries"],
     }
 
     async def execute(
@@ -137,39 +145,50 @@ class AddTimelineEntryTool(BaseMCPTool):
         db,
         novel_id: int,
         user_id: int,
-        category: str,
-        title: str,
-        description: Optional[str] = None,
-        detail_json: Optional[Dict] = None,
-        target_chapter: Optional[int] = None,
-        time_horizon: Optional[str] = None,
-        importance: int = 3,
-        source_chapter_id: Optional[int] = None,
-        tags: Optional[List[str]] = None,
+        entries: List[Dict[str, Any]],
         **kwargs
     ) -> MCPToolResult:
         try:
             novel = await verify_novel_ownership(db, novel_id, user_id)
             if not novel:
                 return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-            
-            data = TimelineEntryCreate(
-                category=category,
-                title=title,
-                description=description,
-                detail_json=detail_json,
-                target_chapter=target_chapter,
-                time_horizon=time_horizon,
-                importance=importance,
-                source="ai_generated",
-                source_chapter_id=source_chapter_id,
-                tags=tags,
-            )
+
+            if not entries or len(entries) == 0:
+                return MCPToolResult(success=False, error="entries不能为空")
+            if len(entries) > 6:
+                return MCPToolResult(success=False, error="最多支持6个条目")
+
             service = TimelineService(db, novel_id)
-            entry = await service.add_entry(data)
+
+            async def _add_single(op: Dict) -> Dict:
+                try:
+                    data = TimelineEntryCreate(
+                        category=op["category"],
+                        title=op["title"],
+                        description=op.get("description"),
+                        detail_json=op.get("detail_json"),
+                        target_chapter=op.get("target_chapter"),
+                        time_horizon=op.get("time_horizon"),
+                        importance=op.get("importance", 3),
+                        source="ai_generated",
+                        source_chapter_id=op.get("source_chapter_id"),
+                        related_entry_ids=op.get("related_entry_ids"),
+                        tags=op.get("tags"),
+                    )
+                    entry = await service.add_entry(data)
+                    return {"success": True, "data": _entry_to_dict(entry)}
+                except Exception as e:
+                    return {"success": False, "error": str(e)}
+
+            results = await asyncio.gather(*[_add_single(op) for op in entries])
+            success_count = sum(1 for r in results if r.get("success"))
             return MCPToolResult(
-                success=True,
-                data=_entry_to_dict(entry),
+                success=success_count > 0,
+                data={
+                    "total": len(entries),
+                    "successful": success_count,
+                    "results": results
+                },
                 metadata={"tool": self.name, "novel_id": novel_id}
             )
         except Exception as e:
@@ -250,7 +269,10 @@ class UpdateTimelineEntryTool(BaseMCPTool):
             if tags is not None:
                 update_data["tags"] = tags
 
-            data = TimelineEntryUpdate(**update_data) if update_data else TimelineEntryUpdate()
+            if not update_data:
+                return MCPToolResult(success=False, error="没有提供更新字段")
+
+            data = TimelineEntryUpdate(**update_data)
             service = TimelineService(db, novel_id)
             entry = await service.update_entry(entry_id, data, editor="ai")
             if not entry:
@@ -397,9 +419,11 @@ def _entry_to_dict(entry: TimelineEntry) -> Dict[str, Any]:
     }
 
 
+
 def register_timeline_tools(registry: MCPToolRegistry):
     registry.register(GetStoryTimelineTool())
     registry.register(AddTimelineEntryTool())
     registry.register(UpdateTimelineEntryTool())
     registry.register(ResolveTimelineEntryTool())
     registry.register(GetTimelineContextTool())
+

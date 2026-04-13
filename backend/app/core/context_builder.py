@@ -8,7 +8,7 @@ import hashlib
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, case
 
 from app.core.vector_store import vector_store, VectorStoreError
 from app.novels.models import Novel, NovelCreativeProfile
@@ -251,8 +251,8 @@ class ContextBuilder:
     
     async def build_writing_context(
         self,
-        chapter_number: int = None,
-        chapter_id: int = None,
+        chapter_number: Optional[int] = None,
+        chapter_id: Optional[int] = None,
         context_size: int = 3000,
         include_previous_chapters: bool = True,
         include_characters: bool = True,
@@ -779,7 +779,7 @@ class ContextBuilder:
                     PlotNodeStatus.IN_PROGRESS.value
                 ])
             )
-            .order_by(PlotNode.chapter_number.asc().nulls_last(), PlotNode.sequence.asc())
+            .order_by(case((PlotNode.chapter_number.is_(None), 1), else_=0), PlotNode.chapter_number.asc(), PlotNode.sequence.asc())
             .limit(12)
         )
         nodes = list(result.scalars().all())
@@ -819,7 +819,7 @@ class ContextBuilder:
                     TimelineEntryStatus.DEFERRED.value,
                 ])
             )
-            .order_by(TimelineEntry.target_chapter.asc().nulls_last(), TimelineEntry.importance.desc())
+            .order_by(case((TimelineEntry.target_chapter.is_(None), 1), else_=0), TimelineEntry.target_chapter.asc(), TimelineEntry.importance.desc())
             .limit(12)
         )
         entries = list(result.scalars().all())
