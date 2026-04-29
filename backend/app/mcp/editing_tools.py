@@ -827,10 +827,6 @@ class RunAgentTaskTool(BaseMCPTool):
             return MCPToolResult(success=False, error=str(e))
 
 
-class GetPendingChangesTool(BaseMCPTool):
-    """获取待确认变更列表"""
-
-
 class RunSubagentTool(BaseMCPTool):
     """调度子Agent执行专业任务"""
 
@@ -901,6 +897,12 @@ class RunSubagentTool(BaseMCPTool):
             "memory": "update_memory",
         }
 
+        REGISTRY_TO_TASK_TYPE = {
+            "write_chapter": TaskType.GENERATE_CHAPTER,
+            "review": TaskType.REVIEW_CHAPTER,
+            "update_memory": TaskType.UPDATE_MEMORY,
+        }
+
         normalized_type = TYPE_ALIASES.get(task_type, task_type)
 
         entry = get_agent_for_task(normalized_type)
@@ -929,7 +931,7 @@ class RunSubagentTool(BaseMCPTool):
                 extra_parameters=parameters,
             )
 
-            task_type_enum = TaskType(normalized_type) if normalized_type in [e.value for e in TaskType] else TaskType.GENERATE_CHAPTER
+            task_type_enum = REGISTRY_TO_TASK_TYPE.get(normalized_type, TaskType.GENERATE_CHAPTER)
 
             task = AgentTask(
                 task_id=f"sub_{uuid.uuid4().hex[:12]}",
@@ -965,7 +967,11 @@ class RunSubagentTool(BaseMCPTool):
 
         except Exception as e:
             return MCPToolResult(success=False, error=f"子Agent执行失败: {str(e)}")
-    
+
+
+class GetPendingChangesTool(BaseMCPTool):
+    """获取待确认的副本编辑变更列表，可按章节或会话筛选"""
+
     name = "get_pending_changes"
     description = "获取待确认的副本编辑变更列表，可按章节或会话筛选"
     category = MCPToolCategory.WRITING_ASSISTANT
@@ -988,38 +994,38 @@ class RunSubagentTool(BaseMCPTool):
         },
         "required": []
     }
-    
+
     async def execute(
         self,
         db: AsyncSession,
-        user_id: int ,
-        chapter_id: Optional[int] = None,
-        session_id: Optional[str] = None,
+        user_id: int,
+        chapter_id: int | None = None,
+        session_id: str | None = None,
         limit: int = 10,
         **kwargs
     ) -> MCPToolResult:
         try:
             if not user_id:
                 return MCPToolResult(success=False, error="未提供用户身份信息")
-            
+
             query = select(EditSession).options(selectinload(EditSession.chapter))
             query = (
                 query.join(Chapter, EditSession.chapter_id == Chapter.id)
                 .join(Novel, Chapter.novel_id == Novel.id)
                 .where(Novel.author_id == user_id)
             )
-            
+
             query = query.where(EditSession.status == EditSessionStatus.PENDING)
-            
+
             if chapter_id:
                 query = query.where(EditSession.chapter_id == chapter_id)
             if session_id:
                 query = query.where(EditSession.ws_session_id == session_id)
-            
+
             query = query.order_by(EditSession.created_at.desc()).limit(limit)
             result = await db.execute(query)
             sessions = result.scalars().all()
-            
+
             data = [
                 {
                     "edit_session_id": s.edit_session_id,
@@ -1033,7 +1039,7 @@ class RunSubagentTool(BaseMCPTool):
                 }
                 for s in sessions
             ]
-            
+
             return MCPToolResult(
                 success=True,
                 data={"items": data, "total": len(data)}

@@ -246,6 +246,7 @@ class EditSessionManager:
         
         await self.db.commit()
         await self._refresh_chapter_memory(chapter)
+        await self._invalidate_cache(chapter)
         
         logger.info(f"Accepted edit session {edit_session_id}, {edit_session.change_count} changes")
         
@@ -352,6 +353,15 @@ class EditSessionManager:
                 vector_store.add_chunks(chapter.novel_id, chunk_data)
         except Exception as e:
             logger.warning(f"Failed to refresh chapter memory after accept edit: {e}")
+
+    async def _invalidate_cache(self, chapter: Chapter) -> None:
+        try:
+            from app.core.redis_service import redis_service
+            await redis_service.delete(f"chapter:{chapter.id}:detail")
+            await redis_service.clear_pattern(f"novel:{chapter.novel_id}:chapters:*")
+            await redis_service.delete(f"novel:{chapter.novel_id}:detail")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache after accept edit: {e}")
 
 
 def get_edit_session_manager(db: AsyncSession) -> EditSessionManager:

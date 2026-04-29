@@ -149,27 +149,32 @@ export interface PlotSuggestionResponse {
 }
 
 export interface PlotProgress {
-  outline: PlotOutline | null
+  outline: {
+    exists: boolean
+    total_chapters: number | null
+    current_chapter: number
+  } | null
   plot_lines: {
     total: number
     main: number
     sub: number
     character: number
-    background: number
   }
   nodes: {
     total: number
-    planned: number
-    in_progress: number
     completed: number
+    in_progress: number
+    planned: number
     completion_rate: number
   }
   plot_lines_detail: {
     id: number
     name: string
     line_type: string
-    progress_percentage: number
     total_nodes: number
     completed: number
+    in_progress: number
+    planned: number
+    progress_percentage: number
   }[]
 }

@@ -43,8 +43,26 @@ class WritingContext:
     @classmethod
     def from_task(cls, task) -> "WritingContext":
         """Create WritingContext from an AgentTask's context and parameters."""
-        ctx = task.context if hasattr(task, "context") else {}
+        ctx = dict(task.context) if hasattr(task, "context") and task.context else {}
         params = task.parameters if hasattr(task, "parameters") else {}
+
+        layered = ctx.pop("layered_context", None)
+        if isinstance(layered, dict):
+            for k, v in layered.items():
+                ctx.setdefault(k, v)
+
+        extra = ctx.pop("extra_parameters", None)
+        if isinstance(extra, dict):
+            for k, v in extra.items():
+                params.setdefault(k, v)
+
+        instruction = ctx.pop("instruction", None)
+        if instruction and not params.get("writing_task"):
+            params.setdefault("writing_task", instruction)
+
+        chapter_info = ctx.get("chapter_info")
+        if isinstance(chapter_info, dict) and not params.get("chapter_number"):
+            params.setdefault("chapter_number", chapter_info.get("chapter_number", 1))
 
         return cls(
             chapter_number=params.get("chapter_number", 1),

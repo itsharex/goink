@@ -44,7 +44,7 @@ class WriterAgent(BaseAgent):
         self.log_task_start(task)
         
         try:
-            if task.task_type == TaskType.GENERATE_CHAPTER:
+            if task.task_type in (TaskType.GENERATE_CHAPTER, TaskType.WRITE_CHAPTER):
                 result = await self._generate_chapter(task)
             elif task.task_type == TaskType.PLAN_PLOT:
                 result = await self._plan_plot(task)

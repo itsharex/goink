@@ -3,7 +3,7 @@ import { Card, Row, Col, Statistic, Progress, Empty, Spin, message, Tag } from '
 import { useParams } from 'react-router-dom'
 import { progressApi } from '@/services/progressService'
 import { getErrorMessage } from '@/types/error'
-import type { PlotProgress } from '@/types/progress'
+import type { PlotProgress } from '@/types/planning'
 
 function NovelProgress() {
   const { novelId } = useParams<{ novelId: string }>()

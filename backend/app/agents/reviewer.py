@@ -80,8 +80,8 @@ class ReviewerAgent(BaseAgent):
 
     async def _review_chapter(self, task: AgentTask) -> AgentResult:
         """审核章节内容：规则初筛 + LLM 语义深审"""
-        content = task.parameters.get("content", "")
         context = task.context
+        content = context.get("chapter_content", "") or task.parameters.get("content", "")
         use_llm_review = task.parameters.get("use_llm_review", True)
 
         rule_issues, rule_suggestions = self._rule_based_review(content, context)

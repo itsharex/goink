@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '@/types/auth'
+import { wsGenerationService } from '@/services/wsGenerationService'
+import { wsEditorService } from '@/services/wsEditorService'
 
 interface AuthState {
   user: User | null
@@ -24,6 +26,8 @@ export const useAuthStore = create<AuthState>()(
         set({ accessToken, refreshToken, isAuthenticated: true })
       },
       logout: () => {
+        wsGenerationService.disconnect()
+        wsEditorService.disconnect()
         set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false })
       },
     }),
