@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.characters.models import Character, CharacterRelation
 from app.characters.schemas import (
@@ -222,7 +222,7 @@ class CharacterService:
             extra_metadata={
                 **(old_relation.extra_metadata or {}),
                 "evolution_notes": data.evolution_notes,
-                "evolved_at": datetime.now().isoformat(),
+                "evolved_at": datetime.now(timezone.utc).isoformat(),
                 **(data.extra_metadata or {}),
             },
         )

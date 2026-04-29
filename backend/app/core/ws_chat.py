@@ -5,7 +5,7 @@ WebSocket路由 - AI IDE风格统一入口
 import logging
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select, func
 from typing import Optional, Dict, Any, List
@@ -408,7 +408,6 @@ async def _ensure_generation_chapter(
             raise ValueError("目标章节已存在。如需重写，请显式设置 overwrite_existing=true。")
         if title:
             chapter.title = title
-            chapter.updated_at = datetime.now()
             await db.commit()
             await db.refresh(chapter)
         return chapter
@@ -467,7 +466,7 @@ async def _execute_streaming_chapter_draft(
         "tool_id": tool_id,
         "status": "executing",
         **presentation,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }, websocket)
 
     target_length = arguments.get("target_length", 3000)
@@ -518,7 +517,7 @@ async def _execute_streaming_chapter_draft(
                 "chunk": chunk,
                 "content": full_content,
                 "word_count": len(full_content),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
     except asyncio.CancelledError:
         raise
@@ -539,7 +538,6 @@ async def _execute_streaming_chapter_draft(
     chapter.content = full_content
     chapter.status = "completed"
     chapter.word_count = len(full_content)
-    chapter.updated_at = datetime.now()
     await db.commit()
     await db.refresh(chapter)
 
@@ -661,14 +659,14 @@ async def websocket_chat(
                         )
                         await session_manager.save_session(current_session)
                     
-                    task_id = f"chat_{current_session.session_id}_{datetime.now().strftime('%H%M%S')}"
+                    task_id = f"chat_{current_session.session_id}_{datetime.now(timezone.utc).strftime('%H%M%S')}"
                     task_flags[task_id] = True
                     
                     await ws_manager.send_personal_message({
                         "type": "chat_started",
                         "task_id": task_id,
                         "session_id": current_session.session_id,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     }, websocket)
                     
                     task = asyncio.create_task(
@@ -685,7 +683,7 @@ async def websocket_chat(
                     active_tasks[task_id] = task
                 
                 elif message_type == "generate":
-                    task_id = f"gen_{novel_id}_{data.get('generation_type', 'chapter')}_{datetime.now().strftime('%H%M%S')}"
+                    task_id = f"gen_{novel_id}_{data.get('generation_type', 'chapter')}_{datetime.now(timezone.utc).strftime('%H%M%S')}"
                     task_flags[task_id] = True
                     
                     task = asyncio.create_task(
@@ -709,7 +707,7 @@ async def websocket_chat(
                         await ws_manager.send_personal_message({
                             "type": "task_cancelled",
                             "task_id": task_id,
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
                 
                 elif message_type == "read_chapter":
@@ -738,7 +736,7 @@ async def websocket_chat(
                     "type": "error",
                     "error": _friendly_error_message(e),
                     "message_type": message_type,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }, websocket)
     
     except WebSocketDisconnect:
@@ -804,7 +802,7 @@ async def _handle_create_session(websocket, data, user_id, novel_id):
         "model": model,
         "edit_mode": edit_mode,
         "current_chapter_id": current_chapter_id,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }, websocket)
     
     return session
@@ -818,7 +816,7 @@ async def _handle_load_session(websocket, data, user_id):
         await ws_manager.send_personal_message({
             "type": "error",
             "error": "会话不存在",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
         return None
     
@@ -826,7 +824,7 @@ async def _handle_load_session(websocket, data, user_id):
         await ws_manager.send_personal_message({
             "type": "error",
             "error": "无权访问此会话",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
         return None
     
@@ -843,7 +841,7 @@ async def _handle_load_session(websocket, data, user_id):
             for m in session.messages
             if m.role != MessageRole.TOOL
         ],
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }, websocket)
     
     return session
@@ -873,7 +871,7 @@ async def _handle_list_sessions(websocket, user_id, novel_id, data):
             }
             for s in sessions
         ],
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }, websocket)
 
 
@@ -905,7 +903,7 @@ async def _handle_change_scope(websocket, session, data, novel_id):
         "display_name": new_scope.get_display_name(),
         "title": session.title,
         "subtitle": session.get_subtitle(),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }, websocket)
 
 
@@ -920,7 +918,7 @@ async def _handle_read_chapter(websocket, chapter_id, novel_id):
             await ws_manager.send_personal_message({
                 "type": "error",
                 "error": "章节不存在",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -928,7 +926,7 @@ async def _handle_read_chapter(websocket, chapter_id, novel_id):
             await ws_manager.send_personal_message({
                 "type": "error",
                 "error": "无权访问此章节",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -947,7 +945,7 @@ async def _handle_read_chapter(websocket, chapter_id, novel_id):
             "edit_session_id": edit_session.edit_session_id if edit_session else None,
             "working_content": edit_session.working_content if edit_session else None,
             "change_count": edit_session.change_count if edit_session else 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
 
 
@@ -965,7 +963,7 @@ async def _handle_start_edit(websocket, data, novel_id, session):
             await ws_manager.send_personal_message({
                 "type": "error",
                 "error": "章节不存在",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -973,7 +971,7 @@ async def _handle_start_edit(websocket, data, novel_id, session):
             await ws_manager.send_personal_message({
                 "type": "error",
                 "error": "无权编辑此章节",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -988,7 +986,7 @@ async def _handle_start_edit(websocket, data, novel_id, session):
             "original_content": edit_session.original_content,
             "working_content": edit_session.working_content,
             "change_count": 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
 
 
@@ -1008,7 +1006,7 @@ async def _handle_apply_edit(websocket, data, novel_id):
             await ws_manager.send_personal_message({
                 "type": "error",
                 "error": "编辑会话不存在",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -1031,7 +1029,7 @@ async def _handle_apply_edit(websocket, data, novel_id):
             "change_count": edit_session.change_count,
             "working_content": edit_session.working_content,
             "diff": diff_data.get("diff", {}),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
 
 
@@ -1065,7 +1063,7 @@ async def _handle_accept_edit(websocket, data, novel_id):
                 "edit_session_id": edit_session_id,
                 "chapter_id": chapter_id,
                 "latest_pending_edit_session_id": await _get_latest_pending_edit_session_id(db, chapter_id),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         try:
@@ -1077,7 +1075,7 @@ async def _handle_accept_edit(websocket, data, novel_id):
                 "edit_session_id": edit_session.edit_session_id,
                 "chapter_id": edit_session.chapter_id,
                 "latest_pending_edit_session_id": await _get_latest_pending_edit_session_id(db, edit_session.chapter_id),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -1090,7 +1088,7 @@ async def _handle_accept_edit(websocket, data, novel_id):
             "word_count": result["word_count"],
             "already_processed": result.get("already_processed", False),
             "message": "编辑会话此前已被接受" if result.get("already_processed") else f"已接受 {result['change_count']} 处变更",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
 
 
@@ -1106,7 +1104,7 @@ async def _handle_reject_edit(websocket, data, novel_id):
                 "edit_session_id": edit_session_id,
                 "chapter_id": chapter_id,
                 "latest_pending_edit_session_id": await _get_latest_pending_edit_session_id(db, chapter_id),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         try:
@@ -1118,7 +1116,7 @@ async def _handle_reject_edit(websocket, data, novel_id):
                 "edit_session_id": edit_session.edit_session_id,
                 "chapter_id": edit_session.chapter_id,
                 "latest_pending_edit_session_id": await _get_latest_pending_edit_session_id(db, edit_session.chapter_id),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
             return
         
@@ -1129,7 +1127,7 @@ async def _handle_reject_edit(websocket, data, novel_id):
             "latest_pending_edit_session_id": await _get_latest_pending_edit_session_id(db, result["chapter_id"]),
             "already_processed": result.get("already_processed", False),
             "message": "编辑会话此前已被拒绝" if result.get("already_processed") else "已拒绝所有变更，回退到原版本",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
 
 
@@ -1153,7 +1151,7 @@ async def _handle_end_session(websocket, session, active_tasks, task_flags, user
         "session_id": session.session_id if session else None,
         "cancelled_tasks": cancelled_tasks,
         "message": "会话已终止，所有任务已取消",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }, websocket)
     
     logger.info(f"Session ended: user={user_id}, novel={novel_id}, cancelled {len(cancelled_tasks)} tasks")
@@ -1233,7 +1231,7 @@ async def _run_chat_with_tools(
                     "type": "system_warning",
                     "task_id": task_id,
                     "message": "记忆检索或创作配置加载暂时不可用，生成质量可能受影响",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }, websocket)
             
             all_tools = registry.get_openai_functions() if tools_enabled else None
@@ -1315,7 +1313,7 @@ async def _run_chat_with_tools(
                             "type": "thinking_chunk",
                             "task_id": task_id,
                             "chunk": thinking_content,
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
 
                     elif event["type"] == "content":
@@ -1324,7 +1322,7 @@ async def _run_chat_with_tools(
                             await ws_manager.send_personal_message({
                                 "type": "thinking_done",
                                 "task_id": task_id,
-                                "timestamp": datetime.now().isoformat()
+                                "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                         chunk = event["content"]
                         full_response += chunk
@@ -1335,7 +1333,7 @@ async def _run_chat_with_tools(
                             "task_id": task_id,
                             "chunk": chunk,
                             "accumulated_length": len(full_response),
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
                     
                     elif event["type"] == "tool_call_start":
@@ -1344,7 +1342,7 @@ async def _run_chat_with_tools(
                             await ws_manager.send_personal_message({
                                 "type": "thinking_done",
                                 "task_id": task_id,
-                                "timestamp": datetime.now().isoformat()
+                                "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                         if response_buffer.strip():
                             msg_meta = {}
@@ -1370,7 +1368,7 @@ async def _run_chat_with_tools(
                                 "tool_name": tool_name,
                                 "status": "rejected",
                                 "error": f"当前模式({edit_mode.value})不允许使用此工具",
-                                "timestamp": datetime.now().isoformat()
+                                "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                             continue
                         
@@ -1382,7 +1380,7 @@ async def _run_chat_with_tools(
                             "status": "executing",
                             "display_text": f"正在{_sync_tool_display_name(tool_name)}",
                             "activity_kind": _TOOL_SYNC_KINDS.get(tool_name, "general"),
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
 
                     elif event["type"] == "tool_call_arguments":
@@ -1402,7 +1400,7 @@ async def _run_chat_with_tools(
                             "chapter_id": chapter_id,
                             "edit_session_id": edit_session_id,
                             "working_content": partial_content,
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
                     
                     elif event["type"] == "tool_call_end":
@@ -1426,7 +1424,7 @@ async def _run_chat_with_tools(
                                 "status": "failed",
                                 **presentation,
                                 "error": result_payload["error"],
-                                "timestamp": datetime.now().isoformat()
+                                "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                             tool_outputs.append({
                                 "tool": tool_name,
@@ -1475,7 +1473,7 @@ async def _run_chat_with_tools(
                                 "tool_id": tool_id,
                                 "status": "executing",
                                 **presentation,
-                                "timestamp": datetime.now().isoformat()
+                                "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                             cached = tool_cache.get(cache_key)
                             if cached:
@@ -1527,7 +1525,7 @@ async def _run_chat_with_tools(
                                 "tool_id": tool_id,
                                 **presentation,
                                 "error": tool_result_payload.get("error"),
-                                "timestamp": datetime.now().isoformat()
+                                "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                             
                             tool_outputs.append({
@@ -1633,7 +1631,7 @@ async def _run_chat_with_tools(
                                     "working_content": data_payload.get("working_content", ""),
                                     "original_content": data_payload.get("original_content", ""),
                                     "change_count": data_payload.get("change_count", 0),
-                                    "timestamp": datetime.now().isoformat()
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
                                 }, websocket)
                                 session_manager.add_message(
                                     session,
@@ -1652,7 +1650,7 @@ async def _run_chat_with_tools(
                                     "working_content": data_payload.get("working_content"),
                                     "change_count": data_payload.get("change_count", 0),
                                     "diff": data_payload.get("diff", {}),
-                                    "timestamp": datetime.now().isoformat()
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
                                 }, websocket)
                             if metadata.get("requires_user_confirmation"):
                                 edit_session_id = metadata.get("edit_session_id")
@@ -1662,7 +1660,7 @@ async def _run_chat_with_tools(
                                         "task_id": task_id,
                                         "edit_session_id": edit_session_id,
                                         "change_count": (tool_result_payload.get("data") or {}).get("change_count", 0),
-                                        "timestamp": datetime.now().isoformat()
+                                        "timestamp": datetime.now(timezone.utc).isoformat()
                                     }, websocket)
                 
                 if tool_outputs and tools_enabled:
@@ -1742,7 +1740,7 @@ async def _run_chat_with_tools(
                             "task_id": task_id,
                             "status": "loop_detected",
                             "message": "检测到重复的工具调用模式，已自动停止。请基于已有信息继续创作或提出新的指令。",
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
                         session_manager.add_message(
                             session,
@@ -1758,7 +1756,7 @@ async def _run_chat_with_tools(
                     await ws_manager.send_personal_message({
                         "type": "thinking_done",
                         "task_id": task_id,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     }, websocket)
                 break
             
@@ -1781,7 +1779,7 @@ async def _run_chat_with_tools(
                 "task_id": task_id,
                 "session_id": session.session_id,
                 "message_count": session.get_message_count(),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
     
     except asyncio.CancelledError:
@@ -1792,7 +1790,7 @@ async def _run_chat_with_tools(
             "type": "chat_failed",
             "task_id": task_id,
             "error": _friendly_error_message(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
     finally:
         task_flags.pop(task_id, None)

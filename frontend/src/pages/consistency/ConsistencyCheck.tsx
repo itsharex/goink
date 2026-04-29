@@ -160,7 +160,7 @@ function ConsistencyCheck() {
                       )}
                       {issue.suggestion && (
                         <Descriptions.Item label="修改建议">
-                          <Alert title={issue.suggestion} type="info" showIcon />
+                          <Alert message={issue.suggestion} type="info" showIcon />
                         </Descriptions.Item>
                       )}
                     </Descriptions>

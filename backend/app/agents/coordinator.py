@@ -3,7 +3,7 @@
 """
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .base import BaseAgent, AgentTask, AgentResult, AgentRole, TaskType, TaskStatus
 from app.core.database import AsyncSessionLocal
@@ -50,14 +50,14 @@ class CoordinatorAgent(BaseAgent):
         self.log_task_start(task)
         task.root_task_id = task.root_task_id or task.task_id
         task.status = TaskStatus.IN_PROGRESS
-        task.updated_at = datetime.now()
+        task.updated_at = datetime.now(timezone.utc)
         
         try:
             await self._save_task_record(task)
             result = await self._execute_task_chain(task, depth=0)
             self.completed_tasks[task.task_id] = result
             task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
-            task.updated_at = datetime.now()
+            task.updated_at = datetime.now(timezone.utc)
             await self._save_task_record(task, result=result)
             self.log_task_complete(result)
             return result
@@ -65,7 +65,7 @@ class CoordinatorAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error executing task {task.task_id}: {e}")
             task.status = TaskStatus.FAILED
-            task.updated_at = datetime.now()
+            task.updated_at = datetime.now(timezone.utc)
             await self._save_task_record(task, error=str(e))
             return self.create_result(
                 task=task,
@@ -82,7 +82,7 @@ class CoordinatorAgent(BaseAgent):
             )
 
         task.status = TaskStatus.IN_PROGRESS
-        task.updated_at = datetime.now()
+        task.updated_at = datetime.now(timezone.utc)
         await self._save_task_record(task)
 
         suitable_agent = self._find_suitable_agent(task)
@@ -96,7 +96,7 @@ class CoordinatorAgent(BaseAgent):
         self.logger.info(f"Dispatching task {task.task_id} to agent {suitable_agent.agent_id}")
         result = await suitable_agent.execute(task)
         task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
-        task.updated_at = datetime.now()
+        task.updated_at = datetime.now(timezone.utc)
         await self._save_task_record(task, result=result)
 
         if result.success and result.next_actions:

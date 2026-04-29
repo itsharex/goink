@@ -1,6 +1,7 @@
 import apiClient from './apiClient'
 import type { LoginRequest, RegisterRequest, AuthResponse, RefreshTokenResponse, User } from '@/types/auth'
 import type { ApiResponse } from '@/types/api'
+import { useAuthStore } from '@/stores/authStore'
 
 export const authApi = {
   login: async (data: LoginRequest): Promise<ApiResponse<AuthResponse>> => {
@@ -12,17 +13,9 @@ export const authApi = {
   },
 
   refreshToken: async (): Promise<ApiResponse<RefreshTokenResponse>> => {
-    const authStorage = localStorage.getItem('auth-storage')
-    if (authStorage) {
-      try {
-        const parsed = JSON.parse(authStorage)
-        const refreshToken = parsed?.state?.refreshToken
-        if (refreshToken) {
-          return apiClient.post('/auth/refresh', { refresh_token: refreshToken })
-        }
-      } catch (e) {
-        console.error('Failed to parse auth storage:', e)
-      }
+    const refreshToken = useAuthStore.getState().refreshToken
+    if (refreshToken) {
+      return apiClient.post('/auth/refresh', { refresh_token: refreshToken })
     }
     throw new Error('No refresh token found')
   },

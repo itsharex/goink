@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.novels.models import Novel
 from app.chapters.models import Chapter
@@ -440,7 +440,7 @@ class ConsistencyChecker:
         unresolved_entries = result.scalars().all()
 
         for entry in unresolved_entries:
-            days_pending = (datetime.now() - entry.created_at).days if entry.created_at else 0
+            days_pending = (datetime.now(timezone.utc) - entry.created_at).days if entry.created_at else 0
 
             severity = "info"
             if entry.importance >= 4 and days_pending > 60:

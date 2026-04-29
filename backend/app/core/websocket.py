@@ -4,7 +4,7 @@ WebSocket管理器 - 实时通信
 import logging
 import json
 from typing import Dict, Set, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import WebSocket, WebSocketDisconnect
 from collections import defaultdict
 
@@ -105,7 +105,7 @@ class GenerationProgress:
             "generation_type": generation_type,
             "status": "started",
             "progress": 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -116,7 +116,7 @@ class GenerationProgress:
             "step": step,
             "progress": progress,
             "message": message,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -126,7 +126,7 @@ class GenerationProgress:
             "task_id": task_id,
             "chunk": chunk,
             "accumulated_length": accumulated_length,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -140,7 +140,7 @@ class GenerationProgress:
             "content": content,
             "word_count": word_count,
             "progress": 100,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -150,7 +150,7 @@ class GenerationProgress:
             "task_id": task_id,
             "error": error,
             "step": step,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -162,7 +162,7 @@ class GenerationProgress:
             "approved": approved,
             "score": score,
             "issues": issues or [],
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     @staticmethod
@@ -172,5 +172,5 @@ class GenerationProgress:
             "task_id": task_id,
             "passed": passed,
             "issues": issues or [],
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }

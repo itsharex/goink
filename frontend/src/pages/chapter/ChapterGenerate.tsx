@@ -19,7 +19,6 @@ interface GenerateFormValues {
   target_length?: number
   model?: LLMModel
   style?: GenerationStyle
-  use_langgraph?: boolean
   user_prompt?: string
   chapter_outline?: string
   key_events?: string
@@ -165,7 +164,6 @@ function ChapterGenerate() {
           target_length: 3000,
           model: 'deepseek-chat',
           style: 'narrative',
-          use_langgraph: true,
         })
       }
     } catch (error) {
@@ -208,7 +206,7 @@ function ChapterGenerate() {
 
     if (isConnected) {
       try {
-        wsGenerationService.startGeneration('chapter', params, values.use_langgraph !== false)
+        wsGenerationService.startGeneration('chapter', params, false)
       } catch (error) {
         message.error(getErrorMessage(error))
         setIsGenerating(false)
@@ -262,7 +260,7 @@ function ChapterGenerate() {
     <Card title={`AI生成章节 - 第${chapter.chapter_number}章 ${chapter.title}`}>
       <Alert
         title="实时生成功能"
-        description="使用WebSocket实时生成章节内容。启用LangGraph后会自动进行审核和一致性检查。可选择模型和风格，并提供自定义提示词。"
+        description="使用WebSocket实时生成章节内容。可选择模型和风格，并提供自定义提示词。"
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -282,7 +280,6 @@ function ChapterGenerate() {
           target_length: 3000,
           model: 'deepseek-chat',
           style: 'narrative',
-          use_langgraph: true,
         }}
       >
         <Form.Item label="LLM模型" name="model">
@@ -313,13 +310,6 @@ function ChapterGenerate() {
                 {s.label}
               </Option>
             ))}
-          </Select>
-        </Form.Item>
-
-        <Form.Item label="启用LangGraph审核" name="use_langgraph" valuePropName="checked">
-          <Select>
-            <Option value={true}>是（推荐）</Option>
-            <Option value={false}>否</Option>
           </Select>
         </Form.Item>
 

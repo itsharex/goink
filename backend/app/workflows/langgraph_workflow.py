@@ -13,7 +13,7 @@ LangGraph工作流 - 章节生成工作流 [DEPRECATED]
 import logging
 import warnings
 from typing import TypedDict, Annotated, Literal, Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 
 warnings.warn(
@@ -83,7 +83,7 @@ def create_initial_state(
     extra_parameters: Optional[Dict[str, Any]] = None
 ) -> WorkflowState:
     """创建初始状态"""
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     return WorkflowState(
         task_id=task_id,
         novel_id=novel_id,
@@ -211,7 +211,7 @@ class ChapterWorkflow:
                 return {
                     "context": merged_context,
                     "status": "context_prepared",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
                 
         except Exception as e:
@@ -219,7 +219,7 @@ class ChapterWorkflow:
             return {
                 "error": f"上下文准备失败: {str(e)}",
                 "status": "error",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
     async def _generate_content_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -248,13 +248,13 @@ class ChapterWorkflow:
                 return {
                     "generated_content": result.result.get("content", ""),
                     "status": "content_generated",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
             else:
                 return {
                     "error": result.error or "内容生成失败",
                     "status": "error",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
                 
         except Exception as e:
@@ -262,7 +262,7 @@ class ChapterWorkflow:
             return {
                 "error": f"内容生成失败: {str(e)}",
                 "status": "error",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
     async def _review_content_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -299,7 +299,7 @@ class ChapterWorkflow:
                     "suggestions": result.suggestions
                 },
                 "status": "content_reviewed",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -310,7 +310,7 @@ class ChapterWorkflow:
                     "issues": [str(e)]
                 },
                 "status": "review_failed",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
     async def _check_consistency_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -332,7 +332,7 @@ class ChapterWorkflow:
                 return {
                     "consistency_result": result,
                     "status": "consistency_checked",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
                 
         except Exception as e:
@@ -342,7 +342,7 @@ class ChapterWorkflow:
                     "issues": [{"severity": "error", "description": str(e)}]
                 },
                 "status": "consistency_check_failed",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
     async def _save_chapter_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -368,7 +368,7 @@ class ChapterWorkflow:
                     chapter.content = generated_content
                     chapter.status = "completed"
                     chapter.word_count = len(generated_content)
-                    chapter.updated_at = datetime.now()
+                    chapter.updated_at = datetime.now(timezone.utc)
                     await db.commit()
                     await db.refresh(chapter)
                 else:
@@ -403,7 +403,7 @@ class ChapterWorkflow:
                 
                 return {
                     "status": "chapter_saved",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
                 
         except Exception as e:
@@ -411,7 +411,7 @@ class ChapterWorkflow:
             return {
                 "error": f"章节保存失败: {str(e)}",
                 "status": "error",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
     async def _update_memory_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -446,7 +446,7 @@ class ChapterWorkflow:
                 
                 return {
                     "status": "completed",
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat()
                 }
                 
         except Exception as e:
@@ -454,7 +454,7 @@ class ChapterWorkflow:
             return {
                 "status": "memory_update_failed",
                 "error": f"记忆更新失败: {str(e)}",
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
     async def _handle_revision_node(self, state: WorkflowState) -> Dict[str, Any]:
@@ -482,7 +482,7 @@ class ChapterWorkflow:
             "iteration": state["iteration"] + 1,
             "feedback": feedback,
             "status": "revision_needed",
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
     
     def _should_revise_after_review(self, state: WorkflowState) -> Literal["revise", "check"]:

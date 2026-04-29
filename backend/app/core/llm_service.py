@@ -10,7 +10,7 @@ import httpx
 import json
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 
 from app.core.prompt_templates import LLMModel
@@ -62,7 +62,7 @@ class PromptCacheMonitor:
         stats = self._stats[model]
         stats["total_calls"] += 1
         stats["prefix_hashes"].add(prefix_hash)
-        stats["last_seen"] = datetime.now().isoformat()
+        stats["last_seen"] = datetime.now(timezone.utc).isoformat()
         
         if usage:
             prompt_tokens = usage.get("prompt_tokens", 0)

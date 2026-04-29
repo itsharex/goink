@@ -2,7 +2,7 @@
 小说管理类MCP工具
 提供小说信息查询的标准接口
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -637,6 +637,11 @@ class UpdateCreativeProfileTool(BaseMCPTool):
 
         await db.commit()
         await db.refresh(profile)
+
+        from app.core.redis_service import redis_service
+        await redis_service.clear_pattern(f"novel:{novel_id}:*")
+        from app.core.context_builder import context_cache
+        context_cache.invalidate_novel(novel_id)
 
         return MCPToolResult(
             success=True,
@@ -1381,7 +1386,6 @@ class GenerateChapterDraftTool(BaseMCPTool):
 
         if title:
             chapter.title = title
-            chapter.updated_at = datetime.now()
             await db.commit()
             await db.refresh(chapter)
 

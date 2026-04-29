@@ -3,7 +3,7 @@
 """
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -72,7 +72,7 @@ class ChapterGenerationService:
             if should_use_workflow and LANGGRAPH_AVAILABLE:
                 workflow = ChapterWorkflow()
                 workflow_result = await workflow.run(
-                    task_id=f"gen_{self.novel_id}_{chapter_number}_{datetime.now().timestamp()}",
+                    task_id=f"gen_{self.novel_id}_{chapter_number}_{datetime.now(timezone.utc).timestamp()}",
                     novel_id=self.novel_id,
                     chapter_number=chapter_number,
                     target_length=target_length,
@@ -102,7 +102,7 @@ class ChapterGenerationService:
                 }
             
             task = AgentTask(
-                task_id=f"gen_{self.novel_id}_{chapter_number}_{datetime.now().timestamp()}",
+                task_id=f"gen_{self.novel_id}_{chapter_number}_{datetime.now(timezone.utc).timestamp()}",
                 task_type=TaskType.GENERATE_CHAPTER,
                 novel_id=self.novel_id,
                 parameters={
@@ -243,7 +243,7 @@ class ChapterGenerationService:
             existing.content = content
             existing.status = "completed"
             existing.word_count = len(content)
-            existing.updated_at = datetime.now()
+            existing.updated_at = datetime.now(timezone.utc)
             await self.db.commit()
             await self.db.refresh(existing)
             chapter = existing
@@ -283,7 +283,7 @@ class ChapterGenerationService:
     
     async def _update_chapter_memory(self, chapter_id: int) -> Dict[str, Any]:
         task = AgentTask(
-            task_id=f"memory_{self.novel_id}_{chapter_id}_{datetime.now().timestamp()}",
+            task_id=f"memory_{self.novel_id}_{chapter_id}_{datetime.now(timezone.utc).timestamp()}",
             task_type=TaskType.UPDATE_MEMORY,
             novel_id=self.novel_id,
             chapter_id=chapter_id,

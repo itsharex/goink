@@ -3,7 +3,7 @@
 """
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -207,7 +207,7 @@ class EditSessionManager:
 
         source_updated_at = (edit_session.extra_metadata or {}).get("source_chapter_updated_at")
         if source_updated_at and chapter.updated_at:
-            from datetime import datetime as dt
+            from datetime import datetime as dt, timezone
             try:
                 source_dt = dt.fromisoformat(source_updated_at)
                 if chapter.updated_at > source_dt:
@@ -226,7 +226,6 @@ class EditSessionManager:
         chapter.content = edit_session.working_content
         chapter.word_count = len(edit_session.working_content) if edit_session.working_content else 0
         chapter.status = "completed" if (edit_session.working_content or "").strip() else chapter.status
-        chapter.updated_at = datetime.now()
 
         post_processor = ChapterPostProcessor(self.db, chapter.novel_id)
         try:
@@ -243,7 +242,7 @@ class EditSessionManager:
         chapter.summary = await self._generate_chapter_summary(chapter.content or "")
 
         edit_session.status = EditSessionStatus.ACCEPTED
-        edit_session.accepted_at = datetime.now()
+        edit_session.accepted_at = datetime.now(timezone.utc)
         
         await self.db.commit()
         await self._refresh_chapter_memory(chapter)
@@ -290,7 +289,7 @@ class EditSessionManager:
             raise ValueError("编辑会话已被接受，不能再拒绝")
         
         edit_session.status = EditSessionStatus.REJECTED
-        edit_session.rejected_at = datetime.now()
+        edit_session.rejected_at = datetime.now(timezone.utc)
         
         await self.db.commit()
         

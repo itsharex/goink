@@ -3,7 +3,7 @@
 支持会话作用域：整本小说/章节范围/单章节
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body
 from typing import Optional, List
 
@@ -363,7 +363,7 @@ async def update_session_title(
     if subtitle is not None:
         session.subtitle = subtitle[:50]
         session.metadata["subtitle"] = session.subtitle
-    session.updated_at = datetime.now()
+    session.updated_at = datetime.now(timezone.utc)
     await session_manager.save_session(session)
     
     return ApiResponse.success({

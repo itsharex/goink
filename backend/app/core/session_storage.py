@@ -4,7 +4,7 @@
 """
 import logging
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.redis_service import redis_service
 from app.core.database import AsyncSessionLocal
@@ -152,7 +152,7 @@ class SessionStorage:
     async def _save_to_cache(self, session: Session) -> bool:
         """保存到Redis缓存"""
         try:
-            session.updated_at = datetime.now()
+            session.updated_at = datetime.now(timezone.utc)
             session_key = self._get_session_key(session.session_id)
             await redis_service.set(session_key, session.to_dict(), ttl=self.cache_ttl)
             return True
@@ -188,7 +188,7 @@ class SessionStorage:
             user_key = self._get_user_sessions_key(session.user_id, session.novel_id)
             await redis_service.zadd(
                 user_key,
-                {session.session_id: datetime.now().timestamp()},
+                {session.session_id: datetime.now(timezone.utc).timestamp()},
                 ttl=self.cache_ttl
             )
             
@@ -198,7 +198,7 @@ class SessionStorage:
                 )
                 await redis_service.zadd(
                     scope_key,
-                    {session.session_id: datetime.now().timestamp()},
+                    {session.session_id: datetime.now(timezone.utc).timestamp()},
                     ttl=self.cache_ttl
                 )
             return True
@@ -226,7 +226,7 @@ class SessionStorage:
                     db_session.chapter_context = session.chapter_context.to_dict() if session.chapter_context else None
                     db_session.pending_changes = session.pending_changes
                     db_session.extra_metadata = session.metadata
-                    db_session.updated_at = datetime.now()
+                    db_session.updated_at = datetime.now(timezone.utc)
                 else:
                     db_session = DBChatSession(
                         session_id=session.session_id,

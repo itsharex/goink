@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import type { ApiError } from '@/types/api'
 import { authApi } from './authService'
+import { useAuthStore } from '@/stores/authStore'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
@@ -30,39 +31,9 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = []
 }
 
-const getAuthFromStorage = () => {
-  const authStorage = localStorage.getItem('auth-storage')
-  if (authStorage) {
-    try {
-      return JSON.parse(authStorage)?.state
-    } catch (e) {
-      console.error('Failed to parse auth storage:', e)
-    }
-  }
-  return null
-}
-
-const setAccessToken = (token: string) => {
-  const authStorage = localStorage.getItem('auth-storage')
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage)
-      parsed.state.accessToken = token
-      localStorage.setItem('auth-storage', JSON.stringify(parsed))
-    } catch (e) {
-      console.error('Failed to update auth storage:', e)
-    }
-  }
-}
-
-const clearAuthStorage = () => {
-  localStorage.removeItem('auth-storage')
-}
-
 apiClient.interceptors.request.use(
   (config) => {
-    const authState = getAuthFromStorage()
-    const token = authState?.accessToken
+    const token = useAuthStore.getState().accessToken
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -83,8 +54,7 @@ apiClient.interceptors.response.use(
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
         }).then(() => {
-          const authState = getAuthFromStorage()
-          const token = authState?.accessToken
+          const token = useAuthStore.getState().accessToken
           if (token) {
             originalRequest.headers.Authorization = `Bearer ${token}`
           }
@@ -98,7 +68,7 @@ apiClient.interceptors.response.use(
       try {
         const res = await authApi.refreshToken()
         if (res.success) {
-          setAccessToken(res.data.access_token)
+          useAuthStore.getState().setTokens(res.data.access_token, useAuthStore.getState().refreshToken || '')
           
           processQueue(null, res.data.access_token)
           
@@ -109,7 +79,7 @@ apiClient.interceptors.response.use(
         }
       } catch (refreshError) {
         processQueue(refreshError, null)
-        clearAuthStorage()
+        useAuthStore.getState().logout()
         window.location.href = '/login'
         return Promise.reject(refreshError)
       } finally {

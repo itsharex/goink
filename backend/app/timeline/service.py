@@ -5,7 +5,7 @@
 import logging
 from enum import Enum
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, func, and_, or_, desc, asc, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,7 +148,6 @@ class TimelineService:
 
         entry.version += 1
         entry.last_editor = editor
-        entry.updated_at = datetime.now()
 
         await self.db.commit()
         await self.db.refresh(entry)
@@ -166,7 +165,7 @@ class TimelineService:
             entry.status = TimelineEntryStatus.COMPLETED.value
 
         entry.resolved_chapter_id = data.resolved_chapter_id
-        entry.resolved_at = datetime.now()
+        entry.resolved_at = datetime.now(timezone.utc)
 
         if data.resolution_notes:
             if entry.detail_json is None:

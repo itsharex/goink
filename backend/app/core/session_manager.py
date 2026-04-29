@@ -14,7 +14,7 @@
 import logging
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -437,7 +437,7 @@ class ContextCompressor:
             session.summary = self._build_fallback_summary(older_messages)
         new_messages = system_messages + important_messages + recent_messages
         session.messages = new_messages
-        session.updated_at = datetime.now()
+        session.updated_at = datetime.now(timezone.utc)
         old_tokens = sum(m.token_count for m in messages)
         new_tokens = sum(m.token_count for m in new_messages)
         logger.info(
@@ -472,7 +472,7 @@ class ContextCompressor:
 
         new_messages = system_messages + important_messages + recent_messages
         session.messages = new_messages
-        session.updated_at = datetime.now()
+        session.updated_at = datetime.now(timezone.utc)
         old_tokens = sum(m.token_count for m in messages)
         new_tokens = sum(m.token_count for m in new_messages)
         logger.info(
@@ -613,7 +613,7 @@ class SessionManager:
             metadata=message_metadata
         )
         session.messages.append(message)
-        session.updated_at = datetime.now()
+        session.updated_at = datetime.now(timezone.utc)
         if role == MessageRole.USER:
             normalized = content.strip().splitlines()[0] if content else ""
             if normalized:
@@ -808,7 +808,7 @@ class SessionManager:
         novel_context: NovelContext
     ):
         session.novel_context = novel_context
-        session.updated_at = datetime.now()
+        session.updated_at = datetime.now(timezone.utc)
     
     def update_chapter_context(
         self,
@@ -816,17 +816,17 @@ class SessionManager:
         chapter_context: ChapterContext
     ):
         session.chapter_context = chapter_context
-        session.updated_at = datetime.now()
+        session.updated_at = datetime.now(timezone.utc)
     
     def add_pending_change(self, session: Session, change_id: str):
         if change_id not in session.pending_changes:
             session.pending_changes.append(change_id)
-            session.updated_at = datetime.now()
+            session.updated_at = datetime.now(timezone.utc)
     
     def remove_pending_change(self, session: Session, change_id: str):
         if change_id in session.pending_changes:
             session.pending_changes.remove(change_id)
-            session.updated_at = datetime.now()
+            session.updated_at = datetime.now(timezone.utc)
 
 
 session_manager = SessionManager()

@@ -29,14 +29,14 @@ function NovelList() {
     loadNovels()
   }, [page, pageSize, statusFilter])
 
-  const loadNovels = async () => {
+  const loadNovels = async (searchValue?: string) => {
     setLoading(true)
     try {
       const response = await novelApi.getNovels({
         page,
         page_size: pageSize,
         status: statusFilter,
-        search: search || undefined,
+        search: (searchValue !== undefined ? searchValue : search) || undefined,
       })
       if (response.success) {
         setNovels(response.data.items)
@@ -166,7 +166,7 @@ function NovelList() {
             onSearch={(value) => {
               setSearch(value)
               setPage(1)
-              loadNovels()
+              loadNovels(value)
             }}
             style={{ width: 300 }}
           />
