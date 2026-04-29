@@ -101,6 +101,9 @@ async def create_character(
     
     await redis_service.clear_pattern(f"novel:{character.novel_id}:characters:*")
     
+    from app.core.context_builder import context_cache
+    context_cache.invalidate_novel(character.novel_id)
+    
     return ApiResponse.success(
         {
             "id": db_character.id,

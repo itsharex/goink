@@ -25,8 +25,9 @@ class ContextCache:
     """分层内存缓存"""
 
     def __init__(self, ttl_seconds: int = 300):
-        self._cache: Dict[str, Any] = {}
-        self._timestamps: Dict[str, datetime] = {}
+        self._cache: dict[str, Any] = {}
+        self._timestamps: dict[str, datetime] = {}
+        self._novel_keys: dict[int, set[str]] = {}
         self._ttl = ttl_seconds
     
     def _get_key(self, *args, **kwargs) -> str:
@@ -46,10 +47,14 @@ class ContextCache:
                 del self._timestamps[key]
         return None
     
-    def set(self, key: str, value: Any):
+    def set(self, key: str, value: Any, novel_id: int | None = None):
         """设置缓存"""
         self._cache[key] = value
         self._timestamps[key] = datetime.now()
+        if novel_id is not None:
+            if novel_id not in self._novel_keys:
+                self._novel_keys[novel_id] = set()
+            self._novel_keys[novel_id].add(key)
         logger.debug(f"Cache set: {key[:8]}")
     
     def clear(self):
@@ -57,6 +62,15 @@ class ContextCache:
         self._cache.clear()
         self._timestamps.clear()
         logger.info("Cache cleared")
+
+    def invalidate_novel(self, novel_id: int):
+        """清除指定小说的所有缓存条目"""
+        keys = self._novel_keys.pop(novel_id, set())
+        for key in keys:
+            self._cache.pop(key, None)
+            self._timestamps.pop(key, None)
+        if keys:
+            logger.info(f"Cache invalidated for novel {novel_id}: {len(keys)} entries removed")
 
 
 context_cache = ContextCache(ttl_seconds=300)
@@ -153,7 +167,7 @@ class ContextBuilder:
         result = "\n".join(parts) if parts else None
         
         if result:
-            context_cache.set(cache_key, result)
+            context_cache.set(cache_key, result, novel_id=self.novel_id)
             
         return result
     
@@ -183,7 +197,7 @@ class ContextBuilder:
         parts.append(f"</{tag_config['tag']}>")
         result = "\n".join(parts)
         
-        context_cache.set(cache_key, result)
+        context_cache.set(cache_key, result, novel_id=self.novel_id)
         
         return result
     
@@ -217,7 +231,7 @@ class ContextBuilder:
         parts.append(f"</{tag_config['tag']}>")
         result = "\n".join(parts)
         
-        context_cache.set(cache_key, result)
+        context_cache.set(cache_key, result, novel_id=self.novel_id)
         
         return result
     
@@ -604,7 +618,7 @@ class ContextBuilder:
                 f"最高分={diverse_results[0]['relevance_score']:.3f}" if diverse_results else "❌ 无有效结果"
             )
             
-            context_cache.set(cache_key, diverse_results)
+            context_cache.set(cache_key, diverse_results, novel_id=self.novel_id)
             
             return diverse_results
             

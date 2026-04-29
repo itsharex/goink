@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 class VectorStoreConfig:
     """向量存储配置"""
     CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "shibing624/text2vec-base-chinese")
+    OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
     USE_OPENAI_EMBEDDING: bool = os.getenv("USE_OPENAI_EMBEDDING", "false").lower() == "true"
     
     @classmethod
@@ -223,21 +223,70 @@ class VectorStore:
             logger.warning(f"Failed to delete collection for novel {novel_id}: {e}")
             return False
     
-    def split_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
-        """将文本分割成重叠的块"""
+    def split_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
+        """将文本分割成重叠的块，优先在段落/句子边界处切分"""
         if not text:
             return []
-        
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = start + chunk_size
-            chunk = text[start:end]
-            if chunk.strip():
-                chunks.append(chunk.strip())
-            start = end - overlap
-        
+
+        paragraphs = text.split("\n")
+        if not paragraphs:
+            return []
+
+        chunks: list[str] = []
+        current_chunk = ""
+
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                if current_chunk:
+                    current_chunk += "\n"
+                continue
+
+            if len(current_chunk) + len(para) + 1 <= chunk_size:
+                if current_chunk:
+                    current_chunk += "\n" + para
+                else:
+                    current_chunk = para
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+
+                if len(para) <= chunk_size:
+                    current_chunk = para
+                else:
+                    sentences = self._split_sentences(para)
+                    current_chunk = ""
+                    for sentence in sentences:
+                        if len(current_chunk) + len(sentence) + 1 <= chunk_size:
+                            if current_chunk:
+                                current_chunk += sentence
+                            else:
+                                current_chunk = sentence
+                        else:
+                            if current_chunk:
+                                chunks.append(current_chunk)
+                            current_chunk = sentence
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
         return chunks
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        """Split text into sentences, supporting Chinese punctuation."""
+        import re
+        parts = re.split(r'([。！？；\.\!\?;])', text)
+        sentences: list[str] = []
+        buffer = ""
+        for part in parts:
+            buffer += part
+            if re.match(r'[。！？；\.\!\?;]', part):
+                sentences.append(buffer)
+                buffer = ""
+        if buffer:
+            sentences.append(buffer)
+        return [s for s in sentences if s.strip()]
 
     def build_chapter_chunks(
         self,

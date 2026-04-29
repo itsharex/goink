@@ -163,6 +163,9 @@ async def create_chapter(
     
     await redis_service.clear_pattern(f"novel:{chapter.novel_id}:chapters:*")
     
+    from app.core.context_builder import context_cache
+    context_cache.invalidate_novel(chapter.novel_id)
+    
     return ApiResponse.success(
         {
             "id": db_chapter.id,
@@ -306,6 +309,9 @@ async def update_chapter(
     await redis_service.delete(f"chapter:{chapter_id}:detail")
     await redis_service.clear_pattern(f"novel:{db_chapter.novel_id}:chapters:*")
     
+    from app.core.context_builder import context_cache
+    context_cache.invalidate_novel(db_chapter.novel_id)
+    
     return ApiResponse.success(
         {
             "id": db_chapter.id,
@@ -351,6 +357,9 @@ async def delete_chapter(
     
     await redis_service.delete(f"chapter:{chapter_id}:detail")
     await redis_service.clear_pattern(f"novel:{novel_id}:chapters:*")
+    
+    from app.core.context_builder import context_cache
+    context_cache.invalidate_novel(novel_id)
     
     return ApiResponse.success(
         {"chapter_number": chapter_number},
