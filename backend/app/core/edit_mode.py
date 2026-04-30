@@ -115,7 +115,7 @@ class EditModeConfig:
             "get_creative_profile", "update_creative_profile",
             "get_novel_progress", "get_character_list", "get_character_detail", "get_writing_characters",
             "create_character", "update_character",
-            "search_plot_memory", "search_story_memory", "prepare_story_brief", "get_character_memory", "get_timeline", "get_recent_context",
+            "search_story_memory", "prepare_story_brief", "get_character_memory",
             "start_edit_session", "apply_edit", "get_edit_status", "read_chapter_for_edit",
             "run_subagent",
             "get_story_timeline", "add_timeline_entry", "update_timeline_entry",
@@ -129,12 +129,12 @@ class EditModeConfig:
         EditMode.REVIEW: {
             "get_novel_summary", "get_chapter_list", "get_chapter_content", "get_creative_profile",
             "get_novel_progress", "get_character_list", "get_character_detail",
-            "search_plot_memory", "search_story_memory", "prepare_story_brief", "get_character_memory", "get_timeline", "get_recent_context"
+            "search_story_memory", "prepare_story_brief", "get_character_memory"
         },
         EditMode.PLAN: {
             "get_novel_summary", "get_chapter_list", "get_chapter_content", "get_creative_profile",
             "get_novel_progress", "get_character_list", "get_character_detail",
-            "search_plot_memory", "search_story_memory", "prepare_story_brief", "get_character_memory", "get_timeline", "get_recent_context"
+            "search_story_memory", "prepare_story_brief", "get_character_memory"
         }
     }
     
@@ -211,7 +211,7 @@ class EditModeConfig:
             "update_location", "delete_location",
         },
         "timeline": {
-            "prepare_story_brief", "get_story_timeline", "get_timeline_context", "get_timeline",
+            "prepare_story_brief", "get_story_timeline", "get_timeline_context",
             "add_timeline_entry", "update_timeline_entry", "resolve_timeline_entry", "run_review",
         },
         "generation": {

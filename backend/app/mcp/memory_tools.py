@@ -21,6 +21,7 @@ class SearchPlotMemoryTool(BaseMCPTool):
     name = "search_plot_memory"
     description = "使用语义检索搜索小说中的情节记忆，返回相关内容片段。无需传novel_id，系统会注入当前小说ID。"
     category = MCPToolCategory.MEMORY_RETRIEVAL
+    expose_to_llm = False
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -231,6 +232,7 @@ class GetTimelineTool(BaseMCPTool):
     name = "get_timeline"
     description = "获取小说的情节时间线，按时间顺序排列事件"
     category = MCPToolCategory.MEMORY_RETRIEVAL
+    expose_to_llm = False
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -318,6 +320,7 @@ class GetRecentContextTool(BaseMCPTool):
     name = "get_recent_context"
     description = "获取指定章节附近的写作上下文，包括前文摘要、角色信息、情节线索"
     category = MCPToolCategory.MEMORY_RETRIEVAL
+    expose_to_llm = False
     parameters_schema = {
         "type": "object",
         "properties": {

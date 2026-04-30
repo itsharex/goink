@@ -92,7 +92,7 @@ class SessionScope:
 class Message:
     role: MessageRole
     content: str
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     token_count: int = 0
     importance: float = 0.5
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -309,8 +309,8 @@ class Session:
     novel_context: Optional[NovelContext] = None
     chapter_context: Optional[ChapterContext] = None
     pending_changes: List[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
     model: str = "deepseek-v4-flash"
     edit_mode: str = "agent"

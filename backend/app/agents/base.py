@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 from enum import Enum
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +91,8 @@ class AgentTask:
     root_task_id: str | None = None
     depth: int = 0
     status: TaskStatus = TaskStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -121,7 +121,7 @@ class AgentResult:
     error: str | None = None
     suggestions: list[str] = field(default_factory=list)
     next_actions: list[dict[str, Any]] = field(default_factory=list)
-    completed_at: datetime = field(default_factory=datetime.now)
+    completed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def to_dict(self) -> dict[str, Any]:
         return {

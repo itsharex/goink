@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory
 from app.core.permissions import verify_novel_ownership
+from app.mcp.novel_tools import _invalidate_novel_cache
 
 
 class GetLocationListTool(BaseMCPTool):
@@ -188,6 +189,8 @@ class CreateLocationTool(BaseMCPTool):
             svc = LocationService(db, novel_id)
             location = await svc.create(loc_data)
 
+            await _invalidate_novel_cache(novel_id)
+
             return MCPToolResult(
                 success=True,
                 data={
@@ -266,6 +269,8 @@ class UpdateLocationTool(BaseMCPTool):
             if not location:
                 return MCPToolResult(success=False, error=f"地点 {location_id} 不存在或不属于当前小说")
 
+            await _invalidate_novel_cache(novel_id)
+
             return MCPToolResult(
                 success=True,
                 data={
@@ -311,6 +316,7 @@ class DeleteLocationTool(BaseMCPTool):
             deleted = await svc.delete(location_id)
             if not deleted:
                 return MCPToolResult(success=False, error=f"地点 {location_id} 不存在、不属于当前小说或已删除")
+            await _invalidate_novel_cache(novel_id)
             return MCPToolResult(
                 success=True,
                 data={"deleted": True, "location_id": location_id},
