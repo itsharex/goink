@@ -155,7 +155,6 @@ def _extract_error_message(payload: Dict[str, Any]) -> Optional[str]:
 
 
 _REASONING_MODELS = {
-    "deepseek-reasoner", "deepseek-r1",
     "deepseek-v4-pro", "deepseek-v4-flash",
     "o1", "o1-mini", "o1-preview", "o3", "o3-mini",
     "qwq", "qwen-qwq", "qwen3-235b-a22b",
@@ -171,12 +170,15 @@ def _apply_reasoning_params(
     thinking_enabled: bool | None = None,
     reasoning_effort: str | None = None
 ) -> None:
+    """应用推理/思考模式参数。
+
+    DeepSeek V4 要求同时发送 thinking 和 reasoning_effort。
+    thinking 模式下不支持 temperature/top_p/presence_penalty/frequency_penalty。
+    """
     model_lower = model.lower()
     is_reasoning = any(r in model_lower for r in _REASONING_MODELS)
-    if thinking_enabled is not None and "deepseek" in model_lower:
-        payload["thinking"] = {"type": "enabled" if thinking_enabled else "disabled"}
 
-    if not is_reasoning and "reasoner" not in model_lower and thinking_enabled is None:
+    if not is_reasoning and thinking_enabled is None and reasoning_effort is None:
         return
 
     normalized_effort = None
@@ -187,15 +189,28 @@ def _apply_reasoning_params(
     elif reasoning_effort == "xhigh":
         normalized_effort = "max"
 
-    if any(q in model_lower for q in _QWEN_MODELS):
+    thinking_type = None
+    if "deepseek" in model_lower:
+        if thinking_enabled is None:
+            thinking_type = "enabled"  # 默认开启 thinking
+        else:
+            thinking_type = "enabled" if thinking_enabled else "disabled"
+    elif any(q in model_lower for q in _QWEN_MODELS):
         payload["enable_thinking"] = True
         payload["extra_body"] = {"enable_thinking": True}
-    elif "deepseek-v4" in model_lower:
         payload["reasoning_effort"] = normalized_effort or "high"
-    elif "deepseek" in model_lower or "reasoner" in model_lower:
+        return
+
+    if thinking_type is not None:
+        payload["thinking"] = {"type": thinking_type}
         payload["reasoning_effort"] = normalized_effort or "high"
-    else:
-        payload["reasoning_effort"] = normalized_effort or "high"
+        # 移除 thinking 模式下不支持的参数
+        payload.pop("temperature", None)
+        payload.pop("top_p", None)
+        payload.pop("presence_penalty", None)
+        payload.pop("frequency_penalty", None)
+    elif normalized_effort:
+        payload["reasoning_effort"] = normalized_effort
 
 
 @dataclass

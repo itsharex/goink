@@ -147,7 +147,7 @@ function TextGeneration() {
     startGeneration('dialogue', {
       characters: values.characters.split('\n').filter(c => c.trim()),
       context: values.context,
-      model: values.model || 'deepseek-chat',
+      model: values.model || 'deepseek-v4-flash',
       style: values.style || 'natural',
       user_prompt: values.user_prompt,
     })
@@ -156,7 +156,7 @@ function TextGeneration() {
   const onGenerateDescription = (values: { subject: string; model?: LLMModel; style?: GenerationStyle; user_prompt?: string }) => {
     startGeneration('description', {
       subject: values.subject,
-      model: values.model || 'deepseek-chat',
+      model: values.model || 'deepseek-v4-flash',
       style: values.style || 'vivid',
       user_prompt: values.user_prompt,
     })
@@ -167,7 +167,7 @@ function TextGeneration() {
       premise: values.premise,
       genre: values.genre,
       total_chapters: values.total_chapters || 20,
-      model: values.model || 'deepseek-chat',
+      model: values.model || 'deepseek-v4-flash',
       style: values.style || 'narrative',
       user_prompt: values.user_prompt,
     })
@@ -177,7 +177,7 @@ function TextGeneration() {
     startGeneration('summary', {
       content: values.content,
       max_length: values.max_length || 500,
-      model: values.model || 'deepseek-chat',
+      model: values.model || 'deepseek-v4-flash',
     })
   }
 
@@ -186,7 +186,7 @@ function TextGeneration() {
       name: values.name,
       role: values.role,
       novel_context: values.novel_context,
-      model: values.model || 'deepseek-chat',
+      model: values.model || 'deepseek-v4-flash',
       style: values.style || 'narrative',
       user_prompt: values.user_prompt,
     })
@@ -226,7 +226,7 @@ function TextGeneration() {
   }
 
   const renderModelSelect = () => (
-    <Form.Item label="LLM模型" name="model" initialValue="deepseek-chat">
+    <Form.Item label="LLM模型" name="model" initialValue="deepseek-v4-flash">
       <Select placeholder="选择模型">
         {models.map(m => (
           <Option key={m.value} value={m.value}>

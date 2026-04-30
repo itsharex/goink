@@ -32,7 +32,7 @@ async def create_session(
     scope_type: str = Body("novel", description="作用域类型: novel/chapters/chapter"),
     chapter_start: Optional[int] = Body(None, description="起始章节号"),
     chapter_end: Optional[int] = Body(None, description="结束章节号"),
-    model: str = Body("deepseek-chat", description="LLM模型"),
+    model: str = Body("deepseek-v4-flash", description="LLM模型"),
     title: Optional[str] = Body(None, description="会话标题"),
     subtitle: Optional[str] = Body(None, description="会话副标题")
 ):

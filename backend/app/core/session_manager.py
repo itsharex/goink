@@ -120,8 +120,13 @@ class Message:
     
     def to_api_format(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"role": self.role.value, "content": self.content}
-        if self.role == MessageRole.ASSISTANT and self.metadata.get("tool_calls"):
-            payload["tool_calls"] = self.metadata["tool_calls"]
+        if self.role == MessageRole.ASSISTANT:
+            if self.metadata.get("tool_calls"):
+                payload["tool_calls"] = self.metadata["tool_calls"]
+            # DeepSeek V4 要求工具调用轮次的 reasoning_content 必须回传（否则 400）
+            thinking_content = self.metadata.get("thinking_content", "")
+            if thinking_content:
+                payload["reasoning_content"] = thinking_content
         if self.role == MessageRole.TOOL:
             if self.metadata.get("tool_call_id"):
                 payload["tool_call_id"] = self.metadata["tool_call_id"]
@@ -248,17 +253,17 @@ MODEL_CONFIGS: Dict[str, ModelContextConfig] = {
         max_output_tokens=65536,
         description="DeepSeek-V4-Pro - 1M上下文窗口"
     ),
-    "deepseek-chat": ModelContextConfig(
-        name="deepseek-chat",
+    "deepseek-v4-flash": ModelContextConfig(
+        name="deepseek-v4-flash",
         context_window=1048576,
         max_output_tokens=8192,
-        description="DeepSeek-V3.2 - 1M上下文窗口"
+        description="DeepSeek-V4-Flash - 1M上下文窗口"
     ),
-    "deepseek-reasoner": ModelContextConfig(
-        name="deepseek-reasoner",
+    "deepseek-v4-pro": ModelContextConfig(
+        name="deepseek-v4-pro",
         context_window=1048576,
         max_output_tokens=65536,
-        description="DeepSeek-V3.2 思考模式 - 1M上下文窗口"
+        description="DeepSeek-V4-Pro - 1M上下文窗口"
     ),
 }
 

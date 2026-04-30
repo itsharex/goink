@@ -107,8 +107,6 @@ const SCOPE_OPTIONS: Array<{ value: ScopeType; label: string }> = [
 const MODEL_OPTIONS = [
   { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-  { value: 'deepseek-chat', label: 'DeepSeek Chat (兼容)' },
-  { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner (兼容)' },
   { value: 'qwen-max', label: 'Qwen Max (阿里)' },
   { value: 'qwen-plus', label: 'Qwen Plus (阿里)' },
   { value: 'qwq', label: 'QwQ 推理 (阿里)' },
@@ -1397,7 +1395,7 @@ function buildConversationTurns(
                   options={MODEL_OPTIONS}
                 />
               </div>
-              {(selectedModel.startsWith('deepseek-v4') || selectedModel === 'deepseek-reasoner') && (
+              {(selectedModel.startsWith('deepseek-v4')) && (
                 <div className={styles.controlChip}>
                   <span className={styles.controlLabel}>推理强度</span>
                   <Select

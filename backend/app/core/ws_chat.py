@@ -1688,21 +1688,27 @@ async def _run_chat_with_tools(
                     if full_response:
                         session_manager.add_message(session, MessageRole.ASSISTANT, full_response)
                         full_response = ""
+                    # 合并本轮所有工具调用为一条 assistant 消息（DeepSeek 要求）
+                    combined_tool_calls = []
                     for item in tool_outputs:
-                        tool_call_payload = [{
+                        combined_tool_calls.append({
                             "id": item.get("tool_id") or f"call_{item['tool']}",
                             "type": "function",
                             "function": {
                                 "name": item["tool"],
                                 "arguments": json.dumps(item.get("arguments", {}), ensure_ascii=False)
                             }
-                        }]
-                        session_manager.add_message(
-                            session,
-                            MessageRole.ASSISTANT,
-                            "",
-                            metadata={"tool_calls": tool_call_payload}
-                        )
+                        })
+                    tool_meta: Dict[str, Any] = {"tool_calls": combined_tool_calls}
+                    if thinking_buffer.strip():
+                        tool_meta["thinking_content"] = thinking_buffer
+                    session_manager.add_message(
+                        session,
+                        MessageRole.ASSISTANT,
+                        "",
+                        metadata=tool_meta
+                    )
+                    for item in tool_outputs:
                         session_manager.add_message(
                             session,
                             MessageRole.TOOL,

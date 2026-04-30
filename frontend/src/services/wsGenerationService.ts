@@ -6,8 +6,6 @@ export type GenerationStyle = 'narrative' | 'descriptive' | 'dialogue' | 'poetic
 export type LLMModel =
   | 'deepseek-v4-flash'
   | 'deepseek-v4-pro'
-  | 'deepseek-chat'
-  | 'deepseek-reasoner'
   | 'qwen-max'
   | 'qwen-plus'
   | 'qwq'

@@ -4,112 +4,124 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an AI-powered novel creation and collaborative editing platform. The system provides an IDE-like experience for writing novels with AI assistance, featuring real-time collaboration, tool calls via Model Context Protocol (MCP), and a unified WebSocket chat interface.
+AI-powered novel creation and collaborative editing platform. IDE-like chat interface with multi-agent orchestration (LangGraph), MCP tool ecosystem, layered RAG context engine, and real-time collaborative editing via WebSocket.
 
-## Common Development Tasks
+## Common Commands
 
-### Backend Setup
-1. Install dependencies: `pip install -r requirements.txt`
-2. Copy environment variables: `cp .env.example .env` and configure database, Redis, and DeepSeek API keys
-3. Initialize database: `python database/scripts/init_db.py`
-4. Run the FastAPI server: `uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000`
+### Backend
+```bash
+pip install -r requirements.txt                    # Install dependencies
+cp .env.example .env                                # Configure env vars
+python database/scripts/init_db.py                  # Initialize database
+uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000  # Dev server
+```
 
-### Frontend Setup
-1. Navigate to frontend directory: `cd frontend`
-2. Install dependencies: `npm install`
-3. Run development server: `npm run dev`
-
-### Database Management
-- Database URL format: `mysql+pymysql://user:password@host:3306/database_name`
-- Tables are managed via SQLAlchemy ORM in `backend/app/*/models.py`
-- Database schema is created automatically via `Base.metadata.create_all()`
-- Migrations directory exists at `database/migrations/` but appears to be unused; schema changes require manual updates to models
+### Frontend
+```bash
+cd frontend && npm install     # Install dependencies
+npm run dev                    # Dev server (Vite, port 5173)
+npm run build                  # TypeScript check + production build (tsc -b && vite build)
+npm run lint                   # ESLint check
+```
 
 ### Testing
-No project-specific test suite was found. The `dev_test/` directory contains experimental scripts.
+No test suite exists. No pytest config, no test files, no test dependencies in requirements.txt.
 
 ## Architecture
 
-### Backend Structure (`backend/app/`)
-- **main.py**: FastAPI application entry point with lifespan management for database and Redis
-- **Core modules** (`core/`):
-  - `database.py`: Async SQLAlchemy setup with MySQL/AIOMySQL
-  - `redis_service.py`: Redis connection pool for caching and session management
-  - `llm_service.py`: DeepSeek API integration with streaming support
-  - `websocket.py` & `ws_chat.py`: WebSocket manager and unified chat handler for real-time interactions
-  - `vector_store.py`: ChromaDB integration for RAG
-  - `diff_engine.py`: Text diff/patch utilities for collaborative editing
-  - `edit_mode.py`: Edit session state management
+### Backend (`backend/app/`)
 
-- **Domain modules** (each with `models.py`, `schemas.py`, `router.py`, `service.py`):
-  - `novels/`: Novel management and creative profiles
-  - `characters/`: Character creation and development
-  - `chapters/`: Chapter content and organization
-  - `plot_events/`: Plot point tracking
-  - `memory/`: Long-term memory storage for narrative consistency
-  - `rag/`: Retrieval-augmented generation context
-  - `agents/`: AI agent coordination (writer, reviewer, coordinator)
-  - `planning/`: Plot outlining and structure
-  - `consistency/`: Narrative consistency checking
-  - `editor/`: Collaborative edit session management
-  - `sessions/`: User session persistence
-  - `generation/`: AI text generation endpoints
+**Entry point**: `main.py` — FastAPI app with lifespan management for DB/Redis.
 
-- **MCP Integration** (`mcp/`):
-  - `server.py`: MCP server implementation exposing tools via SSE/stdio
-  - `base.py`: Tool registry and execution framework
-  - `router.py`: HTTP endpoint for MCP tool calls
-  - Tool categories: `novel_tools.py`, `editing_tools.py`, `memory_tools.py`, `consistency_tools.py`
+**Core infrastructure** (`core/`):
+- `database.py` — Async SQLAlchemy (MySQL via aiomysql), session factory, `get_async_session` dependency
+- `redis_service.py` — Redis connection pool for caching/pub-sub/session storage
+- `llm_service.py` — DeepSeek streaming API wrapper, with model config and error handling
+- `ws_chat.py` — **The central hub**: unified WebSocket chat handler that integrates session management, context building, LLM streaming, edit mode, and MCP tool calls. This is the most complex file in the system (~1400+ lines)
+- `websocket.py` — WebSocket connection manager with client tracking and progress reporting
+- `context_builder.py` — 4-layer RAG context assembly (STATIC → STABLE → SLIDING → DYNAMIC)
+- `vector_store.py` — ChromaDB operations for semantic search
+- `session_manager.py` — Chat session state machine (novel/chapter/free scopes), message history, context compression
+- `session_storage.py` — Session persistence via database
+- `prompt_templates.py` — System/user prompt templates separated by generation type, LLM model enum
+- `edit_mode.py` / `diff_engine.py` — Collaborative editing state machine and text diff/patch
+- `auth.py` / `jwt.py` — JWT authentication utilities
+- `exceptions.py` — Unified exception hierarchy (`APIException`, `NotFoundException`, etc.)
+- `dependencies.py` / `permissions.py` — FastAPI dependency injection and permission checks
+- `response.py` — Standardized API response format
+- `chapter_post_processor.py` / `chapter_summary.py` — Chapter post-processing and summary generation
 
-- **Workflows** (`workflows/`):
-  - `langgraph_workflow.py`: LangGraph-based orchestration for multi-agent novel writing
+**Domain modules** (each with `models.py`, `schemas.py`, `router.py`, `service.py`):
+- `novels/` — Novel CRUD and profile management
+- `characters/` — Character creation, profiles, relationships
+- `chapters/` — Chapter content management
+- `plot_events/` — Plot event tracking
+- `timeline/` — Timeline entry management
+- `locations/` — Location management (full CRUD module)
+- `memory/` — Long-term memory for narrative consistency
+- `rag/` — RAG context retrieval endpoints
+- `consistency/` — Narrative consistency checking
+- `editor/` — Collaborative edit session management
+- `sessions/` — Session persistence API
+- `chat/` — Chat message models (data layer backing `session_manager`)
+- `planning/` — Plot outlining (PlotLine, PlotNode CRUD)
+- `generation/` — AI text generation endpoints (both streaming and non-streaming)
+- `auth/` — Authentication routes (login, register, token refresh)
+- `text/` — Text processing router/service
+- `agents/` — Agent system (see below)
+- `workflows/` — LangGraph workflow (see below)
 
-### Frontend Structure (`frontend/`)
-- Vite + React + TypeScript application
-- Ant Design component library
-- Monaco Editor for code/text editing
-- Zustand for state management
-- WebSocket client for real-time chat and editing
-- Source organized in `src/` with typical React app structure
+**Agent system** (`agents/`):
+- `base.py` — Base agent class and Task data structures
+- `coordinator.py` — Main orchestrator agent with 8-layer task chain
+- `writer.py` — Content generation agent with 30+ parameter prompt building
+- `reviewer.py` — Quality review agent
+- `memory.py` — Agent memory module for cross-session recall
+- `context.py` / `context_provider.py` — Agent-specific context assembly
+- `factory.py` / `registry.py` — Agent creation and registration
+- `models.py` — Agent data models
+- `router.py` — HTTP endpoints for agent task submission/status
 
-### Data Flow
-1. User interacts via WebSocket chat or HTTP API
-2. Requests are routed to appropriate domain service
-3. AI agents coordinate via LangGraph workflows for complex tasks
-4. MCP tools provide structured access to novel creation functions
-5. Real-time edits are managed through edit sessions with diff/patch
-6. Redis caches frequent queries and session data
-7. ChromaDB stores embeddings for RAG context
+**LangGraph workflow** (`workflows/langgraph_workflow.py`):
+- 7-node pipeline: Context Prep → Generate → Review → Consistency Check → Revise → Save → Memory Update
+- Conditional routing: auto-revise up to 3 iterations based on review scores
+- State persistence via MemorySaver checkpoints for resume capability
 
-### Key Dependencies
-- **Backend**: FastAPI, SQLAlchemy, LangChain, LangGraph, ChromaDB, Redis, MCP
-- **Frontend**: React, Ant Design, Monaco Editor, Zustand, Axios
-- **AI**: DeepSeek API (primary LLM), OpenAI/Anthropic fallback support
+**MCP tools** (`mcp/`):
+- `server.py` — FastMCP server (SSE + StdIO dual transport)
+- `base.py` — `BaseMCPTool` abstract class with JSON Schema parameter validation
+- `registry.py` — Plugin-style tool registry
+- `router.py` — HTTP proxy endpoint for MCP calls
+- Tool modules: `novel_tools.py`, `character_tools.py`, `editing_tools.py`, `memory_tools.py`, `consistency_tools.py`, `location_tools.py`, `timeline_tools.py`
 
-## Development Notes
+### Frontend (`frontend/`)
 
-### Edit Session System
-- Edit sessions are managed via `EditSession` model with PENDING/ACCEPTED/REJECTED states
-- WebSocket messages: `start_edit`, `apply_edit`, `accept_edit`, `reject_edit`, `end_session`
-- Edit operations are idempotent with `already_processed` flags to handle duplicate messages
-- Real-time collaboration uses diff/patch algorithms for minimal bandwidth
+Vite + React 19 + TypeScript + Ant Design 6 + Zustand + Monaco Editor.
 
-### MCP Tool Patterns
-- Tools inherit from `BaseMCPTool` with standardized `execute()` method
-- Tool results follow `MCPToolResult(success, data, error, metadata)` schema
-- Database sessions are automatically rolled back on tool execution errors
-- Tools are organized by category and registered in `MCPToolRegistry`
+**Pages** (`src/pages/`): `chat/ChatPage.tsx` (main IDE-like chat UI, ~1300+ lines), `editor/EditorPage.tsx` (Monaco editor), plus dedicated pages for: auth, chapter, character, consistency, generation, mcp, novel, planning, progress, timeline, workflow.
 
-### Agent Coordination
-- Multiple AI agents (writer, reviewer, coordinator) work together via LangGraph
-- Each agent has specialized capabilities and memory
-- Workflow state is persisted and can be resumed
+**Services** (`src/services/`): REST clients for each domain (novel, chapter, character, etc.) plus two WebSocket services — `wsGenerationService.ts` (chat/streaming) and `wsEditorService.ts` (collaborative editing). Also `mcpService.ts` for MCP tool invocation.
 
-### Environment Configuration
-Required services:
-- MySQL database (configure via `DATABASE_URL`)
-- Redis (configure via `REDIS_URL`) 
-- DeepSeek API key (`DEEPSEEK_API_KEY`)
-- JWT secret (`SECRET_KEY`)
+**Stores** (`src/stores/`): Zustand stores — `authStore.ts` (auth state, token persistence), `novelStore.ts` (current novel context).
 
-The system can run without Redis but will lack caching and real-time features.
+**Components** (`src/components/`): Reusable UI components organized by domain (auth, chapter, character, common, layout, novel) plus a `Markdown.tsx` renderer.
+
+**State flow**: User input → ChatPage → WebSocket → backend ws_chat.py → LLM/MCP tools → streamed response back to ChatPage.
+
+### Key Data Flow
+1. User sends message via WebSocket (`ws/chat`) → `ws_chat.py` routes it
+2. Session manager loads/creates session with proper scope context
+3. ContextBuilder assembles 4-layer RAG context for the LLM
+4. For generation tasks: LangGraph workflow orchestrates Writer→Reviewer→Consistency agents
+5. MCP tools used for structured operations (CRUD, retrieval, consistency checks)
+6. Streamed response (`content_chunk` events) renders in ChatPage progressively
+7. Edit operations go through EditSession state machine with diff/patch
+
+### Dependencies
+- **Backend**: FastAPI, SQLAlchemy+aiomysql, LangChain+LangGraph, ChromaDB, Redis, MCP SDK
+- **Frontend**: React 19, Ant Design 6, Monaco Editor, Zustand, Axios, react-markdown
+- **AI**: DeepSeek V4 (primary), OpenAI/Anthropic as fallback
+
+### Environment
+Required: `DATABASE_URL` (MySQL), `DEEPSEEK_API_KEY`, `SECRET_KEY` (JWT).
+Optional: `REDIS_URL` (cache/pub-sub, degrades gracefully).

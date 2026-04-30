@@ -24,7 +24,7 @@ class ChatSession(Base):
     chapter_end: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    model: Mapped[str] = mapped_column(String(32), default="deepseek-chat")
+    model: Mapped[str] = mapped_column(String(32), default="deepseek-v4-flash")
 
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     novel_context: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)

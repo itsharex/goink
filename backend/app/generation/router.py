@@ -58,7 +58,7 @@ async def generate_http(
     - params: 生成参数（根据类型不同）
     
     通用参数:
-    - model: LLM模型 (deepseek-chat|deepseek-reasoner)
+    - model: LLM模型 (deepseek-v4-flash|deepseek-v4-pro)
     - style: 写作风格 (narrative|descriptive|dialogue|poetic|dramatic|natural|vivid)
     - user_prompt: 用户自定义提示词
     
@@ -201,7 +201,7 @@ async def list_models():
     """获取可用的LLM模型列表"""
     return ApiResponse.success({
         "models": get_available_models(),
-        "default": "deepseek-chat"
+        "default": "deepseek-v4-flash"
     })
 
 

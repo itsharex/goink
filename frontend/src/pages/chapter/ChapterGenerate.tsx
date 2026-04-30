@@ -162,7 +162,7 @@ function ChapterGenerate() {
         setChapter(response.data)
         form.setFieldsValue({
           target_length: 3000,
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
           style: 'narrative',
         })
       }
@@ -187,7 +187,7 @@ function ChapterGenerate() {
       chapter_id: chapter.id,
       chapter_number: chapter.chapter_number,
       target_length: values.target_length || 3000,
-      model: values.model || 'deepseek-chat',
+      model: values.model || 'deepseek-v4-flash',
       style: values.style || 'narrative',
     }
 
@@ -278,7 +278,7 @@ function ChapterGenerate() {
         onFinish={onGenerate}
         initialValues={{
           target_length: 3000,
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
           style: 'narrative',
         }}
       >
