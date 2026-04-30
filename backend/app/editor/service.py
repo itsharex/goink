@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.editor.models import EditSession, EditSessionStatus, EditChange, ChangeSource
 from app.core.diff_engine import diff_engine, DiffChangeType
 from app.chapters.models import Chapter
+from app.core.text_utils import count_words
 from app.core.vector_store import vector_store
 from app.core.chapter_summary import generate_chapter_summary
 from app.core.chapter_post_processor import ChapterPostProcessor
@@ -213,7 +214,7 @@ class EditSessionManager:
                 source_dt = dt.fromisoformat(source_updated_at)
                 if chapter.updated_at > source_dt:
                     chapter_word_count = chapter.word_count or 0
-                    edit_word_count = len(edit_session.working_content or "")
+                    edit_word_count = count_words(edit_session.working_content or "")
                     if abs(chapter_word_count - edit_word_count) > chapter_word_count * 0.3:
                         raise ValueError(
                             f"章节在编辑期间已被外部修改（原字数={chapter_word_count}，"
@@ -225,7 +226,7 @@ class EditSessionManager:
                 pass
 
         chapter.content = edit_session.working_content
-        chapter.word_count = len(edit_session.working_content) if edit_session.working_content else 0
+        chapter.word_count = count_words(edit_session.working_content) if edit_session.working_content else 0
         chapter.status = "completed" if (edit_session.working_content or "").strip() else chapter.status
 
         post_processor = ChapterPostProcessor(self.db, chapter.novel_id)
@@ -236,7 +237,7 @@ class EditSessionManager:
                 chapter_id=chapter.id,
             )
             chapter.content = process_result.get("final_content", chapter.content)
-            chapter.word_count = len(chapter.content or "")
+            chapter.word_count = count_words(chapter.content or "")
         except Exception as exc:
             logger.warning(f"Failed to post-process accepted edit session {edit_session_id}: {exc}")
 

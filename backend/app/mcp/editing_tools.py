@@ -16,6 +16,7 @@ from app.editor.service import get_edit_session_manager
 from app.editor.models import EditSession, EditSessionStatus, EditChange
 from app.core.permissions import verify_novel_ownership
 from app.core.diff_engine import diff_engine
+from app.core.text_utils import count_words
 
 _subagent_running_var: ContextVar[bool] = ContextVar("_subagent_running_var", default=False)
 
@@ -1014,7 +1015,7 @@ class ReadChapterForEditTool(BaseMCPTool):
                     "title": chapter.title,
                     "content": content,
                     "line_count": len(lines),
-                    "word_count": len(content),
+                    "word_count": count_words(content),
                     "lines": lines_payload
                 },
                 metadata={"tool": self.name, "chapter_id": chapter_id}

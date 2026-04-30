@@ -12,6 +12,7 @@ from app.core.auth import CurrentUserDep
 from app.core.dependencies import NovelOwner
 from app.core.exceptions import NotFoundException, UnauthorizedException, BadRequestException
 from app.core.redis_service import redis_service
+from app.core.text_utils import count_words
 from app.editor.service import get_edit_session_manager
 from app.editor.models import ChangeSource
 from app.novels.models import Novel
@@ -93,7 +94,7 @@ async def get_chapters_by_novel(
             "novel_id": ch.novel_id,
             "chapter_number": ch.chapter_number,
             "title": ch.title,
-            "word_count": ch.word_count or len(ch.content or ""),
+            "word_count": ch.word_count or count_words(ch.content or ""),
             "status": ch.status,
             "summary": ch.summary,
             "created_at": ch.created_at,
@@ -155,7 +156,7 @@ async def create_chapter(
         title=chapter.title or f"第{chapter_number}章",
         content=chapter.content,
         summary=chapter.summary,
-        word_count=len(chapter.content) if chapter.content else 0
+        word_count=count_words(chapter.content) if chapter.content else 0
     )
     db.add(db_chapter)
     await db.commit()
@@ -220,7 +221,7 @@ async def get_chapter(
         "content": chapter.content,
         "summary": chapter.summary,
         "status": chapter.status,
-        "word_count": chapter.word_count or len(chapter.content or ""),
+        "word_count": chapter.word_count or count_words(chapter.content or ""),
         "created_at": chapter.created_at,
         "updated_at": chapter.updated_at,
         "novel": {
@@ -301,7 +302,7 @@ async def update_chapter(
         setattr(db_chapter, key, value)
     
     if chapter.content is not None:
-        db_chapter.word_count = len(chapter.content)
+        db_chapter.word_count = count_words(chapter.content)
     
     await db.commit()
     await db.refresh(db_chapter)

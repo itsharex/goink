@@ -28,6 +28,15 @@ class LocationService:
     async def get_by_id(self, location_id: int) -> Optional[Location]:
         return await self.db.get(Location, location_id)
 
+    async def get_children(self, parent_id: int) -> List[Location]:
+        result = await self.db.execute(
+            select(Location).where(
+                Location.novel_id == self.novel_id,
+                Location.parent_location_id == parent_id,
+            ).order_by(Location.name)
+        )
+        return list(result.scalars().all())
+
     async def get_by_type(self, location_type: str) -> List[Location]:
         result = await self.db.execute(
             select(Location).where(

@@ -14,6 +14,7 @@ from app.core.database import DBSession, AsyncSessionLocal
 from app.core.dependencies import NovelOwner
 from app.core.llm_service import llm_service
 from app.core.context_builder import ContextBuilder
+from app.core.text_utils import count_words
 from app.core.prompt_templates import (
     get_system_prompt,
     build_chapter_prompt,
@@ -191,7 +192,7 @@ async def get_chapter_generation_status(
         "chapter_id": chapter.id,
         "chapter_number": chapter.chapter_number,
         "status": chapter.status,
-        "word_count": len(chapter.content or ""),
+        "word_count": count_words(chapter.content or ""),
         "has_content": bool(chapter.content)
     })
 

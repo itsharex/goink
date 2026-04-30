@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.context_builder import ContextBuilder
 from app.core.chapter_post_processor import ChapterPostProcessor
+from app.core.text_utils import count_words
 from app.agents.base import AgentTask, TaskType
 from app.agents.factory import create_default_coordinator
 from app.novels.models import Novel
@@ -91,7 +92,7 @@ class ChapterGenerationService:
                         "chapter_id": chapter.id if chapter else None,
                         "chapter_number": chapter_number,
                         "content": generated_content,
-                        "word_count": len(generated_content),
+                        "word_count": count_words(generated_content or ""),
                         "review_result": workflow_result.get("review_result"),
                         "consistency_result": workflow_result.get("consistency_result"),
                         "iterations": workflow_result.get("iterations", 0)
@@ -134,7 +135,7 @@ class ChapterGenerationService:
                     "chapter_id": chapter.id,
                     "chapter_number": chapter_number,
                     "content": chapter.content,
-                    "word_count": len(chapter.content),
+                    "word_count": count_words(chapter.content or ""),
                     "suggestions": result.suggestions
                 }
             else:
@@ -242,8 +243,7 @@ class ChapterGenerationService:
         if existing:
             existing.content = content
             existing.status = "completed"
-            existing.word_count = len(content)
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.word_count = count_words(content)
             await self.db.commit()
             await self.db.refresh(existing)
             chapter = existing
@@ -255,7 +255,7 @@ class ChapterGenerationService:
                 content=content,
                 summary=None,
                 status="completed",
-                word_count=len(content)
+                word_count=count_words(content)
             )
             self.db.add(chapter)
             await self.db.commit()
@@ -269,7 +269,7 @@ class ChapterGenerationService:
                 chapter_id=chapter.id
             )
             chapter.content = process_result.get("final_content", chapter.content)
-            chapter.word_count = len(chapter.content or "")
+            chapter.word_count = count_words(chapter.content or "")
             chapter.summary = await self._generate_chapter_summary(chapter.content or "")
             await self.db.commit()
             await self.db.refresh(chapter)

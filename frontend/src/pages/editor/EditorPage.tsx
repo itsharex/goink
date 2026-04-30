@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { Select, Tooltip, message, Modal, Input } from 'antd'
@@ -242,6 +242,35 @@ export default function EditorPage() {
   const [originalContent, setOriginalContent] = useState('')
   const [workingContent, setWorkingContent] = useState('')
   const [chapterWordCount, setChapterWordCount] = useState(0)
+  const [textStats, setTextStats] = useState<{
+    chinese_chars: number; english_words: number; spaces: number; punctuation: number; total_count: number
+  } | null>(null)
+
+  const computedStats = useMemo(() => {
+    if (!workingContent) return null
+    let chineseChars = 0
+    let englishWords = 0
+    let spaces = 0
+    let punctuation = 0
+    const cjkRe = /[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]/
+    const punctRe = /[，。！？；：""''【】（）、—…《》,.!?;:'"()\-\[\]{}<>\/\\@#$%^&*+=~`]/
+    const engWordRe = /[a-zA-Z]+(?:'[a-zA-Z]+)?/g
+    for (const ch of workingContent) {
+      if (cjkRe.test(ch)) {
+        if (punctRe.test(ch)) punctuation++
+        else chineseChars++
+      } else if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+        spaces++
+      } else if (punctRe.test(ch)) {
+        punctuation++
+      }
+    }
+    const m = workingContent.match(engWordRe)
+    englishWords = m ? m.length : 0
+    return { chinese_chars: chineseChars, english_words: englishWords, spaces, punctuation, total_count: chineseChars + englishWords }
+  }, [workingContent])
+
+  const displayStats = textStats || computedStats
   const [editSessionId, setEditSessionId] = useState<string | null>(null)
   const [latestPendingEditSessionId, setLatestPendingEditSessionId] = useState<string | null>(null)
   const [changeCount, setChangeCount] = useState(0)
@@ -1149,9 +1178,11 @@ function buildConversationTurns(
                     {`第${activeChapterMeta.chapterNumber}章 ${activeChapterMeta.title}`}
                   </span>
                   <div className={styles.editorFacts}>
-                    <span className={styles.editorWordCount}>
-                      {`${chapterWordCount.toLocaleString()} 字`}
-                    </span>
+                    <Tooltip title={displayStats ? `中文字数: ${displayStats.chinese_chars} | 英文词数: ${displayStats.english_words} | 空格: ${displayStats.spaces} | 标点: ${displayStats.punctuation}` : ''}>
+                      <span className={styles.editorWordCount}>
+                        {`${chapterWordCount.toLocaleString()} 字`}
+                      </span>
+                    </Tooltip>
                     <span className={`${styles.chapterPill} ${hasPendingReview ? styles.chapterPillPending : ''}`}>
                       {streamingChapterMeta ? 'AI 正在写作' : hasPendingReview ? '有待确认修改' : '正文已同步'}
                     </span>

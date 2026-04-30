@@ -36,6 +36,7 @@ except ImportError:
 from app.core.context_builder import ContextBuilder
 from app.consistency.service import ConsistencyChecker
 from app.core.vector_store import vector_store
+from app.core.text_utils import count_words
 from app.agents.base import AgentTask, AgentResult, TaskType
 from app.agents.writer import WriterAgent
 from app.agents.reviewer import ReviewerAgent
@@ -368,8 +369,7 @@ class ChapterWorkflow:
                 if chapter:
                     chapter.content = generated_content
                     chapter.status = "completed"
-                    chapter.word_count = len(generated_content)
-                    chapter.updated_at = datetime.now(timezone.utc)
+                    chapter.word_count = count_words(generated_content)
                     await db.commit()
                     await db.refresh(chapter)
                 else:
@@ -380,7 +380,7 @@ class ChapterWorkflow:
                         content=generated_content,
                         summary=None,
                         status="completed",
-                        word_count=len(generated_content)
+                        word_count=count_words(generated_content)
                     )
                     db.add(chapter)
                     await db.commit()
@@ -395,7 +395,7 @@ class ChapterWorkflow:
                         model=state.get("model")
                     )
                     chapter.content = process_result.get("final_content", chapter.content)
-                    chapter.word_count = len(chapter.content or "")
+                    chapter.word_count = count_words(chapter.content or "")
                 except Exception as exc:
                     logger.warning(f"Workflow chapter post-processing failed: {exc}")
 

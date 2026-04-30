@@ -33,6 +33,7 @@ from app.core.prompt_templates import (
     GenerationType
 )
 from app.chapters.models import Chapter
+from app.core.text_utils import count_words, compute_text_stats
 from app.novels.models import NovelCreativeProfile
 from app.novels.models import Novel
 from app.editor.service import get_edit_session_manager
@@ -429,7 +430,6 @@ async def _ensure_generation_chapter(
 
 
 async def _execute_streaming_chapter_draft(
-    db,
     novel_id: int,
     session: Session,
     task_id: str,
@@ -438,161 +438,167 @@ async def _execute_streaming_chapter_draft(
     task_flags: Dict[str, bool],
     arguments: Dict[str, Any]
 ) -> Dict[str, Any]:
-    try:
-        chapter = await _ensure_generation_chapter(
+    async with AsyncSessionLocal() as db:
+        try:
+            chapter = await _ensure_generation_chapter(
+                db,
+                novel_id=novel_id,
+                chapter_number=arguments.get("chapter_number"),
+                title=arguments.get("title"),
+                overwrite_existing=bool(arguments.get("overwrite_existing", False))
+            )
+        except ValueError as exc:
+            return {"success": False, "data": None, "error": str(exc), "metadata": {"tool": "generate_chapter_draft"}}
+        session.current_chapter_id = chapter.id
+
+        presentation = await _build_tool_call_presentation(
             db,
-            novel_id=novel_id,
-            chapter_number=arguments.get("chapter_number"),
-            title=arguments.get("title"),
-            overwrite_existing=bool(arguments.get("overwrite_existing", False))
-        )
-    except ValueError as exc:
-        return {"success": False, "data": None, "error": str(exc), "metadata": {"tool": "generate_chapter_draft"}}
-    session.current_chapter_id = chapter.id
-
-    presentation = await _build_tool_call_presentation(
-        db,
-        novel_id,
-        "generate_chapter_draft",
-        {
-            **arguments,
-            "chapter_id": chapter.id,
-            "chapter_number": chapter.chapter_number,
-            "title": chapter.title,
-        }
-    )
-    await ws_manager.send_personal_message({
-        "type": "tool_call",
-        "task_id": task_id,
-        "tool_name": "generate_chapter_draft",
-        "tool_id": tool_id,
-        "status": "executing",
-        **presentation,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }, websocket)
-
-    target_length = arguments.get("target_length", 3000)
-    style = arguments.get("style", "narrative")
-    model = arguments.get("model")
-    reasoning_effort = arguments.get("reasoning_effort") or session.metadata.get("reasoning_effort")
-    context_builder = ContextBuilder(db, novel_id)
-    context_data = await context_builder.build_writing_context(
-        chapter_number=chapter.chapter_number,
-        context_size=arguments.get("context_size", 3000),
-        include_previous_chapters=True,
-        include_characters=True,
-        include_plot_events=True
-    )
-    system_prompt = get_system_prompt(GenerationType.CHAPTER, style)
-    user_prompt = build_chapter_prompt(
-        chapter_number=chapter.chapter_number,
-        target_length=target_length,
-        style=style,
-        context=context_data.get("context", ""),
-        user_prompt=arguments.get("writing_task"),
-        author_intent=arguments.get("author_intent"),
-        scene_goal=arguments.get("scene_goal"),
-        chapter_outline=arguments.get("outline"),
-        tone=arguments.get("tone"),
-        must_keep=arguments.get("must_keep"),
-        must_avoid=arguments.get("must_avoid"),
-        key_events=arguments.get("key_events"),
-        focus_characters=arguments.get("focus_characters")
-    )
-
-    full_content = ""
-    try:
-        async for chunk in llm_service.generate_stream(
-            prompt=user_prompt,
-            system_prompt=system_prompt,
-            model=model,
-            reasoning_effort=reasoning_effort,
-        ):
-            if not task_flags.get(task_id):
-                raise asyncio.CancelledError()
-            full_content += chunk
-            await ws_manager.send_personal_message({
-                "type": "chapter_stream",
-                "task_id": task_id,
-                "tool_name": "generate_chapter_draft",
+            novel_id,
+            "generate_chapter_draft",
+            {
+                **arguments,
                 "chapter_id": chapter.id,
                 "chapter_number": chapter.chapter_number,
-                "chapter_title": chapter.title,
-                "chunk": chunk,
-                "content": full_content,
-                "word_count": len(full_content),
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }, websocket)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        await db.rollback()
+                "title": chapter.title,
+            }
+        )
+        await ws_manager.send_personal_message({
+            "type": "tool_call",
+            "task_id": task_id,
+            "tool_name": "generate_chapter_draft",
+            "tool_id": tool_id,
+            "status": "executing",
+            **presentation,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, websocket)
+
+        target_length = arguments.get("target_length", 3000)
+        style = arguments.get("style", "narrative")
+        model = arguments.get("model")
+        reasoning_effort = arguments.get("reasoning_effort") or session.metadata.get("reasoning_effort")
+        context_builder = ContextBuilder(db, novel_id)
+        context_data = await context_builder.build_writing_context(
+            chapter_number=chapter.chapter_number,
+            context_size=arguments.get("context_size", 3000),
+            include_previous_chapters=True,
+            include_characters=True,
+            include_plot_events=True
+        )
+        system_prompt = get_system_prompt(GenerationType.CHAPTER, style)
+        user_prompt = build_chapter_prompt(
+            chapter_number=chapter.chapter_number,
+            target_length=target_length,
+            style=style,
+            context=context_data.get("context", ""),
+            user_prompt=arguments.get("writing_task"),
+            author_intent=arguments.get("author_intent"),
+            scene_goal=arguments.get("scene_goal"),
+            chapter_outline=arguments.get("outline"),
+            tone=arguments.get("tone"),
+            must_keep=arguments.get("must_keep"),
+            must_avoid=arguments.get("must_avoid"),
+            key_events=arguments.get("key_events"),
+            focus_characters=arguments.get("focus_characters")
+        )
+
+        full_content = ""
+        stream_interval = 0
+        try:
+            async for chunk in llm_service.generate_stream(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            ):
+                if not task_flags.get(task_id):
+                    raise asyncio.CancelledError()
+                full_content += chunk
+                stream_interval += 1
+                msg: dict[str, Any] = {
+                    "type": "chapter_stream",
+                    "task_id": task_id,
+                    "tool_name": "generate_chapter_draft",
+                    "chapter_id": chapter.id,
+                    "chapter_number": chapter.chapter_number,
+                    "chapter_title": chapter.title,
+                    "chunk": chunk,
+                    "content": full_content,
+                    "word_count": count_words(full_content),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                if stream_interval % 10 == 0:
+                    msg["text_stats"] = compute_text_stats(full_content).to_dict()
+                await ws_manager.send_personal_message(msg, websocket)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await db.rollback()
+            return {
+                "success": False,
+                "data": {
+                    "chapter_id": chapter.id,
+                    "chapter_number": chapter.chapter_number,
+                    "title": chapter.title,
+                },
+                "error": _friendly_error_message(exc),
+                "metadata": {"tool": "generate_chapter_draft", "novel_id": novel_id, "chapter_id": chapter.id}
+            }
+
+        service = ChapterGenerationService(db, novel_id)
+        chapter.content = full_content
+        chapter.status = "completed"
+        chapter.word_count = count_words(full_content)
+        await db.commit()
+        await db.refresh(chapter)
+
+        from app.core.chapter_post_processor import ChapterPostProcessor
+        try:
+            post_processor = ChapterPostProcessor(db, novel_id)
+            process_result = await post_processor.process(
+                content=chapter.content or "",
+                chapter_number=chapter.chapter_number,
+                chapter_id=chapter.id,
+                model=model
+            )
+            if process_result.get("was_truncated"):
+                chapter.content = process_result["final_content"]
+            else:
+                chapter.content = process_result.get("final_content", chapter.content)
+            chapter.word_count = count_words(chapter.content or "")
+            chapter.summary = await service._generate_chapter_summary(chapter.content or "")
+            await db.commit()
+            logger.info(
+                f"Chapter {chapter.chapter_number} post-process completed: "
+                f"truncated={process_result['was_truncated']}, "
+                f"ending_completed={process_result['ending_completed']}"
+            )
+        except Exception as exc:
+            logger.warning(f"Chapter post-processing failed (non-fatal): {exc}")
+            chapter.summary = await service._generate_chapter_summary(chapter.content or "")
+            await db.commit()
+
+        try:
+            await service._update_chapter_memory(chapter.id)
+        except Exception as exc:
+            logger.warning(f"Failed to update chapter memory after streamed generation: {exc}")
+            from app.core.memory_retry import schedule_memory_retry
+            await schedule_memory_retry(novel_id, chapter.id)
+
         return {
-            "success": False,
+            "success": True,
             "data": {
                 "chapter_id": chapter.id,
                 "chapter_number": chapter.chapter_number,
                 "title": chapter.title,
+                "summary": chapter.summary,
+                "status": chapter.status,
+                "word_count": chapter.word_count,
+                "content": chapter.content,
+                "iterations": 1
             },
-            "error": _friendly_error_message(exc),
+            "error": None,
             "metadata": {"tool": "generate_chapter_draft", "novel_id": novel_id, "chapter_id": chapter.id}
         }
-
-    service = ChapterGenerationService(db, novel_id)
-    chapter.content = full_content
-    chapter.status = "completed"
-    chapter.word_count = len(full_content)
-    await db.commit()
-    await db.refresh(chapter)
-
-    from app.core.chapter_post_processor import ChapterPostProcessor
-    try:
-        post_processor = ChapterPostProcessor(db, novel_id)
-        process_result = await post_processor.process(
-            content=chapter.content or "",
-            chapter_number=chapter.chapter_number,
-            chapter_id=chapter.id,
-            model=model
-        )
-        if process_result.get("was_truncated"):
-            chapter.content = process_result["final_content"]
-        else:
-            chapter.content = process_result.get("final_content", chapter.content)
-        chapter.word_count = len(chapter.content or "")
-        chapter.summary = await service._generate_chapter_summary(chapter.content or "")
-        await db.commit()
-        logger.info(
-            f"Chapter {chapter.chapter_number} post-process completed: "
-            f"truncated={process_result['was_truncated']}, "
-            f"ending_completed={process_result['ending_completed']}"
-        )
-    except Exception as exc:
-        logger.warning(f"Chapter post-processing failed (non-fatal): {exc}")
-        chapter.summary = await service._generate_chapter_summary(chapter.content or "")
-        await db.commit()
-
-    try:
-        await service._update_chapter_memory(chapter.id)
-    except Exception as exc:
-        logger.warning(f"Failed to update chapter memory after streamed generation: {exc}")
-        from app.core.memory_retry import schedule_memory_retry
-        await schedule_memory_retry(novel_id, chapter.id)
-
-    return {
-        "success": True,
-        "data": {
-            "chapter_id": chapter.id,
-            "chapter_number": chapter.chapter_number,
-            "title": chapter.title,
-            "summary": chapter.summary,
-            "status": chapter.status,
-            "word_count": chapter.word_count,
-            "content": chapter.content,
-            "iterations": 1
-        },
-        "error": None,
-        "metadata": {"tool": "generate_chapter_draft", "novel_id": novel_id, "chapter_id": chapter.id}
-    }
 
 
 @router.websocket("/ws/chat")
@@ -1494,7 +1500,6 @@ async def _run_chat_with_tools(
                             else:
                                 if tool_name == "generate_chapter_draft":
                                     tool_result_payload = await _execute_streaming_chapter_draft(
-                                        db=db,
                                         novel_id=novel_id,
                                         session=session,
                                         task_id=task_id,
@@ -1970,6 +1975,7 @@ async def _generate_chapter_ws(
     
     full_content = ""
     accumulated_length = 0
+    stats_interval = 0
     
     async for chunk in llm_service.generate_stream(
         prompt=user_message,
@@ -1981,9 +1987,14 @@ async def _generate_chapter_ws(
         
         full_content += chunk
         accumulated_length += len(chunk)
+        stats_interval += 1
+        
+        text_stats = None
+        if stats_interval % 10 == 0:
+            text_stats = compute_text_stats(full_content).to_dict()
         
         await ws_manager.send_personal_message(
-            GenerationProgress.content_chunk(task_id, chunk, accumulated_length),
+            GenerationProgress.content_chunk(task_id, chunk, accumulated_length, text_stats=text_stats),
             websocket
         )
         
@@ -2015,7 +2026,7 @@ async def _generate_chapter_ws(
     if chapter:
         chapter.content = full_content
         chapter.status = "completed"
-        chapter.word_count = len(full_content)
+        chapter.word_count = count_words(full_content)
     else:
         chapter = Chapter(
             novel_id=novel_id,
@@ -2023,7 +2034,7 @@ async def _generate_chapter_ws(
             title=f"第{chapter_number}章",
             content=full_content,
             status="completed",
-            word_count=len(full_content)
+            word_count=count_words(full_content)
         )
         db.add(chapter)
     
@@ -2042,7 +2053,7 @@ async def _generate_chapter_ws(
             chapter.content = process_result["final_content"]
         else:
             chapter.content = process_result.get("final_content", chapter.content)
-        chapter.word_count = len(chapter.content or "")
+        chapter.word_count = count_words(chapter.content or "")
         await db.commit()
     except Exception as exc:
         logger.warning(f"Chapter post-processing failed (non-fatal) in _generate_chapter_ws: {exc}")
@@ -2062,13 +2073,76 @@ async def _generate_chapter_ws(
         from app.core.memory_retry import schedule_memory_retry
         await schedule_memory_retry(novel_id, chapter.id)
     
+    final_stats = compute_text_stats(full_content).to_dict()
     await ws_manager.send_personal_message(
         GenerationProgress.completed(
             task_id=task_id,
             chapter_id=chapter.id,
             chapter_number=chapter_number,
             content=full_content,
-            word_count=len(full_content)
+            word_count=count_words(full_content),
+            text_stats=final_stats
+        ),
+        websocket
+    )
+
+
+async def _generate_streaming_ws(
+    task_id: str,
+    novel_id: int,
+    params: Dict[str, Any],
+    websocket: WebSocket,
+    task_flags: Dict[str, bool],
+    gen_type: GenerationType,
+    progress_label: str,
+    prompt_builder,
+    style: str | None = None,
+):
+    await ws_manager.send_personal_message(
+        GenerationProgress.progress(task_id, "generating", 30, progress_label),
+        websocket
+    )
+
+    if not task_flags.get(task_id):
+        return
+
+    system_prompt = get_system_prompt(gen_type, style)
+    user_message = prompt_builder()
+
+    full_content = ""
+    accumulated_length = 0
+    stats_interval = 0
+
+    async for chunk in llm_service.generate_stream(
+        prompt=user_message,
+        system_prompt=system_prompt,
+        model=params.get("model")
+    ):
+        if not task_flags.get(task_id):
+            return
+
+        full_content += chunk
+        accumulated_length += len(chunk)
+        stats_interval += 1
+
+        text_stats = None
+        if stats_interval % 10 == 0:
+            text_stats = compute_text_stats(full_content).to_dict()
+
+        await ws_manager.send_personal_message(
+            GenerationProgress.content_chunk(task_id, chunk, accumulated_length, text_stats=text_stats),
+            websocket
+        )
+
+    final_stats = compute_text_stats(full_content).to_dict()
+    await ws_manager.send_personal_message(
+        GenerationProgress.completed(
+            task_id=task_id,
+            chapter_id=None,
+            chapter_number=None,
+            content=full_content,
+            word_count=count_words(full_content),
+            text_stats=final_stats
         ),
         websocket
     )
@@ -2081,56 +2155,17 @@ async def _generate_dialogue_ws(
     websocket: WebSocket,
     task_flags: Dict[str, bool]
 ):
-    characters = params.get("characters", [])
-    context = params.get("context", "")
-    style = params.get("style", "natural")
-    model = params.get("model")
-    user_prompt = params.get("user_prompt")
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.progress(task_id, "generating", 30, "生成对话中"),
-        websocket
-    )
-    
-    if not task_flags.get(task_id):
-        return
-    
-    system_prompt = get_system_prompt(GenerationType.DIALOGUE, style)
-    user_message = build_dialogue_prompt(
-        characters=[str(c) for c in characters],
-        context=context,
-        style=style,
-        user_prompt=user_prompt
-    )
-    
-    full_content = ""
-    accumulated_length = 0
-    
-    async for chunk in llm_service.generate_stream(
-        prompt=user_message,
-        system_prompt=system_prompt,
-        model=model
-    ):
-        if not task_flags.get(task_id):
-            return
-        
-        full_content += chunk
-        accumulated_length += len(chunk)
-        
-        await ws_manager.send_personal_message(
-            GenerationProgress.content_chunk(task_id, chunk, accumulated_length),
-            websocket
-        )
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.completed(
-            task_id=task_id,
-            chapter_id=None,
-            chapter_number=None,
-            content=full_content,
-            word_count=len(full_content)
+    await _generate_streaming_ws(
+        task_id, novel_id, params, websocket, task_flags,
+        gen_type=GenerationType.DIALOGUE,
+        progress_label="生成对话中",
+        style=params.get("style", "natural"),
+        prompt_builder=lambda: build_dialogue_prompt(
+            characters=[str(c) for c in params.get("characters", [])],
+            context=params.get("context", ""),
+            style=params.get("style", "natural"),
+            user_prompt=params.get("user_prompt")
         ),
-        websocket
     )
 
 
@@ -2141,54 +2176,16 @@ async def _generate_description_ws(
     websocket: WebSocket,
     task_flags: Dict[str, bool]
 ):
-    subject = params.get("subject", "")
-    style = params.get("style", "vivid")
-    model = params.get("model")
-    user_prompt = params.get("user_prompt")
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.progress(task_id, "generating", 30, "生成描写中"),
-        websocket
-    )
-    
-    if not task_flags.get(task_id):
-        return
-    
-    system_prompt = get_system_prompt(GenerationType.DESCRIPTION, style)
-    user_message = build_description_prompt(
-        subject=subject,
-        style=style,
-        user_prompt=user_prompt
-    )
-    
-    full_content = ""
-    accumulated_length = 0
-    
-    async for chunk in llm_service.generate_stream(
-        prompt=user_message,
-        system_prompt=system_prompt,
-        model=model
-    ):
-        if not task_flags.get(task_id):
-            return
-        
-        full_content += chunk
-        accumulated_length += len(chunk)
-        
-        await ws_manager.send_personal_message(
-            GenerationProgress.content_chunk(task_id, chunk, accumulated_length),
-            websocket
-        )
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.completed(
-            task_id=task_id,
-            chapter_id=None,
-            chapter_number=None,
-            content=full_content,
-            word_count=len(full_content)
+    await _generate_streaming_ws(
+        task_id, novel_id, params, websocket, task_flags,
+        gen_type=GenerationType.DESCRIPTION,
+        progress_label="生成描写中",
+        style=params.get("style", "vivid"),
+        prompt_builder=lambda: build_description_prompt(
+            subject=params.get("subject", ""),
+            style=params.get("style", "vivid"),
+            user_prompt=params.get("user_prompt")
         ),
-        websocket
     )
 
 
@@ -2199,56 +2196,16 @@ async def _generate_outline_ws(
     websocket: WebSocket,
     task_flags: Dict[str, bool]
 ):
-    premise = params.get("premise", "")
-    genre = params.get("genre", "")
-    total_chapters = params.get("total_chapters", 20)
-    model = params.get("model")
-    user_prompt = params.get("user_prompt")
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.progress(task_id, "generating", 30, "生成大纲中"),
-        websocket
-    )
-    
-    if not task_flags.get(task_id):
-        return
-    
-    system_prompt = get_system_prompt(GenerationType.OUTLINE)
-    user_message = build_outline_prompt(
-        premise=premise,
-        genre=genre,
-        total_chapters=total_chapters,
-        user_prompt=user_prompt
-    )
-    
-    full_content = ""
-    accumulated_length = 0
-    
-    async for chunk in llm_service.generate_stream(
-        prompt=user_message,
-        system_prompt=system_prompt,
-        model=model
-    ):
-        if not task_flags.get(task_id):
-            return
-        
-        full_content += chunk
-        accumulated_length += len(chunk)
-        
-        await ws_manager.send_personal_message(
-            GenerationProgress.content_chunk(task_id, chunk, accumulated_length),
-            websocket
-        )
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.completed(
-            task_id=task_id,
-            chapter_id=None,
-            chapter_number=None,
-            content=full_content,
-            word_count=len(full_content)
+    await _generate_streaming_ws(
+        task_id, novel_id, params, websocket, task_flags,
+        gen_type=GenerationType.OUTLINE,
+        progress_label="生成大纲中",
+        prompt_builder=lambda: build_outline_prompt(
+            premise=params.get("premise", ""),
+            genre=params.get("genre", ""),
+            total_chapters=params.get("total_chapters", 20),
+            user_prompt=params.get("user_prompt")
         ),
-        websocket
     )
 
 
@@ -2259,54 +2216,15 @@ async def _generate_summary_ws(
     websocket: WebSocket,
     task_flags: Dict[str, bool]
 ):
-    content = params.get("content", "")
-    max_length = params.get("max_length", 500)
-    model = params.get("model")
-    user_prompt = params.get("user_prompt")
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.progress(task_id, "generating", 30, "生成摘要中"),
-        websocket
-    )
-    
-    if not task_flags.get(task_id):
-        return
-    
-    system_prompt = get_system_prompt(GenerationType.SUMMARY)
-    user_message = build_summary_prompt(
-        content=content,
-        max_length=max_length,
-        user_prompt=user_prompt
-    )
-    
-    full_content = ""
-    accumulated_length = 0
-    
-    async for chunk in llm_service.generate_stream(
-        prompt=user_message,
-        system_prompt=system_prompt,
-        model=model
-    ):
-        if not task_flags.get(task_id):
-            return
-        
-        full_content += chunk
-        accumulated_length += len(chunk)
-        
-        await ws_manager.send_personal_message(
-            GenerationProgress.content_chunk(task_id, chunk, accumulated_length),
-            websocket
-        )
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.completed(
-            task_id=task_id,
-            chapter_id=None,
-            chapter_number=None,
-            content=full_content,
-            word_count=len(full_content)
+    await _generate_streaming_ws(
+        task_id, novel_id, params, websocket, task_flags,
+        gen_type=GenerationType.SUMMARY,
+        progress_label="生成摘要中",
+        prompt_builder=lambda: build_summary_prompt(
+            content=params.get("content", ""),
+            max_length=params.get("max_length", 500),
+            user_prompt=params.get("user_prompt")
         ),
-        websocket
     )
 
 
@@ -2317,56 +2235,16 @@ async def _generate_character_profile_ws(
     websocket: WebSocket,
     task_flags: Dict[str, bool]
 ):
-    name = params.get("name", "")
-    role = params.get("role", "")
-    novel_context = params.get("novel_context", "")
-    model = params.get("model")
-    user_prompt = params.get("user_prompt")
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.progress(task_id, "generating", 30, "生成角色档案中"),
-        websocket
-    )
-    
-    if not task_flags.get(task_id):
-        return
-    
-    system_prompt = get_system_prompt(GenerationType.CHARACTER_PROFILE)
-    user_message = build_character_profile_prompt(
-        name=name,
-        role=role,
-        novel_context=novel_context,
-        user_prompt=user_prompt
-    )
-    
-    full_content = ""
-    accumulated_length = 0
-    
-    async for chunk in llm_service.generate_stream(
-        prompt=user_message,
-        system_prompt=system_prompt,
-        model=model
-    ):
-        if not task_flags.get(task_id):
-            return
-        
-        full_content += chunk
-        accumulated_length += len(chunk)
-        
-        await ws_manager.send_personal_message(
-            GenerationProgress.content_chunk(task_id, chunk, accumulated_length),
-            websocket
-        )
-    
-    await ws_manager.send_personal_message(
-        GenerationProgress.completed(
-            task_id=task_id,
-            chapter_id=None,
-            chapter_number=None,
-            content=full_content,
-            word_count=len(full_content)
+    await _generate_streaming_ws(
+        task_id, novel_id, params, websocket, task_flags,
+        gen_type=GenerationType.CHARACTER_PROFILE,
+        progress_label="生成角色档案中",
+        prompt_builder=lambda: build_character_profile_prompt(
+            name=params.get("name", ""),
+            role=params.get("role", ""),
+            novel_context=params.get("novel_context", ""),
+            user_prompt=params.get("user_prompt")
         ),
-        websocket
     )
 
 

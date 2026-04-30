@@ -75,7 +75,7 @@ function ConsistencyCheck() {
   return (
     <Card title="一致性检查">
       <Alert
-        title="一致性检查功能"
+        message="一致性检查功能"
         description="检查小说的角色、情节、时间线和伏笔的一致性，帮助发现潜在的逻辑问题和矛盾。"
         type="info"
         showIcon

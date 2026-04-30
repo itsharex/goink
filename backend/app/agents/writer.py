@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from .base import BaseAgent, AgentTask, AgentResult, AgentRole, TaskType, SubAgentSpec
 from .registry import register_agent
 from app.core.llm_service import llm_service
+from app.core.text_utils import count_words
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ class WriterAgent(BaseAgent):
                 result={
                     "chapter_number": wc.chapter_number,
                     "content": generated_content,
-                    "word_count": len(generated_content),
+                    "word_count": count_words(generated_content),
                     "style": wc.style
                 },
                 suggestions=[

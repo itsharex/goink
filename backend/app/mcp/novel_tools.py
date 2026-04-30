@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from app.novels.models import Novel, NovelCreativeProfile
 from app.chapters.models import Chapter
+from app.core.text_utils import count_words
 from app.characters.models import Character
 from app.generation.service import ChapterGenerationService
 from app.core.permissions import verify_novel_ownership
@@ -197,7 +198,7 @@ class GetChapterListTool(BaseMCPTool):
                 "id": ch.id,
                 "chapter_number": ch.chapter_number,
                 "title": ch.title,
-                "word_count": len(ch.content or ""),
+                "word_count": count_words(ch.content or ""),
                 "status": ch.status,
                 "summary": ch.summary,
                 "created_at": ch.created_at.isoformat() if ch.created_at else None,
@@ -286,7 +287,7 @@ class GetChapterContentTool(BaseMCPTool):
             "chapter_number": chapter.chapter_number,
             "title": chapter.title,
             "content": chapter.content,
-            "word_count": len(chapter.content or ""),
+            "word_count": count_words(chapter.content or ""),
             "status": chapter.status,
             "created_at": chapter.created_at.isoformat() if chapter.created_at else None,
             "updated_at": chapter.updated_at.isoformat() if chapter.updated_at else None
@@ -1220,7 +1221,7 @@ class CreateNewChapterTool(BaseMCPTool):
             title=title or f"第{chapter_number}章",
             content=content or "",
             status="draft",
-            word_count=len(content or "")
+            word_count=count_words(content or "")
         )
         db.add(chapter)
         try:

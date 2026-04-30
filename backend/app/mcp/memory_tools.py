@@ -9,6 +9,7 @@ from sqlalchemy import select
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from app.core.vector_store import vector_store, VectorStoreError
 from app.core.context_builder import ContextBuilder
+from app.core.text_utils import count_words
 from app.chapters.models import Chapter
 from app.characters.models import Character
 from app.plot_events.models import PlotEvent
@@ -284,16 +285,30 @@ class GetTimelineTool(BaseMCPTool):
         result = await db.execute(query)
         events = result.scalars().all()
         
+        chapter_ids = {e.chapter_id for e in events if e.chapter_id}
+        char_ids = set()
+        for e in events:
+            if e.characters_involved:
+                char_ids.update(e.characters_involved)
+        
+        chapter_map = {}
+        if chapter_ids:
+            ch_result = await db.execute(select(Chapter).where(Chapter.id.in_(chapter_ids)))
+            chapter_map = {ch.id: ch for ch in ch_result.scalars().all()}
+        
+        character_map = {}
+        if char_ids:
+            char_result = await db.execute(select(Character).where(Character.id.in_(char_ids)))
+            character_map = {c.id: c for c in char_result.scalars().all()}
+        
         timeline = []
         for event in events:
-            result = await db.execute(select(Chapter).where(Chapter.id == event.chapter_id))
-            chapter = result.scalar_one_or_none()
+            chapter = chapter_map.get(event.chapter_id) if event.chapter_id else None
             
             characters = []
             if event.characters_involved:
                 for char_id in event.characters_involved:
-                    result = await db.execute(select(Character).where(Character.id == char_id))
-                    char = result.scalar_one_or_none()
+                    char = character_map.get(char_id)
                     if char:
                         characters.append({"id": char.id, "name": char.name})
             
@@ -375,7 +390,7 @@ class GetRecentContextTool(BaseMCPTool):
             previous_chapters = result.scalars().all()
             
             recent_chapters = [
-                {"id": ch.id, "chapter_number": ch.chapter_number, "title": ch.title, "summary": ch.summary, "word_count": len(ch.content or "")}
+                {"id": ch.id, "chapter_number": ch.chapter_number, "title": ch.title, "summary": ch.summary, "word_count": count_words(ch.content or "")}
                 for ch in reversed(previous_chapters)
             ]
             

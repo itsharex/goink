@@ -3,6 +3,7 @@ Redis缓存服务 - 支持热点数据缓存、分布式锁
 """
 import os
 import json
+import hashlib
 import logging
 import asyncio
 from typing import Optional, Any, Dict, List, Callable
@@ -379,9 +380,9 @@ def cache_result(
             if key_builder:
                 cache_key = key_builder(*args, **kwargs)
             else:
-                args_str = "_".join(str(a) for a in args)
-                kwargs_str = "_".join(f"{k}:{v}" for k, v in sorted(kwargs.items()))
-                cache_key = f"{key_prefix}:{args_str}_{kwargs_str}"
+                payload = json.dumps({"a": [str(a) for a in args], "k": {k: str(v) for k, v in sorted(kwargs.items())}}, sort_keys=True)
+                digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
+                cache_key = f"{key_prefix}:{digest}"
             
             cached = await redis_service.get(cache_key)
             if cached is not None:

@@ -275,6 +275,11 @@ class LLMService:
 
         return self.config.api_base, self.config.api_key, model
 
+    def _build_chat_url(self, api_base: str, model: str) -> str:
+        if model.startswith("glm"):
+            return f"{api_base}/chat/completions"
+        return f"{api_base}/v1/chat/completions"
+
     def _build_llm_error(
         self,
         *,
@@ -375,11 +380,7 @@ class LLMService:
     ) -> Dict[str, Any]:
         api_base, api_key, selected_model = self._get_model_config(model)
         
-        # GLM API 路径是 /api/paas/v4/chat/completions，DeepSeek 是 /v1/chat/completions
-        if selected_model.startswith("glm"):
-            url = f"{api_base}/chat/completions"
-        else:
-            url = f"{api_base}/v1/chat/completions"
+        url = self._build_chat_url(api_base, selected_model)
         
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -569,11 +570,10 @@ class LLMService:
         if selected_model.startswith("glm"):
             api_base = self.config.glm_api_base
             api_key = self.config.glm_api_key
-            url = f"{api_base}/chat/completions"
         else:
             api_base = self.config.api_base
             api_key = self.config.api_key
-            url = f"{api_base}/v1/chat/completions"
+        url = self._build_chat_url(api_base, selected_model)
         
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -693,11 +693,10 @@ class LLMService:
         if selected_model.startswith("glm"):
             api_base = self.config.glm_api_base
             api_key = self.config.glm_api_key
-            url = f"{api_base}/chat/completions"
         else:
             api_base = self.config.api_base
             api_key = self.config.api_key
-            url = f"{api_base}/v1/chat/completions"
+        url = self._build_chat_url(api_base, selected_model)
         
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -779,11 +778,7 @@ class LLMService:
         """
         api_base, api_key, selected_model = self._get_model_config(model)
         
-        # GLM API 路径不同
-        if selected_model.startswith("glm"):
-            url = f"{api_base}/chat/completions"
-        else:
-            url = f"{api_base}/v1/chat/completions"
+        url = self._build_chat_url(api_base, selected_model)
         
         headers = {
             "Authorization": f"Bearer {api_key}",

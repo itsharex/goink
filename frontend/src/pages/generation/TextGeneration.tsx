@@ -407,7 +407,7 @@ function TextGeneration() {
   return (
     <Card title="文本生成工具">
       <Alert
-        title="实时生成功能"
+        message="实时生成功能"
         description="使用WebSocket实时生成内容，可以看到生成过程和进度。可选择不同的LLM模型和写作风格。"
         type="info"
         showIcon

@@ -162,7 +162,7 @@ function ChapterGenerate() {
         setChapter(response.data)
         form.setFieldsValue({
           target_length: 3000,
-          model: 'deepseek-v4-flash',
+          model: 'deepseek-chat',
           style: 'narrative',
         })
       }
@@ -187,7 +187,7 @@ function ChapterGenerate() {
       chapter_id: chapter.id,
       chapter_number: chapter.chapter_number,
       target_length: values.target_length || 3000,
-      model: values.model || 'deepseek-v4-flash',
+      model: values.model || 'deepseek-chat',
       style: values.style || 'narrative',
     }
 
@@ -259,7 +259,7 @@ function ChapterGenerate() {
   return (
     <Card title={`AI生成章节 - 第${chapter.chapter_number}章 ${chapter.title}`}>
       <Alert
-        title="实时生成功能"
+        message="实时生成功能"
         description="使用WebSocket实时生成章节内容。可选择模型和风格，并提供自定义提示词。"
         type="info"
         showIcon
@@ -278,7 +278,7 @@ function ChapterGenerate() {
         onFinish={onGenerate}
         initialValues={{
           target_length: 3000,
-          model: 'deepseek-v4-flash',
+          model: 'deepseek-chat',
           style: 'narrative',
         }}
       >

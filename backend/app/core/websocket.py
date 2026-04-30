@@ -120,19 +120,24 @@ class GenerationProgress:
         }
     
     @staticmethod
-    def content_chunk(task_id: str, chunk: str, accumulated_length: int) -> dict:
-        return {
+    def content_chunk(task_id: str, chunk: str, accumulated_length: int,
+                      text_stats: dict | None = None) -> dict:
+        result = {
             "type": "content_chunk",
             "task_id": task_id,
             "chunk": chunk,
             "accumulated_length": accumulated_length,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+        if text_stats:
+            result["text_stats"] = text_stats
+        return result
     
     @staticmethod
     def completed(task_id: str, chapter_id: int | None, chapter_number: int | None,
-                  content: str, word_count: int) -> dict:
-        return {
+                  content: str, word_count: int,
+                  text_stats: dict | None = None) -> dict:
+        result = {
             "type": "generation_completed",
             "task_id": task_id,
             "chapter_id": chapter_id,
@@ -142,6 +147,9 @@ class GenerationProgress:
             "progress": 100,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+        if text_stats:
+            result["text_stats"] = text_stats
+        return result
     
     @staticmethod
     def failed(task_id: str, error: str, step: str | None = None) -> dict:

@@ -108,9 +108,9 @@ class GetLocationDetailTool(BaseMCPTool):
                 if parent:
                     parent_name = parent.name
             
-            all_locs = await svc.get_all()
+            child_locs = await svc.get_children(location_id)
             children = [{"id": c.id, "name": c.name, "type": c.location_type}
-                       for c in all_locs if c.parent_location_id == location_id]
+                       for c in child_locs]
             
             return MCPToolResult(
                 success=True,

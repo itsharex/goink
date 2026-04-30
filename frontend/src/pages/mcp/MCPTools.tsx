@@ -241,7 +241,7 @@ function MCPTools() {
         return (
           <Card title="体检报告" size="small">
             <Alert
-              title={checkData.passed ? '全部通过' : '发现问题'}
+              message={checkData.passed ? '全部通过' : '发现问题'}
               type={checkData.passed ? 'success' : 'warning'}
               showIcon
               style={{ marginBottom: 16 }}

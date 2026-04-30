@@ -226,7 +226,6 @@ class SessionStorage:
                     db_session.chapter_context = session.chapter_context.to_dict() if session.chapter_context else None
                     db_session.pending_changes = session.pending_changes
                     db_session.extra_metadata = session.metadata
-                    db_session.updated_at = datetime.now(timezone.utc)
                 else:
                     db_session = DBChatSession(
                         session_id=session.session_id,
