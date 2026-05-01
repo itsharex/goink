@@ -119,9 +119,9 @@ class TimelineService:
         )
         self.db.add(entry)
         await self.db.flush()
+        await self.db.refresh(entry)
         if auto_commit:
             await self.db.commit()
-            await self.db.refresh(entry)
         logger.info(f"Timeline entry created: id={entry.id}, category={entry.category}, title={entry.title}")
         return entry
 

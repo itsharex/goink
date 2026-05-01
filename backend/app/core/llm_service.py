@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from collections import defaultdict
 
 from app.core.prompt_templates import LLMModel
+from app.core.exceptions import SystemError
 from app.core.session_manager import (
     Session, SessionManager, SessionConfig, MessageRole,
     session_manager
@@ -118,28 +119,23 @@ class PromptCacheMonitor:
 cache_monitor = PromptCacheMonitor()
 
 
-class LLMServiceError(Exception):
+class LLMServiceError(SystemError):
     def __init__(
         self,
         message: str,
         *,
         status_code: int = 502,
-        provider: Optional[str] = None,
+        provider: str | None = None,
         retryable: bool = False,
-        details: Optional[Dict[str, Any]] = None
+        details: dict[str, Any] | None = None
     ):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
+        super().__init__(message, code="LLM_UPSTREAM_ERROR", status_code=status_code)
         self.provider = provider
         self.retryable = retryable
         self.details = details or {}
 
 
 def _provider_name(model: str) -> str:
-    model_lower = model.lower()
-    if any(q in model_lower for q in _QWEN_MODELS):
-        return "Qwen"
     if model.startswith("glm"):
         return "GLM"
     return "DeepSeek"
@@ -157,10 +153,7 @@ def _extract_error_message(payload: Dict[str, Any]) -> Optional[str]:
 _REASONING_MODELS = {
     "deepseek-v4-pro", "deepseek-v4-flash",
     "o1", "o1-mini", "o1-preview", "o3", "o3-mini",
-    "qwq", "qwen-qwq", "qwen3-235b-a22b",
 }
-
-_QWEN_MODELS = {"qwq", "qwen-qwq", "qwen3", "qwen3-235b-a22b", "qwen-plus", "qwen-turbo", "qwen-max", "qwen-long"}
 
 
 def _apply_reasoning_params(
@@ -192,19 +185,13 @@ def _apply_reasoning_params(
     thinking_type = None
     if "deepseek" in model_lower:
         if thinking_enabled is None:
-            thinking_type = "enabled"  # 默认开启 thinking
+            thinking_type = "enabled"
         else:
             thinking_type = "enabled" if thinking_enabled else "disabled"
-    elif any(q in model_lower for q in _QWEN_MODELS):
-        payload["enable_thinking"] = True
-        payload["extra_body"] = {"enable_thinking": True}
-        payload["reasoning_effort"] = normalized_effort or "high"
-        return
 
     if thinking_type is not None:
         payload["thinking"] = {"type": thinking_type}
         payload["reasoning_effort"] = normalized_effort or "high"
-        # 移除 thinking 模式下不支持的参数
         payload.pop("temperature", None)
         payload.pop("top_p", None)
         payload.pop("presence_penalty", None)
@@ -229,8 +216,8 @@ class LLMConfig:
     
     @classmethod
     def validate(cls):
-        if not cls.api_key and not cls.glm_api_key and not os.getenv("QWEN_API_KEY"):
-            raise ValueError("DEEPSEEK_API_KEY, GLM_API_KEY or QWEN_API_KEY is required")
+        if not cls.api_key and not cls.glm_api_key:
+            raise ValueError("DEEPSEEK_API_KEY or GLM_API_KEY is required")
 
 
 class LLMService:
@@ -255,20 +242,20 @@ class LLMService:
         self._initialized = True
         
         logger.info(f"LLM Service initialized, default model: {self.config.default_model}, GLM model: {self.config.glm_model}")
-    
+
+    def get_available_models(self) -> List[Dict[str, Any]]:
+        models: List[Dict[str, Any]] = []
+        if self.config.api_key:
+            models.append({"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "provider": "DeepSeek", "supports_thinking": True})
+            models.append({"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "DeepSeek", "supports_thinking": True})
+        if self.config.glm_api_key:
+            label = self.config.glm_model.split("-")[1].upper() if "-" in self.config.glm_model else self.config.glm_model
+            models.append({"id": self.config.glm_model, "name": f"GLM {label}", "provider": "GLM", "supports_thinking": False})
+        return models
+
     def _get_model_config(self, model: Optional[str] = None) -> tuple[str, str, str]:
-        """获取模型配置 (api_base, api_key, model)"""
         if not model:
             model = self.config.default_model
-
-        model_lower = model.lower()
-
-        if any(q in model_lower for q in _QWEN_MODELS):
-            return (
-                os.getenv("QWEN_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-                os.getenv("QWEN_API_KEY", ""),
-                model
-            )
 
         if model.startswith("glm") or model == self.config.glm_model:
             return self.config.glm_api_base, self.config.glm_api_key, self.config.glm_model
@@ -292,78 +279,46 @@ class LLMService:
         provider = _provider_name(selected_model)
         upstream_message = _extract_error_message(response_json or {})
 
+        if status_code is not None:
+            logger.error(
+                f"LLM API error: model={selected_model}, status={status_code}, "
+                f"upstream_message={upstream_message}, response_text={response_text}"
+            )
+
         if request_error is not None:
+            logger.error(f"LLM request error: {request_error}")
             return LLMServiceError(
-                "AI 服务暂时连接不上，请稍后再试。",
+                "服务异常，请稍后重试。",
                 status_code=503,
                 provider=provider,
                 retryable=True,
-                details={"reason": str(request_error)}
+                details={}
             )
 
-        if status_code == 400:
+        if status_code == 429:
             return LLMServiceError(
-                "这次请求暂时没法处理，请缩短内容或分步操作后再试。",
-                status_code=400,
+                "服务繁忙，请稍后重试。",
+                status_code=503,
                 provider=provider,
-                retryable=False,
-                details={"upstream_status": status_code, "upstream_message": upstream_message, "response_text": response_text}
+                retryable=True,
+                details={}
             )
-        if status_code == 401:
-            return LLMServiceError(
-                "AI 服务当前不可用，请稍后再试。",
-                status_code=502,
-                provider=provider,
-                retryable=False,
-                details={"upstream_status": status_code, "upstream_message": upstream_message}
-            )
-        if status_code == 403:
-            return LLMServiceError(
-                "AI 服务当前不可用，请稍后再试。",
-                status_code=502,
-                provider=provider,
-                retryable=False,
-                details={"upstream_status": status_code, "upstream_message": upstream_message}
-            )
-        if status_code == 404:
-            return LLMServiceError(
-                "AI 服务当前不可用，请稍后再试。",
-                status_code=502,
-                provider=provider,
-                retryable=False,
-                details={"upstream_status": status_code, "upstream_message": upstream_message}
-            )
+
         if status_code == 408:
             return LLMServiceError(
-                "AI 响应超时了，请稍后再试。",
+                "服务异常，请稍后重试。",
                 status_code=504,
                 provider=provider,
                 retryable=True,
-                details={"upstream_status": status_code, "upstream_message": upstream_message}
-            )
-        if status_code == 429:
-            return LLMServiceError(
-                "当前服务繁忙，请稍后再试。",
-                status_code=429,
-                provider=provider,
-                retryable=True,
-                details={"upstream_status": status_code, "upstream_message": upstream_message}
-            )
-        if status_code is not None and status_code >= 500:
-            return LLMServiceError(
-                "AI 服务暂时开小差了，请稍后再试。",
-                status_code=502,
-                provider=provider,
-                retryable=True,
-                details={"upstream_status": status_code, "upstream_message": upstream_message}
+                details={}
             )
 
         return LLMServiceError(
-            "AI 服务暂时不可用，请稍后再试。",
+            "服务异常，请稍后重试。",
             status_code=502,
             provider=provider,
-            retryable=False,
-            details={"upstream_status": status_code, "upstream_message": upstream_message, "response_text": response_text}
+            retryable=status_code is None or status_code >= 500,
+            details={}
         )
     
     async def chat_completion(
@@ -450,7 +405,7 @@ class LLMService:
                 logger.error(f"Unexpected API response: {result}")
                 return {
                     "success": False,
-                    "error": "Unexpected API response format"
+                    "error": "服务器异常，请稍后重试。"
                 }
                 
         except LLMServiceError as e:
@@ -461,6 +416,31 @@ class LLMService:
                 "status_code": e.status_code,
                 "provider": e.provider,
                 "retryable": e.retryable
+            }
+        except httpx.HTTPStatusError as e:
+            response_text = ""
+            try:
+                response_text = e.response.text
+            except Exception:
+                pass
+            response_json = None
+            try:
+                response_json = e.response.json()
+            except Exception:
+                pass
+            llm_error = self._build_llm_error(
+                selected_model=selected_model,
+                status_code=e.response.status_code,
+                response_text=response_text,
+                response_json=response_json
+            )
+            logger.error(f"HTTP error calling LLM API: status={e.response.status_code}, response={response_text}")
+            return {
+                "success": False,
+                "error": llm_error.message,
+                "status_code": llm_error.status_code,
+                "provider": llm_error.provider,
+                "retryable": llm_error.retryable
             }
         except httpx.RequestError as e:
             llm_error = self._build_llm_error(selected_model=selected_model, request_error=e)
@@ -473,10 +453,10 @@ class LLMService:
                 "retryable": llm_error.retryable
             }
         except Exception as e:
-            logger.error(f"Unexpected error calling LLM API: {e}")
+            logger.error(f"Unexpected error calling LLM API: {e}", exc_info=True)
             return {
                 "success": False,
-                "error": str(e)
+                "error": "服务器异常，请稍后重试。"
             }
     
     async def generate_text(
@@ -509,8 +489,9 @@ class LLMService:
         
         if result["success"]:
             return result["content"]
+        logger.error(f"generate_text failed: {result.get('error')}, provider={result.get('provider')}")
         raise LLMServiceError(
-            result.get("error", "LLM generation failed"),
+            "服务器异常，请稍后重试。",
             status_code=result.get("status_code", 502),
             provider=result.get("provider"),
             retryable=result.get("retryable", False)
@@ -547,8 +528,9 @@ class LLMService:
             except json.JSONDecodeError:
                 pass
             return {}
+        logger.error(f"generate_json failed: {result.get('error')}, provider={result.get('provider')}")
         raise LLMServiceError(
-            result.get("error", "LLM JSON generation failed"),
+            "服务器异常，请稍后重试。",
             status_code=result.get("status_code", 502),
             provider=result.get("provider"),
             retryable=result.get("retryable", False)
@@ -792,6 +774,14 @@ class LLMService:
         prefix_hash = cache_monitor.compute_prefix_hash(api_messages, tools)
         
         logger.info(f"Sending to API: model={selected_model}, messages={len(api_messages)}, tools={len(tools) if tools else 0}, prefix={prefix_hash}")
+        for i, m in enumerate(api_messages):
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                has_rc = "reasoning_content" in m
+                rc_len = len(m.get("reasoning_content", "")) if has_rc else -1
+                logger.info(
+                    f"  msg[{i}]: assistant+tool_calls, reasoning_content="
+                    f"{'present(' + str(rc_len) + ' chars)' if has_rc else 'MISSING'}"
+                )
         logger.debug(f"Messages: {api_messages[:3]}")  # 只记录前 3 条
         
         payload = {
@@ -817,7 +807,19 @@ class LLMService:
         
         try:
             async with self.client.stream("POST", url, json=payload, headers=headers) as response:
-                response.raise_for_status()
+                if response.is_error:
+                    response_text = await response.aread()
+                    response_json = None
+                    try:
+                        response_json = json.loads(response_text.decode("utf-8"))
+                    except Exception:
+                        response_json = None
+                    raise self._build_llm_error(
+                        selected_model=selected_model,
+                        status_code=response.status_code,
+                        response_text=response_text.decode("utf-8", errors="ignore"),
+                        response_json=response_json
+                    )
                 
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
@@ -897,11 +899,32 @@ class LLMService:
             
         except LLMServiceError:
             raise
+        except httpx.HTTPStatusError as e:
+            response_text = ""
+            try:
+                response_text = e.response.text
+            except Exception:
+                pass
+            response_json = None
+            try:
+                response_json = e.response.json()
+            except Exception:
+                pass
+            logger.error(
+                f"Chat stream with tools HTTP error: status={e.response.status_code}, "
+                f"url={e.request.url}, response={response_text}"
+            )
+            raise self._build_llm_error(
+                selected_model=selected_model,
+                status_code=e.response.status_code,
+                response_text=response_text,
+                response_json=response_json
+            ) from e
         except httpx.RequestError as e:
             logger.error(f"Chat stream with tools request error: {e}")
             raise self._build_llm_error(selected_model=selected_model, request_error=e) from e
         except Exception as e:
-            logger.error(f"Chat stream with tools error: {e}")
+            logger.error(f"Chat stream with tools error: {e}", exc_info=True)
             raise LLMServiceError("对话服务暂时不可用，请稍后再试。", status_code=502, provider=_provider_name(selected_model)) from e
     
     async def _generate_summary(self, session: Session) -> str:

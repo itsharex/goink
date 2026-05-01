@@ -28,6 +28,7 @@ import {
 import { wsEditorService } from '@/services/wsEditorService'
 import { editorApi } from '@/services/editorService'
 import { chapterApi } from '@/services/chapterService'
+import { generationApi } from '@/services/generationService'
 import {
   getToolDisplayName as mapToolName,
   getToolUserAction,
@@ -104,12 +105,9 @@ const SCOPE_OPTIONS: Array<{ value: ScopeType; label: string }> = [
   { value: 'chapters', label: '章节范围' },
 ]
 
-const MODEL_OPTIONS = [
+const DEFAULT_MODEL_OPTIONS = [
   { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-  { value: 'qwen-max', label: 'Qwen Max (阿里)' },
-  { value: 'qwen-plus', label: 'Qwen Plus (阿里)' },
-  { value: 'qwq', label: 'QwQ 推理 (阿里)' },
   { value: 'glm-4.7-flash', label: 'GLM-4.7 Flash' },
 ]
 
@@ -233,6 +231,7 @@ export default function EditorPage() {
   const [connected, setConnected] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [selectedModel, setSelectedModel] = useState('deepseek-v4-flash')
+  const [modelOptions, setModelOptions] = useState(DEFAULT_MODEL_OPTIONS)
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('max')
   const [selectedEditMode, setSelectedEditMode] = useState<EditMode>('agent')
 
@@ -321,6 +320,12 @@ export default function EditorPage() {
     chapterApi.getChapters(nid, { page_size: 100 }).then(res => {
       if (res.success) {
         setChapters(res.data.items || [])
+      }
+    }).catch(() => {})
+
+    generationApi.getModels().then(res => {
+      if (res.success && res.data?.models?.length) {
+        setModelOptions(res.data.models.map((m: any) => ({ value: m.id, label: m.name })))
       }
     }).catch(() => {})
 
@@ -465,7 +470,19 @@ export default function EditorPage() {
               ? { ...item, thinkingContent: (item.thinkingContent || '') + m.chunk }
               : item)
           }
-          return prev
+          return [
+            ...prev,
+            {
+              id: `thinking-${Date.now()}`,
+              taskId,
+              role: 'assistant' as const,
+              content: '',
+              thinkingContent: m.chunk,
+              thinkingDone: false,
+              isStreaming: true,
+              timestamp: Date.now(),
+            }
+          ]
         })
         break
       }
@@ -525,6 +542,19 @@ export default function EditorPage() {
           pendingInterruptMessageRef.current = null
           dispatchMessage(nextMessage)
         }
+        break
+      }
+      case 'chat_failed': {
+        const m = msg as { type: 'chat_failed'; task_id?: string; error: string }
+        setIsStreaming(false)
+        setCurrentTaskId(null)
+        shouldBreakAssistantSegmentRef.current = false
+        setChatMessages(prev => {
+          return prev.map(item => item.taskId === m.task_id
+            ? { ...item, isStreaming: false, content: item.content || m.error }
+            : item)
+        })
+        message.error(m.error || '服务异常，请稍后重试。')
         break
       }
       case 'tool_call': {
@@ -1423,7 +1453,7 @@ function buildConversationTurns(
                   onChange={setSelectedModel}
                   className={styles.chatControlSelect}
                   popupMatchSelectWidth={false}
-                  options={MODEL_OPTIONS}
+                  options={modelOptions}
                 />
               </div>
               {(selectedModel.startsWith('deepseek-v4')) && (

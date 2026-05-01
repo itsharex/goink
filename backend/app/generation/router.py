@@ -35,6 +35,11 @@ router = APIRouter(prefix="/generation", tags=["generation"])
 logger = logging.getLogger(__name__)
 
 
+@router.get("/models")
+async def get_available_models():
+    return ApiResponse.success({"models": llm_service.get_available_models()})
+
+
 def _format_characters_list(characters: Any) -> str:
     """格式化角色列表为字符串"""
     if isinstance(characters, list):

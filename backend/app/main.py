@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.database import init_db
 from app.core.redis_service import redis_service
-from app.core.exceptions import APIException
+from app.core.exceptions import APIException, BusinessError, SystemError
 from app.core.llm_service import LLMServiceError
 
 import app.agents.writer
@@ -112,15 +112,30 @@ async def api_exception_handler(request: Request, exc: APIException):
     )
 
 
-@app.exception_handler(LLMServiceError)
-async def llm_service_exception_handler(request: Request, exc: LLMServiceError):
+@app.exception_handler(BusinessError)
+async def business_exception_handler(request: Request, exc: BusinessError):
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "success": False,
             "error": {
-                "code": "LLM_UPSTREAM_ERROR",
+                "code": exc.code,
                 "message": exc.message
+            }
+        }
+    )
+
+
+@app.exception_handler(SystemError)
+async def system_exception_handler(request: Request, exc: SystemError):
+    logger.error(f"System error: code={exc.code}, message={exc.message}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": {
+                "code": exc.code,
+                "message": "服务器异常，请稍后重试。"
             }
         }
     )
@@ -142,14 +157,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Request validation error: {exc.errors()}")
     return JSONResponse(
         status_code=422,
         content={
             "success": False,
             "error": {
                 "code": "REQUEST_VALIDATION_ERROR",
-                "message": "请求参数不合法，请检查输入内容。",
-                "details": exc.errors()
+                "message": "请求参数不合法，请检查输入内容。"
             }
         }
     )

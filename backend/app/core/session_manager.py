@@ -123,10 +123,12 @@ class Message:
         if self.role == MessageRole.ASSISTANT:
             if self.metadata.get("tool_calls"):
                 payload["tool_calls"] = self.metadata["tool_calls"]
-            # DeepSeek V4 要求工具调用轮次的 reasoning_content 必须回传（否则 400）
-            thinking_content = self.metadata.get("thinking_content", "")
-            if thinking_content:
-                payload["reasoning_content"] = thinking_content
+                thinking_content = self.metadata.get("thinking_content")
+                payload["reasoning_content"] = thinking_content if thinking_content is not None else ""
+            else:
+                thinking_content = self.metadata.get("thinking_content")
+                if thinking_content is not None:
+                    payload["reasoning_content"] = thinking_content
         if self.role == MessageRole.TOOL:
             if self.metadata.get("tool_call_id"):
                 payload["tool_call_id"] = self.metadata["tool_call_id"]

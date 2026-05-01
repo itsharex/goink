@@ -72,15 +72,6 @@ export const timelineApi = {
     return apiClient.get(`/timeline/novels/${novelId}/context`, { params })
   },
 
-  autoExtractFromChapter: async (
-    novelId: number,
-    chapterId: number
-  ): Promise<ApiResponse<{ message: string; entries_created: number; entry_ids: number[] }>> => {
-    return apiClient.post(`/timeline/novels/${novelId}/auto-extract`, null, {
-      params: { chapter_id: chapterId },
-    })
-  },
-
   getTimelineStats: async (novelId: number): Promise<ApiResponse<TimelineStats>> => {
     return apiClient.get(`/timeline/novels/${novelId}/stats`)
   },

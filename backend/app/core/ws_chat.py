@@ -14,6 +14,7 @@ from app.core.websocket import ws_manager, GenerationProgress
 from app.core.database import AsyncSessionLocal
 from app.core.auth import decode_token
 from app.core.llm_service import llm_service, LLMServiceError
+from app.core.exceptions import BusinessError, SystemError, ConflictException
 from app.core.session_manager import (
     Session, SessionManager, SessionConfig, MessageRole,
     SessionScope, ScopeType, NovelContext, ChapterContext,
@@ -56,7 +57,10 @@ LONG_TERM_RULE_CUES = (
 AUTHORING_INTENT_CUES = (
     "写", "续写", "改", "修改", "润色", "重写", "扩写", "补写", "生成",
     "创建章节", "新建章节", "写一章", "写个", "规划", "大纲", "审阅", "检查",
-    "整理", "完善", "补充", "设计", "安排", "帮我写", "帮我改", "开始写"
+    "整理", "完善", "补充", "设计", "安排", "帮我写", "帮我改", "开始写",
+    "看", "查看", "了解", "分析", "怎么样", "好不好", "角色", "情节",
+    "时间线", "伏笔", "关系", "设定", "内容", "章节", "进度",
+    "总结", "回顾", "梳理", "评估", "建议", "意见", "想法", "讨论"
 )
 
 
@@ -85,9 +89,30 @@ def _looks_like_authoring_intent(message: str) -> bool:
 
 
 def _friendly_error_message(exc: Exception) -> str:
-    if isinstance(exc, LLMServiceError):
+    if isinstance(exc, BusinessError):
         return exc.message
-    return str(exc) or "请求处理失败，请稍后重试。"
+    if isinstance(exc, LLMServiceError):
+        logger.error(f"LLM error (message passed to client): {exc.message}")
+        return exc.message
+    if isinstance(exc, SystemError):
+        logger.error(f"System error (hidden from client): {exc.message}")
+        return "服务器异常，请稍后重试。"
+    logger.error(f"Internal error (hidden from client): {exc}", exc_info=True)
+    return "服务器异常，请稍后重试。"
+
+
+def _sanitize_tool_error(error: str | None) -> str | None:
+    if not error:
+        return error
+    business_keywords = (
+        "不存在", "无权", "已存在", "已处理", "不允许", "已过期",
+        "格式错误", "无效", "缺少", "需要", "必须", "已结束",
+        "已被拒绝", "已被接受", "不能创建",
+    )
+    for kw in business_keywords:
+        if kw in error:
+            return error
+    return "服务器异常，请稍后重试。"
 
 
 def _decode_partial_json_string(raw: str) -> str:
@@ -408,7 +433,7 @@ async def _ensure_generation_chapter(
     chapter = result.scalar_one_or_none()
     if chapter:
         if not overwrite_existing:
-            raise ValueError("目标章节已存在。如需重写，请显式设置 overwrite_existing=true。")
+            raise ConflictException("目标章节已存在。如需重写，请显式设置 overwrite_existing=true。")
         if title:
             chapter.title = title
             await db.commit()
@@ -1227,8 +1252,8 @@ async def _run_chat_with_tools(
                 
                 if edit_mode == EditMode.AGENT and not _looks_like_authoring_intent(user_message):
                     conditional_reminders.append(
-                        "用户这次更像是在闲聊、反馈、确认或提问，而不是明确要求你开始写正文或修改章节。"
-                        "请先正常对话回应，不要主动创建章节、生成正文或修改正文，除非用户随后明确提出创作或编辑请求。"
+                        "用户这次没有明确的创作或编辑意图，更像是在确认、反馈或简单交流。"
+                        "请正常对话回应，不要主动创建章节、生成正文或修改正文，除非用户随后明确提出产出内容的请求。"
                     )
                 
                 if edit_mode == EditMode.AGENT and _looks_like_long_term_rule(user_message):
@@ -1360,14 +1385,6 @@ async def _run_chat_with_tools(
                                 "task_id": task_id,
                                 "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
-                        if response_buffer.strip():
-                            msg_meta = {}
-                            if thinking_buffer.strip():
-                                msg_meta["thinking_content"] = thinking_buffer
-                                thinking_buffer = ""
-                            session_manager.add_message(session, MessageRole.ASSISTANT, response_buffer, metadata=msg_meta or None)
-                            response_buffer = ""
-                            full_response = ""
 
                         tool_name = event.get("tool_name", "unknown")
                         tool_id = event.get("tool_id")
@@ -1545,12 +1562,12 @@ async def _run_chat_with_tools(
                                 "arguments": clean_args,
                                 "result_summary": {
                                     "success": tool_result_payload.get("success"),
-                                    "error": tool_result_payload.get("error"),
+                                    "error": _sanitize_tool_error(tool_result_payload.get("error")),
                                     "metadata": metadata,
                                     "data_keys": list(data_payload.keys()) if isinstance(data_payload, dict) else [],
                                 },
                                 **presentation,
-                                "error": tool_result_payload.get("error"),
+                                "error": _sanitize_tool_error(tool_result_payload.get("error")),
                                 "timestamp": datetime.now(timezone.utc).isoformat()
                             }, websocket)
                             
@@ -1690,10 +1707,8 @@ async def _run_chat_with_tools(
                                     }, websocket)
                 
                 if tool_outputs and tools_enabled:
-                    if full_response:
-                        session_manager.add_message(session, MessageRole.ASSISTANT, full_response)
-                        full_response = ""
                     # 合并本轮所有工具调用为一条 assistant 消息（DeepSeek 要求）
+                    # content 为模型在工具调用前输出的文本，reasoning_content 为思考内容
                     combined_tool_calls = []
                     for item in tool_outputs:
                         combined_tool_calls.append({
@@ -1705,12 +1720,15 @@ async def _run_chat_with_tools(
                             }
                         })
                     tool_meta: Dict[str, Any] = {"tool_calls": combined_tool_calls}
-                    if thinking_buffer.strip():
-                        tool_meta["thinking_content"] = thinking_buffer
+                    tool_meta["thinking_content"] = thinking_buffer
+                    thinking_buffer = ""
+                    tool_call_content = response_buffer.strip()
+                    response_buffer = ""
+                    full_response = ""
                     session_manager.add_message(
                         session,
                         MessageRole.ASSISTANT,
-                        "",
+                        tool_call_content,
                         metadata=tool_meta
                     )
                     for item in tool_outputs:
@@ -1728,6 +1746,15 @@ async def _run_chat_with_tools(
                         prefix_messages +
                         history_messages
                     )
+                    
+                    for i, m in enumerate(full_messages):
+                        if m.get("role") == "assistant" and m.get("tool_calls"):
+                            has_rc = "reasoning_content" in m
+                            rc_len = len(m.get("reasoning_content", "")) if has_rc else -1
+                            logger.info(
+                                f"Loop {loop_count + 1} msg[{i}]: assistant+tool_calls, "
+                                f"reasoning_content={'present(' + str(rc_len) + ' chars)' if has_rc else 'MISSING'}"
+                            )
                     
                     estimated_tokens = sum(
                         session_manager.compressor.estimate_tokens(m.get("content", ""))
@@ -1793,16 +1820,15 @@ async def _run_chat_with_tools(
                 break
             
             if response_buffer.strip():
-                final_meta = {}
-                if thinking_buffer.strip():
+                final_meta: Dict[str, Any] = {}
+                if thinking_buffer:
                     final_meta["thinking_content"] = thinking_buffer
                 session_manager.add_message(session, MessageRole.ASSISTANT, response_buffer, metadata=final_meta or None)
             elif full_response.strip():
                 final_meta = {}
-                if thinking_buffer.strip():
+                if thinking_buffer:
                     final_meta["thinking_content"] = thinking_buffer
                 session_manager.add_message(session, MessageRole.ASSISTANT, full_response, metadata=final_meta or None)
-            await session_manager.save_session(session)
             
             logger.info(f"Chat task {task_id} completed")
             
@@ -1825,6 +1851,10 @@ async def _run_chat_with_tools(
             "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
     finally:
+        try:
+            await session_manager.save_session(session)
+        except Exception:
+            logger.warning(f"Failed to save session {session.session_id} in finally block")
         task_flags.pop(task_id, None)
 
 

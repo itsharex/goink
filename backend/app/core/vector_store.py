@@ -8,6 +8,8 @@ import asyncio
 import gc
 from typing import List, Dict, Any, Optional
 
+from app.core.exceptions import SystemError
+
 os.environ.setdefault("HF_HUB_OFFLINE", "0")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
 os.environ.setdefault("HF_ENDPOINT", os.getenv("HF_ENDPOINT", "https://hf-mirror.com"))
@@ -33,9 +35,9 @@ class VectorStoreConfig:
             raise ValueError("USE_OPENAI_EMBEDDING is true but OPENAI_API_KEY is not set")
 
 
-class VectorStoreError(Exception):
-    """向量存储错误"""
-    pass
+class VectorStoreError(SystemError):
+    def __init__(self, message: str = "向量存储操作失败"):
+        super().__init__(message, code="VECTOR_STORE_ERROR", status_code=500)
 
 
 class VectorStore:

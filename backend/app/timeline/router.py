@@ -153,47 +153,6 @@ async def get_timeline_context(
     ))
 
 
-@router.post("/novels/{novel_id}/auto-extract")
-async def trigger_auto_extract(
-    novel: NovelOwner,
-     db: DBSession,
-    chapter_id: int = Query(..., description="目标章节ID"),
-   
-):
-    """手动触发从章节内容自动提取时间线条目"""
-    from app.chapters.models import Chapter
-    from app.core.chapter_post_processor import ChapterPostProcessor
-
-    result = await db.execute(
-        select(Chapter).where(Chapter.id == chapter_id, Chapter.novel_id == novel.id)
-    )
-    chapter = result.scalar_one_or_none()
-    if not chapter:
-        return ApiResponse.error(code="CHAPTER_NOT_FOUND", message="章节不存在", status_code=404)
-
-    post_processor = ChapterPostProcessor(db, novel.id)
-    structured_info = post_processor._extract_structured_info(chapter.content or "")
-
-    if not structured_info:
-        return ApiResponse.success({
-            "message": "未检测到结构化信息",
-            "entries_created": 0,
-        })
-
-    service = TimelineService(db, novel.id)
-    entries = await service.auto_extract_from_chapter(
-        chapter_content=chapter.content or "",
-        chapter_number=chapter.chapter_number,
-        chapter_id=chapter.id,
-        structured_info=structured_info,
-    )
-    return ApiResponse.success({
-        "message": f"成功提取 {len(entries)} 条时间线条目",
-        "entries_created": len(entries),
-        "entry_ids": [e.id for e in entries],
-    })
-
-
 @router.get("/novels/{novel_id}/stats")
 async def get_timeline_stats(novel: NovelOwner, db: DBSession):
     """获取时间线统计信息（各分类的未完成数量）"""

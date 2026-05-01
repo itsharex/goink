@@ -6,9 +6,6 @@ export type GenerationStyle = 'narrative' | 'descriptive' | 'dialogue' | 'poetic
 export type LLMModel =
   | 'deepseek-v4-flash'
   | 'deepseek-v4-pro'
-  | 'qwen-max'
-  | 'qwen-plus'
-  | 'qwq'
   | 'glm-4.7-flash'
 
 export interface CreateSessionMessage {

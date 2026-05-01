@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
 from app.characters.models import Character, CharacterRelation
+from app.core.exceptions import BadRequestException
 from app.characters.schemas import (
     CharacterRelationCreate,
     CharacterRelationUpdate,
@@ -161,11 +162,11 @@ class CharacterService:
         source = await self.db.get(Character, data.source_character_id)
         target = await self.db.get(Character, data.target_character_id)
         if not source or not target:
-            raise ValueError("源角色或目标角色不存在")
+            raise BadRequestException(f"源角色或目标角色不存在 (source_id={data.source_character_id}, target_id={data.target_character_id})")
         if source.novel_id != self.novel_id or target.novel_id != self.novel_id:
-            raise ValueError("角色不属于当前小说")
+            raise BadRequestException("角色不属于当前小说")
         if data.source_character_id == data.target_character_id:
-            raise ValueError("不能创建自身到自身的关系")
+            raise BadRequestException("不能创建自身到自身的关系")
 
         relation = CharacterRelation(
             novel_id=self.novel_id,
@@ -203,7 +204,7 @@ class CharacterService:
         """
         old_relation = await self.db.get(CharacterRelation, relation_id)
         if not old_relation or old_relation.novel_id != self.novel_id:
-            raise ValueError("原关系不存在或不属于当前小说")
+            raise BadRequestException(f"原关系不存在或不属于当前小说 (relation_id={relation_id})")
 
         # 标记旧关系为 dormant
         old_relation.status = RelationStatus.DORMANT.value

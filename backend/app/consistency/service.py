@@ -440,7 +440,7 @@ class ConsistencyChecker:
         unresolved_entries = result.scalars().all()
 
         for entry in unresolved_entries:
-            days_pending = (datetime.now(timezone.utc) - entry.created_at).days if entry.created_at else 0
+            days_pending = (datetime.now(timezone.utc) - entry.created_at.replace(tzinfo=timezone.utc)).days if entry.created_at else 0
 
             severity = "info"
             if entry.importance >= 4 and days_pending > 60:

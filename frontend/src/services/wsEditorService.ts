@@ -232,6 +232,13 @@ export interface ChatCompletedMsg {
   timestamp?: string
 }
 
+export interface ChatFailedMsg {
+  type: 'chat_failed'
+  task_id?: string
+  error: string
+  timestamp?: string
+}
+
 export interface ChapterContentMsg {
   type: 'chapter_content'
   chapter_id: number
@@ -359,6 +366,7 @@ export type ServerMsg =
   | ToolCallMsg
   | ChatStartedMsg
   | ChatCompletedMsg
+  | ChatFailedMsg
   | ChapterContentMsg
   | ErrorMsg
   | SessionEndedMsg
