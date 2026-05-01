@@ -1,7 +1,7 @@
 from __future__ import annotations
 # pyright: reportArgumentType=false, reportCallIssue=false
 
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -261,44 +261,38 @@ async def create_new_chapter(
 
 
 @mcp.tool()
-async def generate_chapter_draft(
+async def edit_chapter(
     novel_id: int,
-    chapter_number: Optional[int] = None,
-    title: Optional[str] = None,
-    target_length: int = 3000,
-    style: str = "narrative",
-    writing_task: Optional[str] = None,
-    author_intent: Optional[str] = None,
-    scene_goal: Optional[str] = None,
-    outline: Optional[str] = None,
-    tone: Optional[str] = None,
-    must_keep: Optional[List[str]] = None,
-    must_avoid: Optional[List[str]] = None,
-    key_events: Optional[List[str]] = None,
-    model: Optional[str] = None,
-    use_workflow: Optional[bool] = None,
-    overwrite_existing: bool = False,
+    chapter_id: int,
+    change_type: str = "full_replace",
+    new_content: Optional[str] = None,
+    search_text: Optional[str] = None,
+    match_mode: str = "first",
+    edits: Optional[List[Dict[str, str]]] = None,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
+    reason: Optional[str] = None,
+    dry_run: bool = False,
+    undo: bool = False,
+    undo_from_snapshot: Optional[str] = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
-        "generate_chapter_draft",
+        "edit_chapter",
         ctx,
         novel_id=novel_id,
-        chapter_number=chapter_number,
-        title=title,
-        target_length=target_length,
-        style=style,
-        writing_task=writing_task,
-        author_intent=author_intent,
-        scene_goal=scene_goal,
-        outline=outline,
-        tone=tone,
-        must_keep=must_keep,
-        must_avoid=must_avoid,
-        key_events=key_events,
-        model=model,
-        use_workflow=use_workflow,
-        overwrite_existing=overwrite_existing
+        chapter_id=chapter_id,
+        change_type=change_type,
+        new_content=new_content,
+        search_text=search_text,
+        match_mode=match_mode,
+        edits=edits,
+        start_line=start_line,
+        end_line=end_line,
+        reason=reason,
+        dry_run=dry_run,
+        undo=undo,
+        undo_from_snapshot=undo_from_snapshot,
     )
 
 
@@ -532,44 +526,6 @@ async def update_character_relationship(
         evolve=evolve,
         evolution_notes=evolution_notes,
         established_chapter_id=established_chapter_id
-    )
-
-
-@mcp.tool()
-async def start_edit_session(
-    novel_id: int,
-    chapter_id: Optional[int] = None,
-    session_id: str = "",
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "start_edit_session",
-        ctx,
-        novel_id=novel_id,
-        chapter_id=chapter_id,
-        session_id=session_id
-    )
-
-
-@mcp.tool()
-async def apply_edit(
-    edit_session_id: str,
-    change_type: str,
-    new_content: str,
-    start_line: Optional[int] = None,
-    end_line: Optional[int] = None,
-    reason: Optional[str] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "apply_edit",
-        ctx,
-        edit_session_id=edit_session_id,
-        change_type=change_type,
-        new_content=new_content,
-        start_line=start_line,
-        end_line=end_line,
-        reason=reason
     )
 
 

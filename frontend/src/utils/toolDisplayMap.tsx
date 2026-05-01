@@ -135,18 +135,18 @@ const toolDisplayMap: Record<string, ToolDisplayInfo> = {
 
   create_new_chapter: {
     displayName: '创建新章节',
-    displayDescription: '在小说中新建一个空白的章节草稿，系统会自动分配下一章的序号',
+    displayDescription: '在小说中新建一个空白章节，系统会自动分配下一章的序号',
     icon: <PlusCircleOutlined />,
     color: '#1890ff',
-    userAction: '正在创建新章节草稿…',
+    userAction: '正在创建新章节…',
   },
 
-  generate_chapter_draft: {
-    displayName: 'AI生成新章节',
-    displayDescription: '调用AI模型直接生成一个新章节的完整正文内容，可指定字数、风格、关键事件等参数',
+  edit_chapter: {
+    displayName: '编辑章节',
+    displayDescription: '编辑指定章节的内容，支持全量替换、局部修改、搜索替换等多种模式',
     icon: <ThunderboltOutlined />,
     color: '#fa8c16',
-    userAction: '正在让AI撰写新章节…',
+    userAction: '正在编辑章节内容…',
   },
 
   search_plot_memory: {
@@ -251,22 +251,6 @@ const toolDisplayMap: Record<string, ToolDisplayInfo> = {
     icon: <AimOutlined />,
     color: '#fa8c16',
     userAction: '正在为本次写作准备参考资料…',
-  },
-
-  start_edit_session: {
-    displayName: '开始安全编辑',
-    displayDescription: '启动一个安全的编辑会话，在副本上修改原文，用户确认后才真正生效',
-    icon: <SafetyCertificateOutlined />,
-    color: '#1677ff',
-    userAction: '正在开启安全编辑模式（修改在副本上进行）…',
-  },
-
-  apply_edit: {
-    displayName: '应用修改内容',
-    displayDescription: '在编辑副本上应用具体的修改操作，支持局部替换、全文替换、插入、删除等多种方式',
-    icon: <ScissorOutlined />,
-    color: '#1677ff',
-    userAction: '正在对文本进行修改…',
   },
 
   edit_chapter_content: {

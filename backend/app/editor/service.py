@@ -5,8 +5,8 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
-from sqlalchemy import select, and_
+from typing import Optional, Dict, Any
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.editor.models import EditSession, EditSessionStatus, EditChange, ChangeSource
@@ -56,7 +56,6 @@ class EditSessionManager:
             status=EditSessionStatus.PENDING,
             change_count=0,
             extra_metadata={
-                "source_chapter_updated_at": chapter.updated_at.isoformat() if chapter.updated_at else None,
                 "source_word_count": chapter.word_count or 0,
                 "created_from_ws_session": ws_session_id
             }
@@ -207,24 +206,6 @@ class EditSessionManager:
 
         if edit_session.status == EditSessionStatus.REJECTED:
             raise ConflictException("编辑会话已被拒绝，不能再接受")
-
-        source_updated_at = (edit_session.extra_metadata or {}).get("source_chapter_updated_at")
-        if source_updated_at and chapter.updated_at:
-            from datetime import datetime as dt, timezone
-            try:
-                source_dt = dt.fromisoformat(source_updated_at)
-                if chapter.updated_at > source_dt:
-                    chapter_word_count = chapter.word_count or 0
-                    edit_word_count = count_words(edit_session.working_content or "")
-                    if abs(chapter_word_count - edit_word_count) > chapter_word_count * 0.3:
-                        raise ConflictException(
-                            f"章节在编辑期间已被外部修改（原字数={chapter_word_count}，"
-                            f"编辑后字数={edit_word_count}），请先确认是否要覆盖。"
-                        )
-            except ValueError:
-                raise
-            except Exception:
-                pass
 
         chapter.content = edit_session.working_content
         chapter.word_count = count_words(edit_session.working_content) if edit_session.working_content else 0

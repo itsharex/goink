@@ -233,7 +233,7 @@ class UpdateLocationTool(BaseMCPTool):
                 "items": {"type": "string"},
                 "description": "新的标签列表（完全替换旧的）"
             },
-            "parent_location_id": {"type": "integer", "description": "新的父级地点ID（设null解除层级）"},
+            "parent_location_id": {"type": ["integer", "null"], "description": "新的父级地点ID（设null解除层级）"},
         },
         "required": ["location_id"]
     }

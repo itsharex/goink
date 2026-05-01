@@ -42,7 +42,7 @@ class EditModeConfig:
 
 在编辑时，你会创建一个副本进行修改，用户需要确认后才会应用到原稿。
 当需要写作、审核或一致性检查时，可以调度子Agent执行任务。
-可以直接创建空章节，也可以直接生成新章节正文草稿。
+可以直接创建空章节，也可以用 edit_chapter 直接写出或修改章节正文。
 当作者表达"以后都这样写""长期不要出现某类内容""这本书整体风格/目标/禁忌"等稳定规则时，
 应主动调用 update_creative_profile 进行沉淀。
 当准备生成章节、规划情节、审阅方向，且需要确认长期规则时，应优先调用 get_creative_profile。
@@ -52,16 +52,12 @@ class EditModeConfig:
 在动笔之前，优先判断用户这次是否明确要求产出内容；如果只是了解、查看或讨论，保持对话即可。
 不要在正文内容中输出你的思考过程或自言自语。
 
-【工具调用注意事项】
-- 调用 generate_chapter_draft 时：如果目标章节已有内容需要覆盖重写，
-务必设置 overwrite_existing=true，否则会失败需要二次调用。
-
 【编辑章节最佳实践】
 1. 编辑前先 read_chapter_for_edit 了解当前内容
-2. 如果你有完整的修改后全文且改动超过30%，用 apply_edit 的 full_replace 模式
-3. 如果只改几段话，优先使用 search_replace 模式（提供 search_text 原文片段 + new_content 替换内容），支持跨行匹配，match_mode 可选 first/all
-4. 如果你知道精确行号范围，使用 line_range_replace 模式（提供 start_line + end_line + new_content）
-5. 不要重复调用 start_edit_session，已有会话可直接 apply_edit
+2. 用 edit_chapter 写入内容，内部自动管理副本会话，无需手动创建
+3. 如果你有完整的修改后全文，用 change_type=full_replace（默认）
+4. 如果只改几段话，优先用 search_replace 模式（提供 search_text + new_content）
+5. 如果你知道精确行号范围，用 line_range_replace 模式
 6. 编辑是副本机制，用户需确认后才生效
 
 【故事时间线管理】
@@ -111,12 +107,12 @@ class EditModeConfig:
     
     MODE_ALLOWED_TOOLS: dict[EditMode, Set[str]] = {
         EditMode.AGENT: {
-            "get_novel_summary", "get_chapter_list", "get_chapter_content", "create_new_chapter", "generate_chapter_draft",
+            "get_novel_summary", "get_chapter_list", "get_chapter_content", "create_new_chapter",
             "get_creative_profile", "update_creative_profile",
             "get_novel_progress", "get_character_list", "get_character_detail", "get_writing_characters",
             "create_character", "update_character",
             "search_story_memory", "prepare_story_brief", "get_character_memory",
-            "start_edit_session", "apply_edit", "get_edit_status", "read_chapter_for_edit",
+            "edit_chapter", "get_edit_status", "read_chapter_for_edit",
             "run_subagent",
             "get_story_timeline", "add_timeline_entry", "update_timeline_entry",
             "resolve_timeline_entry", "get_timeline_context",
@@ -158,10 +154,8 @@ class EditModeConfig:
             "get_timeline_context",
             "get_story_timeline",
             "run_review",
-            "generate_chapter_draft",
+            "edit_chapter",
             "read_chapter_for_edit",
-            "start_edit_session",
-            "apply_edit",
             "get_edit_status",
             "add_timeline_entry",
             "update_timeline_entry",
@@ -199,7 +193,7 @@ class EditModeConfig:
     TOOL_BUNDLES: Dict[str, Set[str]] = {
         "editing": {
             "get_chapter_list", "get_chapter_content", "read_chapter_for_edit",
-            "start_edit_session", "apply_edit", "get_edit_status", "get_pending_changes",
+            "edit_chapter", "get_edit_status", "get_pending_changes",
         },
         "characters": {
             "get_character_list", "get_character_detail", "get_writing_characters",
@@ -215,17 +209,17 @@ class EditModeConfig:
             "add_timeline_entry", "update_timeline_entry", "resolve_timeline_entry", "run_review",
         },
         "generation": {
-            "create_new_chapter", "generate_chapter_draft", "prepare_story_brief",
+            "create_new_chapter", "edit_chapter", "prepare_story_brief",
             "search_story_memory", "run_subagent",
         },
     }
 
     TOOL_BUNDLE_CUES: Dict[str, tuple[str, ...]] = {
-        "editing": ("修改", "改写", "润色", "重写", "编辑", "替换", "局部改", "apply_edit", "副本"),
+        "editing": ("修改", "改写", "润色", "重写", "编辑", "替换", "局部改", "edit_chapter", "副本"),
         "characters": ("角色", "人物", "关系", "师徒", "敌对", "盟友", "恋人", "创建角色"),
         "locations": ("地点", "场景", "地图", "城市", "房间", "森林", "宫殿", "地点设定"),
         "timeline": ("伏笔", "时间线", "规划", "大纲", "安排", "下章", "长期", "回收", "设定检查"),
-        "generation": ("写", "续写", "生成", "创建章节", "新章节", "草稿", "扩写", "补写"),
+        "generation": ("写", "续写", "生成", "创建章节", "新章节", "扩写", "补写"),
     }
     
     @classmethod

@@ -141,7 +141,7 @@ class GetChapterListTool(BaseMCPTool):
     """获取章节列表"""
     
     name = "get_chapter_list"
-    description = "获取小说的章节列表，支持分页和状态筛选。无需传novel_id，系统会注入当前小说ID。返回可用于 start_edit_session 的 chapter_id。"
+    description = "获取小说的章节列表，支持分页和状态筛选。无需传novel_id，系统会注入当前小说ID。返回可用于 edit_chapter 的 chapter_id。"
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
@@ -1152,7 +1152,7 @@ class CreateNewChapterTool(BaseMCPTool):
     """创建新章节"""
     
     name = "create_new_chapter"
-    description = "创建小说的新空章节草稿。无需传novel_id，系统会注入当前小说ID。chapter_number 可省略，系统会自动创建下一章。如果你希望模型直接写出正文，请优先使用 generate_chapter_draft。"
+    description = "创建小说的新空章节。无需传novel_id，系统会注入当前小说ID。chapter_number 可省略，系统会自动创建下一章。创建后可用 edit_chapter 写入正文。"
     category = MCPToolCategory.NOVEL_MANAGEMENT
     parameters_schema = {
         "type": "object",
@@ -1255,199 +1255,6 @@ class CreateNewChapterTool(BaseMCPTool):
         )
 
 
-class GenerateChapterDraftTool(BaseMCPTool):
-    """直接创建并生成章节"""
-
-    name = "generate_chapter_draft"
-    description = (
-        "直接创建并生成一个新章节正文。无需传novel_id，系统会注入当前小说ID。"
-        "chapter_number 可省略，系统会自动生成下一章。适合需要大模型直接开始写新章节时调用。"
-        "\n⚠️ 重要提示：如果目标章节号已有内容（之前写过或创建过空章节），"
-        "必须显式设置 overwrite_existing=true 才能覆盖重写，否则会返回错误。"
-        "建议调用前先通过 get_chapter_list 确认章节状态。"
-    )
-    category = MCPToolCategory.WRITING_ASSISTANT
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "chapter_number": {
-                "type": "integer",
-                "description": "章节号，可选；不提供时自动生成下一章"
-            },
-            "title": {
-                "type": "string",
-                "description": "章节标题，可选"
-            },
-            "target_length": {
-                "type": "integer",
-                "default": 3000,
-                "description": "目标字数"
-            },
-            "style": {
-                "type": "string",
-                "default": "narrative",
-                "description": "写作风格"
-            },
-            "writing_task": {
-                "type": "string",
-                "description": "本章核心写作任务"
-            },
-            "author_intent": {
-                "type": "string",
-                "description": "作者本人的明确创作意图，优先级高于一般写作提示"
-            },
-            "scene_goal": {
-                "type": "string",
-                "description": "本章或本场景必须完成的目标"
-            },
-            "outline": {
-                "type": "string",
-                "description": "章节提纲"
-            },
-            "tone": {
-                "type": "string",
-                "description": "语气风格要求"
-            },
-            "must_keep": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "必须保留、必须写到的要点"
-            },
-            "must_avoid": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "明确不要出现的内容、走向或表达"
-            },
-            "key_events": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "本章必须覆盖的关键事件"
-            },
-            "model": {
-                "type": "string",
-                "description": "指定模型，可选"
-            },
-            "use_workflow": {
-                "type": "boolean",
-                "description": "是否优先使用完整工作流"
-            },
-            "overwrite_existing": {
-                "type": "boolean",
-                "default": False,
-                "description": "若指定章节已存在，是否允许覆盖重写"
-            }
-        },
-        "required": []
-    }
-
-    async def execute(
-        self,
-        db: AsyncSession,
-        novel_id: int,
-        user_id: int,
-        chapter_number: Optional[int] = None,
-        title: Optional[str] = None,
-        target_length: int = 3000,
-        style: str = "narrative",
-        writing_task: Optional[str] = None,
-        author_intent: Optional[str] = None,
-        scene_goal: Optional[str] = None,
-        outline: Optional[str] = None,
-        tone: Optional[str] = None,
-        must_keep: Optional[List[str]] = None,
-        must_avoid: Optional[List[str]] = None,
-        key_events: Optional[List[str]] = None,
-        model: Optional[str] = None,
-        use_workflow: Optional[bool] = None,
-        overwrite_existing: bool = False,
-        **kwargs
-    ) -> MCPToolResult:
-        novel = await verify_novel_ownership(db, novel_id, user_id)
-        if not novel:
-            return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-
-        if chapter_number is None:
-            latest_result = await db.execute(
-                select(Chapter.chapter_number)
-                .where(Chapter.novel_id == novel_id)
-                .order_by(Chapter.chapter_number.desc())
-                .limit(1)
-            )
-            latest_chapter_number = latest_result.scalar_one_or_none()
-            chapter_number = (latest_chapter_number or 0) + 1
-        else:
-            existing_result = await db.execute(
-                select(Chapter).where(
-                    Chapter.novel_id == novel_id,
-                    Chapter.chapter_number == chapter_number
-                )
-            )
-            existing = existing_result.scalar_one_or_none()
-            if existing and not overwrite_existing:
-                return MCPToolResult(
-                    success=False,
-                    error="目标章节已存在。如需重写，请显式设置 overwrite_existing=true。"
-                )
-
-        service = ChapterGenerationService(db, novel_id)
-        generation_result = await service.generate_chapter(
-            chapter_number=chapter_number,
-            target_length=target_length,
-            style=style,
-            additional_context={
-                "user_prompt": writing_task,
-                "author_intent": author_intent,
-                "scene_goal": scene_goal,
-                "chapter_outline": outline,
-                "tone": tone,
-                "must_keep": must_keep or [],
-                "must_avoid": must_avoid or [],
-                "key_events": key_events or []
-            },
-            model=model,
-            use_workflow=use_workflow
-        )
-        if not generation_result.get("success"):
-            return MCPToolResult(
-                success=False,
-                error=generation_result.get("error") or "章节生成失败"
-            )
-
-        chapter_result = await db.execute(
-            select(Chapter).where(
-                Chapter.novel_id == novel_id,
-                Chapter.chapter_number == chapter_number
-            )
-        )
-        chapter = chapter_result.scalar_one_or_none()
-        if not chapter:
-            return MCPToolResult(success=False, error="章节已生成但保存失败")
-
-        if title:
-            chapter.title = title
-            await db.commit()
-            await db.refresh(chapter)
-
-        await _invalidate_chapter_cache(novel_id, chapter.id)
-
-        return MCPToolResult(
-            success=True,
-            data={
-                "chapter_id": chapter.id,
-                "chapter_number": chapter.chapter_number,
-                "title": chapter.title,
-                "summary": chapter.summary,
-                "status": chapter.status,
-                "word_count": chapter.word_count,
-                "content": chapter.content,
-                "review_result": generation_result.get("review_result"),
-                "consistency_result": generation_result.get("consistency_result"),
-                "iterations": generation_result.get("iterations", 0)
-            },
-            metadata={"tool": self.name, "novel_id": novel_id, "chapter_id": chapter.id}
-        )
-
-
 class NovelManagementTools:
     """小说管理工具集合"""
     
@@ -1466,4 +1273,3 @@ class NovelManagementTools:
         registry.register(CreateCharacterTool())
         registry.register(UpdateCharacterTool())
         registry.register(CreateNewChapterTool())
-        registry.register(GenerateChapterDraftTool())

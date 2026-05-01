@@ -8,7 +8,6 @@
 - 两者数据独立、表不同，不要混淆
 """
 from typing import Any, Dict, List, Optional
-from enum import Enum
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from app.timeline.models import TimelineEntry
@@ -125,7 +124,7 @@ class AddTimelineEntryTool(BaseMCPTool):
                         },
                         "title": {"type": "string", "description": "标题（必填）"},
                         "description": {"type": "string", "description": "详细描述"},
-                        "target_chapter": {"type": "integer", "description": "目标章节号（可选）"},
+                        "target_chapter": {"type": ["integer", "null"], "description": "目标章节号（可选，不确定时传null）"},
                         "time_horizon": {
                             "type": "string",
                             "enum": ["next", "near_term", "long_term", "undefined"],
@@ -221,7 +220,7 @@ class UpdateTimelineEntryTool(BaseMCPTool):
             "title": {"type": "string", "description": "新的标题"},
             "description": {"type": "string", "description": "新的描述"},
             "detail_json": {"type": "object", "description": "新的结构化详情"},
-            "target_chapter": {"type": "integer", "description": "新的目标章节号"},
+            "target_chapter": {"type": ["integer", "null"], "description": "新的目标章节号（可选，不确定时传null）"},
             "time_horizon": {
                 "type": "string",
                 "enum": ["next", "near_term", "long_term", "undefined"],
@@ -310,7 +309,7 @@ class ResolveTimelineEntryTool(BaseMCPTool):
         "type": "object",
         "properties": {
             "entry_id": {"type": "integer", "description": "条目ID（必填）"},
-            "resolved_chapter_id": {"type": "integer", "description": "解决时的章节ID（可选）"},
+            "resolved_chapter_id": {"type": ["integer", "null"], "description": "解决时的章节ID（可选，不确定时传null）"},
             "resolution_notes": {"type": "string", "description": "解决说明（可选）"},
         },
         "required": ["entry_id"],

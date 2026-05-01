@@ -152,11 +152,24 @@ async def _execute_subagent_task(
         return MCPToolResult(success=False, error=f"子Agent执行失败: {str(e)}")
 
 
-class StartEditSessionTool(BaseMCPTool):
-    """开始编辑会话（创建副本）"""
-    
-    name = "start_edit_session"
-    description = "开始编辑会话，创建一个副本用于AI和用户编辑。原内容保持不变，直到用户接受或拒绝。必须提供chapter_id；若不清楚章节ID，先调用 get_chapter_list 或 read_chapter_for_edit 获取。成功后应继续调用 apply_edit 写入正文。\n💡 提示：如果已有活跃编辑会话，会自动复用，无需重复创建。"
+class EditChapterTool(BaseMCPTool):
+    """编辑章节内容 - 统一写入入口，内部自动管理副本会话"""
+
+    name = "edit_chapter"
+    description = (
+        "编辑指定章节的内容。内部自动创建/复用副本编辑会话，无需手动管理。"
+        "编辑只修改副本，需用户确认后才生效。"
+        "\n必须提供 chapter_id；若不清楚章节ID，先调用 get_chapter_list 获取。"
+        "\n【变更类型选择指南】"
+        "\n- full_replace：你有完整的修改后全文 → 传 new_content 为完整替换文本"
+        "\n- search_replace（推荐）：你知道要改的是哪段原文 → 传 search_text(要找的原文) + new_content(替换内容)，支持跨行匹配"
+        "\n- multi_search_replace：一次替换多处 → 传 edits 数组，每个元素含 search_text 和 new_content"
+        "\n- line_range_replace：你知道精确的行号范围 → 传 start_line + end_line + new_content"
+        "\n- insert：在指定位置插入新内容"
+        "\n- delete：删除指定范围的内容"
+        "\n设置 dry_run=true 可预览变更而不实际修改。"
+        "\n设置 undo=true 可撤销最近一次编辑。"
+    )
     category = MCPToolCategory.WRITING_ASSISTANT
     parameters_schema = {
         "type": "object",
@@ -164,132 +177,30 @@ class StartEditSessionTool(BaseMCPTool):
             "chapter_id": {
                 "type": "integer",
                 "description": "章节ID（必填）"
-            }
-        },
-        "required": ["chapter_id"]
-    }
-    
-    def __init__(self):
-        pass
-    
-    async def execute(
-        self,
-        db: AsyncSession,
-        novel_id: int,
-        user_id: int,
-        chapter_id: int | None = None,
-        session_id: str = "",
-        **kwargs
-    ) -> MCPToolResult:
-        try:
-            if not chapter_id:
-                return MCPToolResult(
-                    success=False,
-                    error="无法确定要编辑的章节，请先选择一个章节或提供chapter_id"
-                )
-            
-            novel = await verify_novel_ownership(db, novel_id, user_id)
-            if not novel:
-                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-            
-            result = await db.execute(
-                select(Chapter).where(Chapter.id == chapter_id)
-            )
-            chapter = result.scalar_one_or_none()
-            
-            if not chapter:
-                return MCPToolResult(success=False, error=f"章节不存在: {chapter_id}")
-            
-            if chapter.novel_id != novel_id:
-                return MCPToolResult(success=False, error="无权编辑此章节：章节不属于当前小说")
-            
-            manager = get_edit_session_manager(db)
-            existing = await manager.get_edit_session(chapter_id)
-            
-            if existing:
-                return MCPToolResult(
-                    success=True,
-                    data={
-                        "edit_session_id": existing.edit_session_id,
-                        "chapter_id": chapter_id,
-                        "original_content": existing.original_content,
-                        "working_content": existing.working_content,
-                        "change_count": existing.change_count,
-                        "status": existing.status,
-                        "reused_existing": True,
-                        "message": "已有活动的编辑会话，可以继续编辑"
-                    },
-                    metadata={"tool": self.name, "edit_session_id": existing.edit_session_id}
-                )
-            
-            edit_session = await manager.create_edit_session(chapter_id, session_id)
-            
-            return MCPToolResult(
-                success=True,
-                data={
-                    "edit_session_id": edit_session.edit_session_id,
-                    "chapter_id": chapter_id,
-                    "original_content": edit_session.original_content,
-                    "working_content": edit_session.working_content,
-                    "change_count": 0,
-                    "status": "pending",
-                    "reused_existing": False,
-                    "message": "编辑会话已创建，可以开始编辑。编辑完成后用户需要确认接受或拒绝。"
-                },
-                metadata={"tool": self.name, "edit_session_id": edit_session.edit_session_id}
-            )
-        except Exception as e:
-            return MCPToolResult(success=False, error=str(e))
-
-
-class ApplyEditTool(BaseMCPTool):
-    """应用编辑到副本"""
-    
-    name = "apply_edit"
-    description = (
-        "应用编辑到副本内容。必须先用 start_edit_session 获取 edit_session_id（如有活跃会话可直接用）。"
-        "\n【变更类型选择指南】"
-        "\n- full_replace：你有完整的修改后全文，且改动幅度超过30% → 传 new_content 为完整替换文本"
-        "\n- search_replace（推荐）：你知道要改的是哪段原文 → 传 search_text(要找的原文) + new_content(替换内容)，无需知道行号。支持跨行匹配和 match_mode 控制替换范围。"
-        "\n- multi_search_replace：一次替换多处 → 传 edits 数组，每个元素含 search_text 和 new_content"
-        "\n- line_range_replace：你知道精确的行号范围 → 传 start_line + end_line + new_content"
-        "\n- partial_edit：同 line_range_replace（兼容旧调用）"
-        "\n- insert：在指定位置插入新内容"
-        "\n- delete：删除指定范围的内容"
-        "\n设置 dry_run=true 可预览变更而不实际修改。"
-        "\n设置 undo=true 可撤销最近一次编辑。"
-        "\n多次编辑会累积变更计数。编辑只修改副本，需用户确认后才生效。"
-    )
-    category = MCPToolCategory.WRITING_ASSISTANT
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "edit_session_id": {
-                "type": "string",
-                "description": "编辑会话ID"
             },
             "change_type": {
                 "type": "string",
-                "enum": ["full_replace", "partial_edit", "search_replace", "multi_search_replace", "line_range_replace", "insert", "delete", "undo"],
-                "description": "变更类型（推荐用 search_replace 做局部修改，multi_search_replace 做批量替换）"
+                "enum": ["full_replace", "search_replace", "multi_search_replace", "line_range_replace", "insert", "delete", "undo"],
+                "default": "full_replace",
+                "description": "变更类型，默认 full_replace"
             },
             "new_content": {
                 "type": "string",
-                "description": "新内容（search_replace模式为替换后的内容；full_replace为完整新文本）"
+                "description": "新内容（full_replace 为完整替换文本；search_replace 为替换后的内容）"
             },
             "search_text": {
                 "type": "string",
-                "description": "要搜索的原文片段（search_replace模式必填，支持跨行匹配）"
+                "description": "要搜索的原文片段（search_replace 模式必填）"
             },
             "match_mode": {
                 "type": "string",
                 "enum": ["first", "all"],
                 "default": "first",
-                "description": "匹配模式：first=只替换第一处匹配，all=替换所有匹配（search_replace模式时使用）"
+                "description": "匹配模式：first=只替换第一处，all=替换所有匹配"
             },
             "edits": {
                 "type": "array",
-                "description": "多块编辑数组（multi_search_replace模式必填），每个元素含 search_text 和 new_content",
+                "description": "多块编辑数组（multi_search_replace 模式必填）",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -301,11 +212,11 @@ class ApplyEditTool(BaseMCPTool):
             },
             "start_line": {
                 "type": "integer",
-                "description": "起始行号（line_range_replace/partial_edit/insert/delete时必填，1-based）"
+                "description": "起始行号（line_range_replace/insert/delete 时必填，1-based）"
             },
             "end_line": {
                 "type": "integer",
-                "description": "结束行号（line_range_replace/partial_edit/delete时必填，1-based）"
+                "description": "结束行号（line_range_replace/delete 时必填，1-based）"
             },
             "reason": {
                 "type": "string",
@@ -314,36 +225,35 @@ class ApplyEditTool(BaseMCPTool):
             "dry_run": {
                 "type": "boolean",
                 "default": False,
-                "description": "设为true只预览变更diff，不实际修改内容"
+                "description": "设为 true 只预览变更 diff，不实际修改"
             },
             "undo": {
                 "type": "boolean",
                 "default": False,
-                "description": "设为true撤销最近一次编辑（需配合undo_from_snapshot）"
+                "description": "设为 true 撤销最近一次编辑"
             },
             "undo_from_snapshot": {
                 "type": "string",
-                "description": "要回退到的快照ID（从最近的apply_edit返回的snapshot_id获取）"
+                "description": "要回退到的快照ID"
             }
         },
-        "required": ["edit_session_id", "change_type"]
+        "required": ["chapter_id"]
     }
-    
-    def __init__(self):
-        pass
-    
+
     async def execute(
         self,
         db: AsyncSession,
+        novel_id: int,
         user_id: int,
-        edit_session_id: str,
-        change_type: str,
+        chapter_id: int,
+        session_id: str = "",
+        change_type: str = "full_replace",
         new_content: str | None = None,
-        start_line: int | None = None,
-        end_line: int | None = None,
         search_text: str | None = None,
         match_mode: str = "first",
         edits: list[dict[str, str]] | None = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
         reason: str | None = None,
         dry_run: bool = False,
         undo: bool = False,
@@ -351,345 +261,46 @@ class ApplyEditTool(BaseMCPTool):
         **kwargs
     ) -> MCPToolResult:
         try:
-            manager = get_edit_session_manager(db)
-            edit_session = await manager.get_edit_session_by_id(edit_session_id)
-
-            if not edit_session:
-                return MCPToolResult(success=False, error="编辑会话不存在")
-
-            chapter_result = await db.execute(
-                select(Chapter).where(Chapter.id == edit_session.chapter_id)
-            )
-            chapter = chapter_result.scalar_one_or_none()
-            if not chapter:
-                return MCPToolResult(success=False, error="章节不存在")
-
-            novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
+            novel = await verify_novel_ownership(db, novel_id, user_id)
             if not novel:
                 return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
 
+            result = await db.execute(select(Chapter).where(Chapter.id == chapter_id))
+            chapter = result.scalar_one_or_none()
+            if not chapter:
+                return MCPToolResult(success=False, error=f"章节不存在: {chapter_id}")
+            if chapter.novel_id != novel_id:
+                return MCPToolResult(success=False, error="无权编辑此章节")
+
+            manager = get_edit_session_manager(db)
+            edit_session = await manager.get_edit_session(chapter_id)
+            reused = edit_session is not None
+            if not edit_session:
+                edit_session = await manager.create_edit_session(chapter_id, session_id)
+
             if undo or change_type == "undo":
-                snapshot_key = undo_from_snapshot
-                if not snapshot_key:
-                    snapshots = edit_session.extra_metadata.get("snapshots", {}) if edit_session.extra_metadata else {}
-                    if snapshots:
-                        snapshot_key = list(snapshots.keys())[-1]
-                
-                if not snapshot_key:
-                    return MCPToolResult(success=False, error="没有可撤销的编辑")
-
-                snapshots = edit_session.extra_metadata.get("snapshots", {}) if edit_session.extra_metadata else {}
-                if snapshot_key not in snapshots:
-                    return MCPToolResult(success=False, error=f"快照 {snapshot_key} 不存在")
-
-                restored_content = snapshots[snapshot_key]
-                if dry_run:
-                    diff_result = diff_engine.compute_diff(edit_session.working_content or "", restored_content)
-                    return MCPToolResult(
-                        success=True,
-                        data={
-                            "dry_run": True,
-                            "message": "撤销预览（未实际修改）",
-                            "diff": diff_result,
-                        }
-                    )
-
-                edit_session.working_content = restored_content
-                edit_session.change_count = max(0, (edit_session.change_count or 0) - 1)
-                await db.commit()
-                await db.refresh(edit_session)
-
-                return MCPToolResult(
-                    success=True,
-                    data={
-                        "edit_session_id": edit_session_id,
-                        "change_count": edit_session.change_count,
-                        "message": f"已撤销到快照 {snapshot_key}，当前 {edit_session.change_count} 处改动。"
-                    }
-                )
+                return await self._handle_undo(db, manager, edit_session, dry_run, undo_from_snapshot)
 
             if change_type == "multi_search_replace":
-                if not edits:
-                    return MCPToolResult(success=False, error="multi_search_replace 模式必须提供 edits 数组")
-
-                from app.core.diff_engine import DiffEngine
-                import uuid
-
-                working = edit_session.working_content or ""
-                snapshot_id = f"snap_{uuid.uuid4().hex[:8]}"
-                snapshots = dict(edit_session.extra_metadata.get("snapshots", {})) if edit_session.extra_metadata else {}
-                snapshots[snapshot_id] = working
-
-                total_replacements = 0
-                errors: list[str] = []
-
-                for i, edit_item in enumerate(edits):
-                    s_text = edit_item.get("search_text", "")
-                    r_text = edit_item.get("new_content", "")
-                    if not s_text:
-                        errors.append(f"编辑 #{i+1}: search_text 不能为空")
-                        continue
-
-                    new_working, replace_count, error_msg = DiffEngine.search_and_replace(
-                        content=working,
-                        search_text=s_text,
-                        replace_text=r_text,
-                        match_mode=match_mode,
-                    )
-                    if error_msg:
-                        errors.append(f"编辑 #{i+1}: {error_msg}")
-                        continue
-
-                    working = new_working
-                    total_replacements += replace_count
-
-                if dry_run:
-                    diff_result = diff_engine.compute_diff(edit_session.working_content or "", working)
-                    return MCPToolResult(
-                        success=True,
-                        data={
-                            "dry_run": True,
-                            "message": f"预览：{total_replacements} 处替换",
-                            "total_replacements": total_replacements,
-                            "errors": errors if errors else None,
-                            "diff": diff_result,
-                        }
-                    )
-
-                if total_replacements == 0 and errors:
-                    return MCPToolResult(success=False, error="所有编辑均失败: " + "; ".join(errors))
-
-                edit_session.working_content = working
-                edit_session.change_count = (edit_session.change_count or 0) + total_replacements
-                if not edit_session.extra_metadata:
-                    edit_session.extra_metadata = {}
-                edit_session.extra_metadata["snapshots"] = snapshots
-                await db.commit()
-                await db.refresh(edit_session)
-
-                diff_data = await manager.get_diff(edit_session_id)
-
-                result_data: dict[str, Any] = {
-                    "edit_session_id": edit_session_id,
-                    "change_count": edit_session.change_count,
-                    "total_replacements": total_replacements,
-                    "snapshot_id": snapshot_id,
-                    "working_content": edit_session.working_content,
-                    "diff": diff_data.get("diff", {}),
-                    "message": f"批量替换了 {total_replacements} 处匹配。共 {edit_session.change_count} 处改动。等待用户确认。"
-                }
-                if errors:
-                    result_data["partial_errors"] = errors
-
-                return MCPToolResult(
-                    success=True,
-                    data=result_data,
-                    metadata={
-                        "tool": self.name,
-                        "change_count": edit_session.change_count,
-                        "edit_session_id": edit_session_id,
-                        "requires_user_confirmation": True
-                    }
-                )
-
-            effective_start_line = start_line
-            effective_end_line = end_line
+                return await self._handle_multi_search_replace(db, manager, edit_session, edits, match_mode, dry_run)
 
             if change_type == "search_replace":
-                if not search_text:
-                    return MCPToolResult(
-                        success=False,
-                        error="search_replace 模式必须提供 search_text 参数（要搜索的原文片段）"
-                    )
-                from app.core.diff_engine import DiffEngine
-                import uuid
-
-                working = edit_session.working_content or ""
-
-                if dry_run:
-                    new_working, replace_count, error_msg = DiffEngine.search_and_replace(
-                        content=working,
-                        search_text=search_text,
-                        replace_text=new_content or "",
-                        match_mode=match_mode,
-                    )
-                    if error_msg:
-                        return MCPToolResult(success=False, error=error_msg)
-                    diff_result = diff_engine.compute_diff(working, new_working)
-                    return MCPToolResult(
-                        success=True,
-                        data={
-                            "dry_run": True,
-                            "replacements_preview": replace_count,
-                            "diff": diff_result,
-                            "message": f"预览：将替换 {replace_count} 处匹配（未实际修改）"
-                        }
-                    )
-
-                snapshot_id = f"snap_{uuid.uuid4().hex[:8]}"
-                snapshots = dict(edit_session.extra_metadata.get("snapshots", {})) if edit_session.extra_metadata else {}
-                snapshots[snapshot_id] = working
-
-                new_working, replace_count, error_msg = DiffEngine.search_and_replace(
-                    content=working,
-                    search_text=search_text,
-                    replace_text=new_content or "",
-                    match_mode=match_mode,
-                )
-                if error_msg:
-                    return MCPToolResult(success=False, error=error_msg)
-
-                edit_session.working_content = new_working
-                edit_session.change_count = (edit_session.change_count or 0) + replace_count
-                if not edit_session.extra_metadata:
-                    edit_session.extra_metadata = {}
-                edit_session.extra_metadata["snapshots"] = snapshots
-                await db.commit()
-                await db.refresh(edit_session)
-
-                diff_data = await manager.get_diff(edit_session_id)
-
-                return MCPToolResult(
-                    success=True,
-                    data={
-                        "edit_session_id": edit_session_id,
-                        "change_count": edit_session.change_count,
-                        "replacements_made": replace_count,
-                        "snapshot_id": snapshot_id,
-                        "working_content": edit_session.working_content,
-                        "diff": diff_data.get("diff", {}),
-                        "message": f"替换了 {replace_count} 处匹配。共 {edit_session.change_count} 处改动。等待用户确认。"
-                    },
-                    metadata={
-                        "tool": self.name,
-                        "change_count": edit_session.change_count,
-                        "edit_session_id": edit_session_id,
-                        "requires_user_confirmation": True
-                    }
-                )
+                return await self._handle_search_replace(db, manager, edit_session, search_text, new_content, match_mode, dry_run)
 
             if change_type == "line_range_replace":
                 if start_line is None or end_line is None:
-                    return MCPToolResult(
-                        success=False,
-                        error="line_range_replace 模式必须提供 start_line 和 end_line 参数"
-                    )
+                    return MCPToolResult(success=False, error="line_range_replace 必须提供 start_line 和 end_line")
 
             await manager.apply_change(
                 edit_session=edit_session,
-                change_type="partial_edit" if change_type in ("partial_edit", "line_range_replace") else change_type,
+                change_type="partial_edit" if change_type == "line_range_replace" else change_type,
                 new_content=new_content or "",
-                start_line=effective_start_line,
-                end_line=effective_end_line,
-                reason=reason
-            )
-
-            diff_data = await manager.get_diff(edit_session_id)
-
-            return MCPToolResult(
-                success=True,
-                data={
-                    "edit_session_id": edit_session_id,
-                    "change_count": edit_session.change_count,
-                    "working_content": edit_session.working_content,
-                    "diff": diff_data.get("diff", {}),
-                    "message": f"变更已应用到副本，共 {edit_session.change_count} 处改动。等待用户确认。"
-                },
-                metadata={
-                    "tool": self.name,
-                    "change_count": edit_session.change_count,
-                    "edit_session_id": edit_session_id,
-                    "requires_user_confirmation": True
-                }
-            )
-        except Exception as e:
-            return MCPToolResult(success=False, error=str(e))
-
-
-class EditChapterContentTool(BaseMCPTool):
-    """编辑章节内容，创建或复用编辑会话"""
-    
-    name = "edit_chapter_content"
-    description = "编辑章节内容，自动创建或复用副本编辑会话并应用变更。用于前端API调用，不建议LLM直接调用。"
-    category = MCPToolCategory.WRITING_ASSISTANT
-    expose_to_llm = False
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "session_id": {
-                "type": "string",
-                "description": "会话ID"
-            },
-            "chapter_id": {
-                "type": "integer",
-                "description": "章节ID"
-            },
-            "change_type": {
-                "type": "string",
-                "enum": ["full_replace", "partial_edit", "insert", "delete"],
-                "description": "变更类型"
-            },
-            "new_content": {
-                "type": "string",
-                "description": "新内容"
-            },
-            "start_line": {
-                "type": "integer",
-                "description": "起始行号（partial_edit/insert/delete时可选）"
-            },
-            "end_line": {
-                "type": "integer",
-                "description": "结束行号（partial_edit/delete时可选）"
-            },
-            "reason": {
-                "type": "string",
-                "description": "修改原因"
-            }
-        },
-        "required": ["session_id", "chapter_id", "change_type", "new_content"]
-    }
-    
-    async def execute(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        session_id: str,
-        chapter_id: int,
-        change_type: str,
-        new_content: str,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        reason: str | None = None,
-        **kwargs
-    ) -> MCPToolResult:
-        try:
-            chapter_result = await db.execute(
-                select(Chapter).where(Chapter.id == chapter_id)
-            )
-            chapter = chapter_result.scalar_one_or_none()
-            if not chapter:
-                return MCPToolResult(success=False, error="章节不存在")
-            
-            novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
-            if not novel:
-                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-            
-            manager = get_edit_session_manager(db)
-            edit_session = await manager.get_edit_session(chapter_id)
-            if not edit_session:
-                edit_session = await manager.create_edit_session(chapter_id, session_id)
-            
-            await manager.apply_change(
-                edit_session=edit_session,
-                change_type=change_type,
-                new_content=new_content,
                 start_line=start_line,
                 end_line=end_line,
-                reason=reason
+                reason=reason,
             )
-            
+
             diff_data = await manager.get_diff(edit_session.edit_session_id)
-            
             return MCPToolResult(
                 success=True,
                 data={
@@ -698,17 +309,141 @@ class EditChapterContentTool(BaseMCPTool):
                     "change_count": edit_session.change_count,
                     "working_content": edit_session.working_content,
                     "diff": diff_data.get("diff", {}),
-                    "message": f"变更已应用到副本，共 {edit_session.change_count} 处改动。等待用户确认。"
+                    "reused_existing": reused,
+                    "message": f"变更已应用到副本，共 {edit_session.change_count} 处改动。等待用户确认。",
                 },
                 metadata={
                     "tool": self.name,
                     "change_count": edit_session.change_count,
                     "edit_session_id": edit_session.edit_session_id,
-                    "requires_user_confirmation": True
-                }
+                    "requires_user_confirmation": True,
+                },
             )
         except Exception as e:
             return MCPToolResult(success=False, error=str(e))
+
+    async def _handle_undo(self, db, manager, edit_session, dry_run, undo_from_snapshot):
+        snapshot_key = undo_from_snapshot
+        if not snapshot_key:
+            snapshots = edit_session.extra_metadata.get("snapshots", {}) if edit_session.extra_metadata else {}
+            if snapshots:
+                snapshot_key = list(snapshots.keys())[-1]
+        if not snapshot_key:
+            return MCPToolResult(success=False, error="没有可撤销的编辑")
+
+        snapshots = edit_session.extra_metadata.get("snapshots", {}) if edit_session.extra_metadata else {}
+        if snapshot_key not in snapshots:
+            return MCPToolResult(success=False, error=f"快照 {snapshot_key} 不存在")
+
+        restored = snapshots[snapshot_key]
+        if dry_run:
+            diff_result = diff_engine.compute_diff(edit_session.working_content or "", restored)
+            return MCPToolResult(success=True, data={"dry_run": True, "message": "撤销预览（未实际修改）", "diff": diff_result})
+
+        edit_session.working_content = restored
+        edit_session.change_count = max(0, (edit_session.change_count or 0) - 1)
+        await db.commit()
+        await db.refresh(edit_session)
+        return MCPToolResult(success=True, data={
+            "edit_session_id": edit_session.edit_session_id,
+            "change_count": edit_session.change_count,
+            "message": f"已撤销到快照 {snapshot_key}，当前 {edit_session.change_count} 处改动。",
+        })
+
+    async def _handle_search_replace(self, db, manager, edit_session, search_text, new_content, match_mode, dry_run):
+        if not search_text:
+            return MCPToolResult(success=False, error="search_replace 必须提供 search_text")
+
+        from app.core.diff_engine import DiffEngine
+        working = edit_session.working_content or ""
+
+        if dry_run:
+            new_working, count, err = DiffEngine.search_and_replace(working, search_text, new_content or "", match_mode)
+            if err:
+                return MCPToolResult(success=False, error=err)
+            diff_result = diff_engine.compute_diff(working, new_working)
+            return MCPToolResult(success=True, data={"dry_run": True, "replacements_preview": count, "diff": diff_result, "message": f"预览：将替换 {count} 处匹配"})
+
+        snapshot_id = f"snap_{uuid.uuid4().hex[:8]}"
+        snapshots = dict(edit_session.extra_metadata.get("snapshots", {})) if edit_session.extra_metadata else {}
+        snapshots[snapshot_id] = working
+
+        new_working, count, err = DiffEngine.search_and_replace(working, search_text, new_content or "", match_mode)
+        if err:
+            return MCPToolResult(success=False, error=err)
+
+        edit_session.working_content = new_working
+        edit_session.change_count = (edit_session.change_count or 0) + count
+        if not edit_session.extra_metadata:
+            edit_session.extra_metadata = {}
+        edit_session.extra_metadata["snapshots"] = snapshots
+        await db.commit()
+        await db.refresh(edit_session)
+
+        diff_data = await manager.get_diff(edit_session.edit_session_id)
+        return MCPToolResult(success=True, data={
+            "edit_session_id": edit_session.edit_session_id,
+            "change_count": edit_session.change_count,
+            "replacements_made": count,
+            "snapshot_id": snapshot_id,
+            "working_content": edit_session.working_content,
+            "diff": diff_data.get("diff", {}),
+            "message": f"替换了 {count} 处匹配。共 {edit_session.change_count} 处改动。等待用户确认。",
+        }, metadata={"tool": self.name, "change_count": edit_session.change_count, "edit_session_id": edit_session.edit_session_id, "requires_user_confirmation": True})
+
+    async def _handle_multi_search_replace(self, db, manager, edit_session, edits, match_mode, dry_run):
+        if not edits:
+            return MCPToolResult(success=False, error="multi_search_replace 必须提供 edits 数组")
+
+        from app.core.diff_engine import DiffEngine
+        working = edit_session.working_content or ""
+        snapshot_id = f"snap_{uuid.uuid4().hex[:8]}"
+        snapshots = dict(edit_session.extra_metadata.get("snapshots", {})) if edit_session.extra_metadata else {}
+        snapshots[snapshot_id] = working
+
+        total = 0
+        errors: list[str] = []
+        for i, item in enumerate(edits):
+            s_text = item.get("search_text", "")
+            r_text = item.get("new_content", "")
+            if not s_text:
+                errors.append(f"编辑 #{i+1}: search_text 不能为空")
+                continue
+            new_working, count, err = DiffEngine.search_and_replace(working, s_text, r_text, match_mode)
+            if err:
+                errors.append(f"编辑 #{i+1}: {err}")
+                continue
+            working = new_working
+            total += count
+
+        if dry_run:
+            diff_result = diff_engine.compute_diff(edit_session.working_content or "", working)
+            return MCPToolResult(success=True, data={"dry_run": True, "message": f"预览：{total} 处替换", "total_replacements": total, "errors": errors or None, "diff": diff_result})
+
+        if total == 0 and errors:
+            return MCPToolResult(success=False, error="所有编辑均失败: " + "; ".join(errors))
+
+        edit_session.working_content = working
+        edit_session.change_count = (edit_session.change_count or 0) + total
+        if not edit_session.extra_metadata:
+            edit_session.extra_metadata = {}
+        edit_session.extra_metadata["snapshots"] = snapshots
+        await db.commit()
+        await db.refresh(edit_session)
+
+        diff_data = await manager.get_diff(edit_session.edit_session_id)
+        result_data: dict[str, Any] = {
+            "edit_session_id": edit_session.edit_session_id,
+            "change_count": edit_session.change_count,
+            "total_replacements": total,
+            "snapshot_id": snapshot_id,
+            "working_content": edit_session.working_content,
+            "diff": diff_data.get("diff", {}),
+            "message": f"批量替换了 {total} 处匹配。共 {edit_session.change_count} 处改动。等待用户确认。",
+        }
+        if errors:
+            result_data["partial_errors"] = errors
+        return MCPToolResult(success=True, data=result_data, metadata={"tool": self.name, "change_count": edit_session.change_count, "edit_session_id": edit_session.edit_session_id, "requires_user_confirmation": True})
 
 
 class GetEditStatusTool(BaseMCPTool):
@@ -1030,9 +765,7 @@ class EditingTools:
     @staticmethod
     def register_all(registry: MCPToolRegistry) -> None:
         """注册所有编辑工具（不包括accept/reject，那是用户操作）"""
-        registry.register(StartEditSessionTool())
-        registry.register(ApplyEditTool())
-        registry.register(EditChapterContentTool())
+        registry.register(EditChapterTool())
         registry.register(GetEditStatusTool())
         registry.register(RunSubagentTool())
         registry.register(GetPendingChangesTool())

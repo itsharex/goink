@@ -137,11 +137,8 @@ function getToolDisplayName(toolName: string, chapterNumber?: number, chapterTit
     read_chapter_for_edit: (l) => l ? `查看 ${l}` : '读取待编辑原文',
     read_chapter: (l) => l ? `查看 ${l}` : '读取章节正文',
     get_chapter_content: (l) => l ? `查看 ${l}` : '读取章节正文',
-    start_edit_session: (l) => l ? `准备修改 ${l}` : '开始安全编辑',
-    edit_chapter_content: (l) => l ? `正在修改 ${l}` : '编辑章节内容',
+    edit_chapter: (l) => l ? `编辑 ${l}` : '编辑章节内容',
     create_new_chapter: (l) => l ? `创建 ${l}` : '创建新章节',
-    generate_chapter_draft: (l) => l ? `正在撰写 ${l}` : 'AI生成新章节',
-    apply_edit: (l) => l ? `正在修改 ${l}` : '应用修改内容',
     get_edit_status: (l) => l ? `查看 ${l} 的修改进度` : '查看编辑状态',
   }
 
@@ -224,7 +221,7 @@ function InlineDiffPreview({ diff }: { diff: DiffData }) {
 }
 
 export default function EditorPage() {
-  const { novelId } = useParams<{ novelId: string }>()
+  const { novelId, sessionId: urlSessionId } = useParams<{ novelId: string; sessionId?: string }>()
   const navigate = useNavigate()
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
 
@@ -336,6 +333,14 @@ export default function EditorPage() {
   }, [novelId])
 
   useEffect(() => {
+    if (!connected || !urlSessionId) return
+    if (urlSessionId === currentSessionId) return
+    setChatMessages([])
+    setToolCalls([])
+    wsEditorService.loadSession(urlSessionId)
+  }, [connected, urlSessionId])
+
+  useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
@@ -385,6 +390,7 @@ export default function EditorPage() {
         if (m.edit_mode) setSelectedEditMode(m.edit_mode)
         if (m.model) setSelectedModel(m.model)
         if (m.reasoning_effort) setReasoningEffort(m.reasoning_effort)
+        navigate(`/novels/${novelId}/editor/${m.session_id}`, { replace: true })
         wsEditorService.listSessions()
         if (pendingMessageRef.current) {
           wsEditorService.chat(m.session_id, pendingMessageRef.current, true)
@@ -400,6 +406,7 @@ export default function EditorPage() {
       case 'session_loaded': {
         const m = msg as SessionLoadedMsg
         console.log('[EditorPage] session_loaded:', m.session_id, 'messages:', m.recent_messages?.length)
+        setCurrentSessionId(m.session_id)
         setCurrentScope(m.scope)
         if (m.recent_messages && m.recent_messages.length > 0) {
           const history: ChatMessage[] = []
@@ -606,7 +613,7 @@ export default function EditorPage() {
             ? { ...item, isStreaming: false }
             : item
         ))
-        if (m.status === 'completed' && (m.tool_name === 'create_new_chapter' || m.tool_name === 'generate_chapter_draft' || m.tool_name === 'get_chapter_list')) {
+        if (m.status === 'completed' && (m.tool_name === 'create_new_chapter' || m.tool_name === 'edit_chapter' || m.tool_name === 'get_chapter_list')) {
           void refreshChapterList()
         }
         if (m.status === 'completed' && m.chapter_id && (m.activity_kind === 'edit' || m.activity_kind === 'write')) {
@@ -614,15 +621,15 @@ export default function EditorPage() {
         } else if (m.status === 'completed' && m.chapter_number && (m.activity_kind === 'edit' || m.activity_kind === 'write')) {
           void revealChapterByNumber(m.chapter_number)
         }
-        if (m.tool_name === 'generate_chapter_draft' && (m.status === 'failed' || m.status === 'rejected')) {
+        if (m.tool_name === 'edit_chapter' && (m.status === 'failed' || m.status === 'rejected')) {
           setStreamingChapterMeta(null)
-          setEditNotice('这次章节写作没有完成，正文保持原样。')
+          setEditNotice('这次编辑没有完成，正文保持原样。')
           void refreshChapterList()
         }
         if (m.status === 'executing' || m.status === 'completed' || m.status === 'failed' || m.status === 'rejected') {
           shouldBreakAssistantSegmentRef.current = true
         }
-        if ((m.tool_name === 'apply_edit' || m.tool_name === 'start_edit_session') && (m.status === 'failed' || m.status === 'rejected')) {
+        if (m.tool_name === 'edit_chapter' && (m.status === 'failed' || m.status === 'rejected')) {
           setEditNotice('这次 AI 修改没有完成，正文没有被自动改动。')
           if (selectedChapterId) {
             void refreshSelectedChapter(selectedChapterId)
@@ -634,12 +641,6 @@ export default function EditorPage() {
         const m = msg as ChapterStreamMsg
         if (selectedChapterId !== m.chapter_id) {
           setSelectedChapterId(m.chapter_id)
-          setShowDiff(false)
-          setDiffData(null)
-          setHasActiveEdit(false)
-          setEditSessionId(null)
-          setLatestPendingEditSessionId(null)
-          setChangeCount(0)
           void refreshChapterList()
         }
         setStreamingChapterMeta({
@@ -647,7 +648,6 @@ export default function EditorPage() {
           chapterNumber: m.chapter_number,
           title: m.chapter_title || `第${m.chapter_number}章`,
         })
-        setOriginalContent('')
         setWorkingContent(m.content)
         setChapterWordCount(m.word_count)
         break
@@ -1170,6 +1170,7 @@ function buildConversationTurns(
                       key={s.session_id}
                       className={`${styles.sessionItem} ${currentSessionId === s.session_id ? styles.sessionItemActive : ''}`}
                       onClick={() => {
+                        navigate(`/novels/${novelId}/editor/${s.session_id}`)
                         setCurrentSessionId(s.session_id)
                         wsEditorService.loadSession(s.session_id)
                         setChatMessages([])

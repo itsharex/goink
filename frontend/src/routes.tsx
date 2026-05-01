@@ -59,6 +59,7 @@ function AppRoutes() {
           <Route path="novels/:novelId/progress" element={<NovelProgress />} />
           <Route path="novels/:novelId/planning" element={<PlotPlanning />} />
           <Route path="novels/:novelId/mcp-tools" element={<MCPTools />} />
+          <Route path="novels/:novelId/editor/:sessionId" element={<EditorPage />} />
           <Route path="novels/:novelId/editor" element={<EditorPage />} />
         </Route>
       </Routes>

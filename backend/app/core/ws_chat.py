@@ -210,12 +210,9 @@ _TOOL_SYNC_NAMES = {
     "read_chapter_for_edit": "读取待编辑原文",
     "read_chapter": "读取章节正文",
     "get_chapter_content": "读取章节正文",
-    "start_edit_session": "开始安全编辑",
+    "edit_chapter": "编辑章节内容",
     "get_edit_status": "查看编辑状态",
-    "edit_chapter_content": "编辑章节内容",
     "create_new_chapter": "创建新章节",
-    "generate_chapter_draft": "AI生成新章节",
-    "apply_edit": "应用修改内容",
     "get_creative_profile": "查看创作规则",
     "update_creative_profile": "设置创作规则",
     "search_plot_memory": "搜索情节内容",
@@ -257,12 +254,9 @@ _TOOL_SYNC_KINDS = {
     "read_chapter_for_edit": "view",
     "read_chapter": "view",
     "get_chapter_content": "view",
-    "start_edit_session": "edit",
+    "edit_chapter": "write",
     "get_edit_status": "view",
-    "edit_chapter_content": "write",
     "create_new_chapter": "create",
-    "generate_chapter_draft": "write",
-    "apply_edit": "edit",
     "get_creative_profile": "memory",
     "update_creative_profile": "memory",
     "search_plot_memory": "browse",
@@ -315,7 +309,7 @@ async def _build_tool_call_presentation(
         data_payload = {}
 
     chapter_id = arguments.get("chapter_id") or data_payload.get("chapter_id")
-    if not chapter_id and tool_name in {"create_new_chapter", "generate_chapter_draft"}:
+    if not chapter_id and tool_name in {"create_new_chapter", "edit_chapter"}:
         chapter_id = data_payload.get("chapter_id") or data_payload.get("id")
     chapter_number = arguments.get("chapter_number") or data_payload.get("chapter_number")
     chapter_title = arguments.get("title") or data_payload.get("title")
@@ -348,12 +342,9 @@ async def _build_tool_call_presentation(
         "read_chapter_for_edit": (f"查看 {chapter_label}" if chapter_label else "读取待编辑原文", "view"),
         "read_chapter": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
         "get_chapter_content": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
-        "start_edit_session": (f"准备修改 {chapter_label}" if chapter_label else "开始安全编辑", "edit"),
+        "edit_chapter": (f"编辑 {chapter_label}" if chapter_label else "编辑章节内容", "write"),
         "get_edit_status": (f"查看 {chapter_label} 的修改进度" if chapter_label else "查看编辑状态", "view"),
-        "edit_chapter_content": (f"修改 {chapter_label}" if chapter_label else "编辑章节内容", "write"),
         "create_new_chapter": (f"创建 {chapter_label}" if chapter_label else "创建新章节", "create"),
-        "generate_chapter_draft": (f"撰写 {chapter_label}" if chapter_label else "AI生成新章节", "write"),
-        "apply_edit": (f"修改 {chapter_label}" if chapter_label else "应用修改内容", "edit"),
         "get_creative_profile": ("查看创作规则", "memory"),
         "update_creative_profile": ("设置创作规则", "memory"),
         "search_plot_memory": ("搜索情节内容", "browse"),
@@ -454,7 +445,7 @@ async def _ensure_generation_chapter(
     return chapter
 
 
-async def _execute_streaming_chapter_draft(
+async def _execute_streaming_edit_chapter(
     novel_id: int,
     session: Session,
     task_id: str,
@@ -473,13 +464,13 @@ async def _execute_streaming_chapter_draft(
                 overwrite_existing=bool(arguments.get("overwrite_existing", False))
             )
         except ValueError as exc:
-            return {"success": False, "data": None, "error": str(exc), "metadata": {"tool": "generate_chapter_draft"}}
+            return {"success": False, "data": None, "error": str(exc), "metadata": {"tool": "edit_chapter"}}
         session.current_chapter_id = chapter.id
 
         presentation = await _build_tool_call_presentation(
             db,
             novel_id,
-            "generate_chapter_draft",
+            "edit_chapter",
             {
                 **arguments,
                 "chapter_id": chapter.id,
@@ -490,7 +481,7 @@ async def _execute_streaming_chapter_draft(
         await ws_manager.send_personal_message({
             "type": "tool_call",
             "task_id": task_id,
-            "tool_name": "generate_chapter_draft",
+            "tool_name": "edit_chapter",
             "tool_id": tool_id,
             "status": "executing",
             **presentation,
@@ -542,7 +533,7 @@ async def _execute_streaming_chapter_draft(
                 msg: dict[str, Any] = {
                     "type": "chapter_stream",
                     "task_id": task_id,
-                    "tool_name": "generate_chapter_draft",
+                    "tool_name": "edit_chapter",
                     "chapter_id": chapter.id,
                     "chapter_number": chapter.chapter_number,
                     "chapter_title": chapter.title,
@@ -566,48 +557,44 @@ async def _execute_streaming_chapter_draft(
                     "title": chapter.title,
                 },
                 "error": _friendly_error_message(exc),
-                "metadata": {"tool": "generate_chapter_draft", "novel_id": novel_id, "chapter_id": chapter.id}
+                "metadata": {"tool": "edit_chapter", "novel_id": novel_id, "chapter_id": chapter.id}
             }
 
-        service = ChapterGenerationService(db, novel_id)
-        chapter.content = full_content
-        chapter.status = "completed"
-        chapter.word_count = count_words(full_content)
-        await db.commit()
-        await db.refresh(chapter)
+        from app.editor.service import get_edit_session_manager
+        manager = get_edit_session_manager(db)
+        ws_session_id = session.session_id
+        edit_session = await manager.create_edit_session(chapter.id, ws_session_id)
 
-        from app.core.chapter_post_processor import ChapterPostProcessor
-        try:
-            post_processor = ChapterPostProcessor(db, novel_id)
-            process_result = await post_processor.process(
-                content=chapter.content or "",
-                chapter_number=chapter.chapter_number,
-                chapter_id=chapter.id,
-                model=model
-            )
-            if process_result.get("was_truncated"):
-                chapter.content = process_result["final_content"]
-            else:
-                chapter.content = process_result.get("final_content", chapter.content)
-            chapter.word_count = count_words(chapter.content or "")
-            chapter.summary = await service._generate_chapter_summary(chapter.content or "")
-            await db.commit()
-            logger.info(
-                f"Chapter {chapter.chapter_number} post-process completed: "
-                f"truncated={process_result['was_truncated']}, "
-                f"ending_completed={process_result['ending_completed']}"
-            )
-        except Exception as exc:
-            logger.warning(f"Chapter post-processing failed (non-fatal): {exc}")
-            chapter.summary = await service._generate_chapter_summary(chapter.content or "")
-            await db.commit()
+        await ws_manager.send_personal_message({
+            "type": "edit_started",
+            "task_id": task_id,
+            "tool_name": "edit_chapter",
+            "chapter_id": chapter.id,
+            "edit_session_id": edit_session.edit_session_id,
+            "latest_pending_edit_session_id": edit_session.edit_session_id,
+            "working_content": edit_session.working_content or "",
+            "original_content": edit_session.original_content or "",
+            "change_count": 0,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, websocket)
 
-        try:
-            await service._update_chapter_memory(chapter.id)
-        except Exception as exc:
-            logger.warning(f"Failed to update chapter memory after streamed generation: {exc}")
-            from app.core.memory_retry import schedule_memory_retry
-            await schedule_memory_retry(novel_id, chapter.id)
+        await manager.apply_change(
+            edit_session=edit_session,
+            change_type="full_replace",
+            new_content=full_content,
+            reason=f"AI生成第{chapter.chapter_number}章初稿"
+        )
+
+        await ws_manager.send_personal_message({
+            "type": "edit_pending",
+            "task_id": task_id,
+            "edit_session_id": edit_session.edit_session_id,
+            "latest_pending_edit_session_id": edit_session.edit_session_id,
+            "chapter_id": chapter.id,
+            "change_count": edit_session.change_count,
+            "word_count": count_words(full_content),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, websocket)
 
         return {
             "success": True,
@@ -615,14 +602,14 @@ async def _execute_streaming_chapter_draft(
                 "chapter_id": chapter.id,
                 "chapter_number": chapter.chapter_number,
                 "title": chapter.title,
-                "summary": chapter.summary,
-                "status": chapter.status,
-                "word_count": chapter.word_count,
-                "content": chapter.content,
+                "edit_session_id": edit_session.edit_session_id,
+                "status": "pending_confirmation",
+                "word_count": count_words(full_content),
+                "content": full_content,
                 "iterations": 1
             },
             "error": None,
-            "metadata": {"tool": "generate_chapter_draft", "novel_id": novel_id, "chapter_id": chapter.id}
+            "metadata": {"tool": "edit_chapter", "novel_id": novel_id, "chapter_id": chapter.id, "edit_session_id": edit_session.edit_session_id}
         }
 
 
@@ -1419,7 +1406,7 @@ async def _run_chat_with_tools(
 
                     elif event["type"] == "tool_call_arguments":
                         tool_name = event.get("tool_name", "unknown")
-                        if tool_name != "apply_edit":
+                        if tool_name != "edit_chapter":
                             continue
                         arguments_text = event.get("arguments_text", "")
                         partial_content = _extract_partial_argument_string(arguments_text, "new_content")
@@ -1473,7 +1460,7 @@ async def _run_chat_with_tools(
                             
                             if session.current_chapter_id and 'chapter_id' not in arguments:
                                 clean_args['chapter_id'] = session.current_chapter_id
-                            elif tool_name in {"start_edit_session", "read_chapter_for_edit", "get_edit_status", "edit_chapter_content"} and 'chapter_id' not in arguments:
+                            elif tool_name in {"edit_chapter", "read_chapter_for_edit", "get_edit_status"} and 'chapter_id' not in arguments:
                                 chapter_id = None
                                 if session.scope.type == ScopeType.CHAPTER and session.scope.chapter_start:
                                     result = await db.execute(
@@ -1515,8 +1502,8 @@ async def _run_chat_with_tools(
                             if cached:
                                 tool_result_payload = cached
                             else:
-                                if tool_name == "generate_chapter_draft":
-                                    tool_result_payload = await _execute_streaming_chapter_draft(
+                                if tool_name == "edit_chapter" and clean_args.get("change_type", "full_replace") == "full_replace" and not clean_args.get("new_content"):
+                                    tool_result_payload = await _execute_streaming_edit_chapter(
                                         novel_id=novel_id,
                                         session=session,
                                         task_id=task_id,
@@ -1664,24 +1651,15 @@ async def _run_chat_with_tools(
                                     for stale_key in stale_keys:
                                         tool_cache.pop(stale_key, None)
                             
-                            if tool_name == "start_edit_session" and tool_result_payload.get("success") and not session.metadata.get("edit_session_hint_sent"):
+                            if tool_name == "edit_chapter" and tool_result_payload.get("success") and metadata.get("requires_user_confirmation"):
                                 await ws_manager.send_personal_message({
-                                    "type": "edit_started",
+                                    "type": "edit_pending",
                                     "task_id": task_id,
-                                    "tool_name": tool_name,
+                                    "edit_session_id": metadata.get("edit_session_id"),
                                     "chapter_id": data_payload.get("chapter_id") or clean_args.get("chapter_id"),
-                                    "edit_session_id": data_payload.get("edit_session_id") or metadata.get("edit_session_id"),
-                                    "working_content": data_payload.get("working_content", ""),
-                                    "original_content": data_payload.get("original_content", ""),
                                     "change_count": data_payload.get("change_count", 0),
                                     "timestamp": datetime.now(timezone.utc).isoformat()
                                 }, websocket)
-                                session_manager.add_message(
-                                    session,
-                                    MessageRole.SYSTEM,
-                                    "已创建编辑会话。请直接调用 apply_edit 写入正文内容，避免重复 start_edit_session。"
-                                )
-                                session.metadata["edit_session_hint_sent"] = True
                             
                             if tool_result_payload.get("success") and data_payload.get("working_content") is not None:
                                 await ws_manager.send_personal_message({
