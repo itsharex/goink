@@ -87,6 +87,7 @@ async def get_chapter_content(
     chapter_id: Optional[int] = None,
     chapter_number: Optional[int] = None,
     include_summary: bool = True,
+    include_lines: bool = False,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -95,7 +96,8 @@ async def get_chapter_content(
         novel_id=novel_id,
         chapter_id=chapter_id,
         chapter_number=chapter_number,
-        include_summary=include_summary
+        include_summary=include_summary,
+        include_lines=include_lines,
     )
 
 
@@ -405,23 +407,12 @@ async def get_story_timeline(
 @mcp.tool()
 async def add_timeline_entry(
     novel_id: int,
-    category: str,
-    title: str,
-    description: Optional[str] = None,
-    detail_json: Optional[dict] = None,
-    target_chapter: Optional[int] = None,
-    time_horizon: Optional[str] = None,
-    importance: int = 3,
-    source_chapter_id: Optional[int] = None,
-    tags: Optional[List[str]] = None,
+    entries: List[Dict[str, Any]],
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
         "add_timeline_entry", ctx,
-        novel_id=novel_id, category=category, title=title,
-        description=description, detail_json=detail_json,
-        target_chapter=target_chapter, time_horizon=time_horizon,
-        importance=importance, source_chapter_id=source_chapter_id, tags=tags
+        novel_id=novel_id, entries=entries,
     )
 
 
@@ -437,6 +428,8 @@ async def update_timeline_entry(
     status: Optional[str] = None,
     importance: Optional[int] = None,
     tags: Optional[List[str]] = None,
+    resolved_chapter_id: Optional[int] = None,
+    resolution_notes: Optional[str] = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -444,22 +437,8 @@ async def update_timeline_entry(
         novel_id=novel_id, entry_id=entry_id, title=title,
         description=description, detail_json=detail_json,
         target_chapter=target_chapter, time_horizon=time_horizon,
-        status=status, importance=importance, tags=tags
-    )
-
-
-@mcp.tool()
-async def resolve_timeline_entry(
-    novel_id: int,
-    entry_id: int,
-    resolved_chapter_id: Optional[int] = None,
-    resolution_notes: Optional[str] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "resolve_timeline_entry", ctx,
-        novel_id=novel_id, entry_id=entry_id,
-        resolved_chapter_id=resolved_chapter_id, resolution_notes=resolution_notes
+        status=status, importance=importance, tags=tags,
+        resolved_chapter_id=resolved_chapter_id, resolution_notes=resolution_notes,
     )
 
 
@@ -527,56 +506,6 @@ async def update_character_relationship(
         evolution_notes=evolution_notes,
         established_chapter_id=established_chapter_id
     )
-
-
-@mcp.tool()
-async def edit_chapter_content(
-    session_id: str,
-    chapter_id: int,
-    change_type: str,
-    new_content: str,
-    start_line: Optional[int] = None,
-    end_line: Optional[int] = None,
-    reason: Optional[str] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "edit_chapter_content",
-        ctx,
-        session_id=session_id,
-        chapter_id=chapter_id,
-        change_type=change_type,
-        new_content=new_content,
-        start_line=start_line,
-        end_line=end_line,
-        reason=reason
-    )
-
-
-@mcp.tool()
-async def get_edit_status(chapter_id: int, ctx: Context) -> dict:
-    return await _execute_tool("get_edit_status", ctx, chapter_id=chapter_id)
-
-
-@mcp.tool()
-async def get_pending_changes(
-    chapter_id: Optional[int] = None,
-    session_id: Optional[str] = None,
-    limit: int = 10,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "get_pending_changes",
-        ctx,
-        chapter_id=chapter_id,
-        session_id=session_id,
-        limit=limit
-    )
-
-
-@mcp.tool()
-async def read_chapter_for_edit(chapter_id: int, ctx: Context) -> dict:
-    return await _execute_tool("read_chapter_for_edit", ctx, chapter_id=chapter_id)
 
 
 @mcp.tool()

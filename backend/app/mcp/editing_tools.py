@@ -7,16 +7,12 @@ from typing import Any
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
-from app.novels.models import Novel
 from app.chapters.models import Chapter
 from app.editor.service import get_edit_session_manager
-from app.editor.models import EditSession, EditSessionStatus, EditChange
 from app.core.permissions import verify_novel_ownership
 from app.core.diff_engine import diff_engine
-from app.core.text_utils import count_words
 
 _subagent_running_var: ContextVar[bool] = ContextVar("_subagent_running_var", default=False)
 
@@ -446,97 +442,6 @@ class EditChapterTool(BaseMCPTool):
         return MCPToolResult(success=True, data=result_data, metadata={"tool": self.name, "change_count": edit_session.change_count, "edit_session_id": edit_session.edit_session_id, "requires_user_confirmation": True})
 
 
-class GetEditStatusTool(BaseMCPTool):
-    """获取编辑状态"""
-    
-    name = "get_edit_status"
-    description = "获取章节当前的编辑状态，包括是否有活动的编辑会话、副本内容等。必须提供chapter_id，可先用 get_chapter_list 获取。"
-    category = MCPToolCategory.WRITING_ASSISTANT
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "chapter_id": {
-                "type": "integer",
-                "description": "章节ID"
-            },
-            "include_line_numbers": {
-                "type": "boolean",
-                "default": True,
-                "description": "是否包含行号"
-            }
-        },
-        "required": ["chapter_id"]
-    }
-    
-    def __init__(self):
-        pass
-    
-    async def execute(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        chapter_id: int,
-        include_line_numbers: bool = True,
-        **kwargs
-    ) -> MCPToolResult:
-        try:
-            manager = get_edit_session_manager(db)
-            edit_session = await manager.get_edit_session(chapter_id)
-            
-            if edit_session:
-                result = await db.execute(
-                    select(Chapter).where(Chapter.id == chapter_id)
-                )
-                chapter = result.scalar_one_or_none()
-                if not chapter:
-                    return MCPToolResult(success=False, error="章节不存在")
-                novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
-                if not novel:
-                    return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-                diff_data = await manager.get_diff(edit_session.edit_session_id)
-                changes_result = await db.execute(
-                    select(EditChange)
-                    .where(EditChange.edit_session_id == edit_session.id)
-                    .order_by(EditChange.created_at.desc())
-                    .limit(5)
-                )
-                recent_changes = list(changes_result.scalars().all())
-                return MCPToolResult(
-                    success=True,
-                    data={
-                        "has_active_edit": True,
-                        "edit_session_id": edit_session.edit_session_id,
-                        "latest_pending_edit_session_id": edit_session.edit_session_id,
-                        "status": edit_session.status,
-                        "change_count": edit_session.change_count,
-                        "working_content": edit_session.working_content,
-                        "original_content": edit_session.original_content,
-                        "diff": diff_data.get("diff", {}),
-                        "created_from_ws_session": (edit_session.extra_metadata or {}).get("created_from_ws_session"),
-                        "recent_changes": [change.to_dict() for change in recent_changes]
-                    }
-                )
-            
-            result = await db.execute(
-                select(Chapter).where(Chapter.id == chapter_id)
-            )
-            chapter = result.scalar_one_or_none()
-            if chapter:
-                novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
-                if not novel:
-                    return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-            
-            return MCPToolResult(
-                success=True,
-                data={
-                    "has_active_edit": False,
-                    "latest_pending_edit_session_id": None,
-                    "chapter_content": chapter.content if chapter else "",
-                    "message": "当前没有活动的编辑会话"
-                }
-            )
-        except Exception as e:
-            return MCPToolResult(success=False, error=str(e))
 
 
 class RunSubagentTool(BaseMCPTool):
@@ -619,144 +524,8 @@ class RunSubagentTool(BaseMCPTool):
         )
 
 
-class GetPendingChangesTool(BaseMCPTool):
-    """获取待确认的副本编辑变更列表，可按章节或会话筛选"""
-
-    name = "get_pending_changes"
-    description = "获取待确认的副本编辑变更列表，可按章节或会话筛选"
-    category = MCPToolCategory.WRITING_ASSISTANT
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "chapter_id": {
-                "type": "integer",
-                "description": "章节ID（可选）"
-            },
-            "session_id": {
-                "type": "string",
-                "description": "会话ID（可选）"
-            },
-            "limit": {
-                "type": "integer",
-                "default": 10,
-                "description": "返回数量限制"
-            }
-        },
-        "required": []
-    }
-
-    async def execute(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        chapter_id: int | None = None,
-        session_id: str | None = None,
-        limit: int = 10,
-        **kwargs
-    ) -> MCPToolResult:
-        try:
-            if not user_id:
-                return MCPToolResult(success=False, error="未提供用户身份信息")
-
-            query = select(EditSession).options(selectinload(EditSession.chapter))
-            query = (
-                query.join(Chapter, EditSession.chapter_id == Chapter.id)
-                .join(Novel, Chapter.novel_id == Novel.id)
-                .where(Novel.author_id == user_id)
-            )
-
-            query = query.where(EditSession.status == EditSessionStatus.PENDING)
-
-            if chapter_id:
-                query = query.where(EditSession.chapter_id == chapter_id)
-            if session_id:
-                query = query.where(EditSession.ws_session_id == session_id)
-
-            query = query.order_by(EditSession.created_at.desc()).limit(limit)
-            result = await db.execute(query)
-            sessions = result.scalars().all()
-
-            data = [
-                {
-                    "edit_session_id": s.edit_session_id,
-                    "chapter_id": s.chapter_id,
-                    "chapter_title": s.chapter.title if s.chapter else None,
-                    "ws_session_id": s.ws_session_id,
-                    "status": s.status,
-                    "change_count": s.change_count,
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                    "content_preview": (s.working_content or "")[:120]
-                }
-                for s in sessions
-            ]
-
-            return MCPToolResult(
-                success=True,
-                data={"items": data, "total": len(data)}
-            )
-        except Exception as e:
-            return MCPToolResult(success=False, error=str(e))
 
 
-class ReadChapterForEditTool(BaseMCPTool):
-    """读取章节内容用于编辑"""
-    
-    name = "read_chapter_for_edit"
-    description = "读取章节内容用于编辑，返回完整内容和行号信息"
-    category = MCPToolCategory.WRITING_ASSISTANT
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "chapter_id": {
-                "type": "integer",
-                "description": "章节ID"
-            }
-        },
-        "required": ["chapter_id"]
-    }
-    
-    def __init__(self):
-        pass
-    
-    async def execute(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        chapter_id: int,
-        **kwargs
-    ) -> MCPToolResult:
-        try:
-            result = await db.execute(
-                select(Chapter).where(Chapter.id == chapter_id)
-            )
-            chapter = result.scalar_one_or_none()
-            
-            if not chapter:
-                return MCPToolResult(success=False, error="章节不存在")
-            
-            novel = await verify_novel_ownership(db, chapter.novel_id, user_id)
-            if not novel:
-                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-            
-            content = chapter.content or ""
-            lines = content.splitlines()
-            lines_payload = [{"line_number": i + 1, "content": line} for i, line in enumerate(lines)]
-            
-            return MCPToolResult(
-                success=True,
-                data={
-                    "chapter_id": chapter.id,
-                    "chapter_number": chapter.chapter_number,
-                    "title": chapter.title,
-                    "content": content,
-                    "line_count": len(lines),
-                    "word_count": count_words(content),
-                    "lines": lines_payload
-                },
-                metadata={"tool": self.name, "chapter_id": chapter_id}
-            )
-        except Exception as e:
-            return MCPToolResult(success=False, error=str(e))
 
 
 class EditingTools:
@@ -766,7 +535,4 @@ class EditingTools:
     def register_all(registry: MCPToolRegistry) -> None:
         """注册所有编辑工具（不包括accept/reject，那是用户操作）"""
         registry.register(EditChapterTool())
-        registry.register(GetEditStatusTool())
         registry.register(RunSubagentTool())
-        registry.register(GetPendingChangesTool())
-        registry.register(ReadChapterForEditTool())

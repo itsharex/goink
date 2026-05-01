@@ -207,11 +207,9 @@ async def _lookup_chapter_brief(
 
 _TOOL_SYNC_NAMES = {
     "get_chapter_list": "查看章节目录",
-    "read_chapter_for_edit": "读取待编辑原文",
     "read_chapter": "读取章节正文",
     "get_chapter_content": "读取章节正文",
     "edit_chapter": "编辑章节内容",
-    "get_edit_status": "查看编辑状态",
     "create_new_chapter": "创建新章节",
     "get_creative_profile": "查看创作规则",
     "update_creative_profile": "设置创作规则",
@@ -225,7 +223,6 @@ _TOOL_SYNC_NAMES = {
     "get_timeline_context": "获取AI写作参考",
     "add_timeline_entry": "记录追踪条目",
     "update_timeline_entry": "更新追踪条目",
-    "resolve_timeline_entry": "标记条目完成",
     "get_location_list": "查看地点列表",
     "get_location_detail": "查看地点详情",
     "create_location": "创建新地点",
@@ -243,7 +240,6 @@ _TOOL_SYNC_NAMES = {
     "get_character_relationships": "查看角色关系详情",
     "update_character_relationship": "更新人物关系",
     "run_subagent": "调度AI子任务",
-    "get_pending_changes": "查看待确认修改",
 }
 
 def _sync_tool_display_name(tool_name: str) -> str:
@@ -251,11 +247,9 @@ def _sync_tool_display_name(tool_name: str) -> str:
 
 _TOOL_SYNC_KINDS = {
     "get_chapter_list": "browse",
-    "read_chapter_for_edit": "view",
     "read_chapter": "view",
     "get_chapter_content": "view",
     "edit_chapter": "write",
-    "get_edit_status": "view",
     "create_new_chapter": "create",
     "get_creative_profile": "memory",
     "update_creative_profile": "memory",
@@ -269,7 +263,6 @@ _TOOL_SYNC_KINDS = {
     "get_timeline_context": "memory",
     "add_timeline_entry": "write",
     "update_timeline_entry": "edit",
-    "resolve_timeline_entry": "edit",
     "get_location_list": "view",
     "get_location_detail": "view",
     "create_location": "create",
@@ -287,7 +280,6 @@ _TOOL_SYNC_KINDS = {
     "get_character_relationships": "view",
     "update_character_relationship": "edit",
     "run_subagent": "plan",
-    "get_pending_changes": "view",
 }
 
 
@@ -339,11 +331,9 @@ async def _build_tool_call_presentation(
 
     _TOOL_BASE_NAMES = {
         "get_chapter_list": ("查看章节目录", "browse"),
-        "read_chapter_for_edit": (f"查看 {chapter_label}" if chapter_label else "读取待编辑原文", "view"),
         "read_chapter": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
         "get_chapter_content": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
         "edit_chapter": (f"编辑 {chapter_label}" if chapter_label else "编辑章节内容", "write"),
-        "get_edit_status": (f"查看 {chapter_label} 的修改进度" if chapter_label else "查看编辑状态", "view"),
         "create_new_chapter": (f"创建 {chapter_label}" if chapter_label else "创建新章节", "create"),
         "get_creative_profile": ("查看创作规则", "memory"),
         "update_creative_profile": ("设置创作规则", "memory"),
@@ -355,7 +345,6 @@ async def _build_tool_call_presentation(
         "get_timeline_context": ("获取AI写作参考", "memory"),
         "add_timeline_entry": ("记录追踪条目", "write"),
         "update_timeline_entry": ("更新追踪条目", "edit"),
-        "resolve_timeline_entry": ("标记条目完成", "edit"),
         "run_review": ("执行审查", "review"),
         "get_location_list": ("查看地点列表", "view"),
         "get_location_detail": ("查看地点详情", "view"),
@@ -373,9 +362,6 @@ async def _build_tool_call_presentation(
         "get_character_relationships": ("查看角色关系详情", "view"),
         "update_character_relationship": ("更新人物关系", "edit"),
         "run_subagent": ("调度AI子任务", "plan"),
-        "start_edit_session": ("开始安全编辑", "edit"),
-        "read_chapter_for_edit": ("读取待编辑原文", "view"),
-        "get_pending_changes": ("查看待确认修改", "view"),
     }
 
     if tool_name in _TOOL_BASE_NAMES:
@@ -1460,7 +1446,7 @@ async def _run_chat_with_tools(
                             
                             if session.current_chapter_id and 'chapter_id' not in arguments:
                                 clean_args['chapter_id'] = session.current_chapter_id
-                            elif tool_name in {"edit_chapter", "read_chapter_for_edit", "get_edit_status"} and 'chapter_id' not in arguments:
+                            elif tool_name in {"edit_chapter"} and 'chapter_id' not in arguments:
                                 chapter_id = None
                                 if session.scope.type == ScopeType.CHAPTER and session.scope.chapter_start:
                                     result = await db.execute(
@@ -1603,7 +1589,7 @@ async def _run_chat_with_tools(
                                         "已更新作者长期创作配置。" + (f" {'；'.join(summary_parts)}。" if summary_parts else "")
                                     )
                                 
-                                if tool_name in ("add_timeline_entry", "update_timeline_entry", "resolve_timeline_entry"):
+                                if tool_name in ("add_timeline_entry", "update_timeline_entry"):
                                     stale_keys = [
                                         key for key in list(tool_cache.keys())
                                         if key.startswith(("get_story_timeline:", "get_timeline_context:", "run_review:", "prepare_story_brief:"))

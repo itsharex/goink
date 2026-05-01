@@ -19,7 +19,6 @@ from app.consistency.service import ConsistencyChecker
 from app.timeline.models import TimelineEntry, TimelineEntryStatus
 from app.timeline.schemas import (
     TimelineEntryCreate,
-    TimelineEntryResolve,
     TimelineEntryCategory as TimelineEntryCategorySchema,
     TimeHorizon as TimeHorizonSchema,
 )
@@ -47,8 +46,6 @@ REVIEW_SPEC = SubAgentSpec(
         "list_timeline_entries",
         "get_timeline_context",
         "get_plot_events",
-        "get_pending_changes",
-        "read_chapter_for_edit",
     ],
     allowed_resources=[
         "novel://{novel_id}/summary",

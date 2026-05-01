@@ -409,17 +409,17 @@ async def check_character_consistency(
     ids = None
     if chapter_ids:
         ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
-    
+
     registry = get_mcp_registry()
     result = await registry.execute(
-        "check_character_consistency",
+        "run_review",
         db=db,
         user_id=current_user.id,
         novel_id=novel.id,
+        scope="character",
         chapter_ids=ids,
-        character_id=character_id
     )
-    
+
     if result.success:
         return ApiResponse.success(result.data)
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
@@ -435,16 +435,17 @@ async def check_plot_consistency(
     ids = None
     if chapter_ids:
         ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
-    
+
     registry = get_mcp_registry()
     result = await registry.execute(
-        "check_plot_consistency",
+        "run_review",
         db=db,
         user_id=current_user.id,
         novel_id=novel.id,
-        chapter_ids=ids
+        scope="plot",
+        chapter_ids=ids,
     )
-    
+
     if result.success:
         return ApiResponse.success(result.data)
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
@@ -456,26 +457,21 @@ async def run_full_consistency_check(
     db: DBSession,
     current_user: CurrentUserDep,
     chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔"),
-    check_types: Optional[str] = Query(None, description="检查类型，逗号分隔(character,plot,timeline,foreshadowing)")
 ):
     ids = None
     if chapter_ids:
         ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
-    
-    types = None
-    if check_types:
-        types = [x.strip() for x in check_types.split(",") if x.strip()]
-    
+
     registry = get_mcp_registry()
     result = await registry.execute(
-        "run_full_consistency_check",
+        "run_review",
         db=db,
         user_id=current_user.id,
         novel_id=novel.id,
+        scope="full",
         chapter_ids=ids,
-        check_types=types
     )
-    
+
     if result.success:
         return ApiResponse.success(result.data)
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
@@ -487,18 +483,17 @@ async def list_unresolved_plots(
     db: DBSession,
     current_user: CurrentUserDep,
     min_importance: Optional[int] = Query(None, ge=1, le=5, description="最小重要程度"),
-    days_pending: Optional[int] = Query(None, ge=1, description="挂起天数筛选")
 ):
     registry = get_mcp_registry()
     result = await registry.execute(
-        "list_unresolved_plots",
+        "run_review",
         db=db,
         user_id=current_user.id,
         novel_id=novel.id,
+        scope="foreshadowing",
         min_importance=min_importance,
-        days_pending=days_pending
     )
-    
+
     if result.success:
         return ApiResponse.success(result.data)
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
@@ -511,94 +506,8 @@ async def get_foreshadowing_status(
     current_user: CurrentUserDep
 ):
     registry = get_mcp_registry()
-    result = await registry.execute("get_foreshadowing_status", db=db, user_id=current_user.id, novel_id=novel.id)
-    
-    if result.success:
-        return ApiResponse.success(result.data)
-    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
+    result = await registry.execute("run_review", db=db, user_id=current_user.id, novel_id=novel.id, scope="foreshadowing_status")
 
-
-@router.post("/chapters/{chapter_id}/read-for-edit")
-async def read_chapter_for_edit(
-    chapter_id: int,
-    db: DBSession,
-    current_user: CurrentUserDep,
-    include_line_numbers: bool = Query(True, description="是否包含行号")
-):
-    """
-    读取章节内容用于编辑
-    """
-    from app.chapters.models import Chapter
-    from app.core.exceptions import NotFoundException, UnauthorizedException
-    from sqlalchemy import select
-    
-    result = await db.execute(select(Chapter).where(Chapter.id == chapter_id))
-    chapter = result.scalar_one_or_none()
-    if not chapter:
-        raise NotFoundException("章节")
-    
-    result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-    novel = result.scalar_one_or_none()
-    if not novel or novel.author_id != current_user.id:
-        raise UnauthorizedException("无权访问此章节")
-    
-    registry = get_mcp_registry()
-    result = await registry.execute(
-        "read_chapter_for_edit",
-        db=db,
-        user_id=current_user.id,
-        chapter_id=chapter_id,
-        include_line_numbers=include_line_numbers
-    )
-    
-    if result.success:
-        return ApiResponse.success(result.data)
-    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
-
-
-@router.post("/chapters/{chapter_id}/edit")
-async def edit_chapter_content(
-    chapter_id: int,
-    db: DBSession,
-    current_user: CurrentUserDep,
-    session_id: str = Body(..., description="会话ID"),
-    change_type: str = Body(..., description="变更类型: full_replace/partial_edit/insert/delete"),
-    new_content: str = Body(..., description="新内容"),
-    start_line: Optional[int] = Body(None, description="起始行号"),
-    end_line: Optional[int] = Body(None, description="结束行号"),
-    reason: Optional[str] = Body(None, description="修改原因")
-):
-    """
-    编辑章节内容，创建待确认的变更记录
-    """
-    from app.chapters.models import Chapter
-    from app.core.exceptions import NotFoundException, UnauthorizedException
-    from sqlalchemy import select
-    
-    result = await db.execute(select(Chapter).where(Chapter.id == chapter_id))
-    chapter = result.scalar_one_or_none()
-    if not chapter:
-        raise NotFoundException("章节")
-    
-    result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-    novel = result.scalar_one_or_none()
-    if not novel or novel.author_id != current_user.id:
-        raise UnauthorizedException("无权修改此章节")
-    
-    registry = get_mcp_registry()
-    result = await registry.execute(
-        "edit_chapter_content",
-        db=db,
-        user_id=current_user.id,
-        session_id=session_id,
-        chapter_id=chapter_id,
-        change_type=change_type,
-        new_content=new_content,
-        start_line=start_line,
-        end_line=end_line,
-        reason=reason
-    )
-    
     if result.success:
         return ApiResponse.success(result.data)
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
@@ -632,27 +541,3 @@ async def create_new_chapter(
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
 
 
-@router.get("/changes/pending")
-async def get_pending_changes(
-    db: DBSession,
-    current_user: CurrentUserDep,
-    chapter_id: Optional[int] = Query(None, description="章节ID"),
-    session_id: Optional[str] = Query(None, description="会话ID"),
-    limit: int = Query(10, ge=1, le=50, description="返回数量限制")
-):
-    """
-    获取待确认的变更列表
-    """
-    registry = get_mcp_registry()
-    result = await registry.execute(
-        "get_pending_changes",
-        db=db,
-        user_id=current_user.id,
-        chapter_id=chapter_id,
-        session_id=session_id,
-        limit=limit
-    )
-    
-    if result.success:
-        return ApiResponse.success(result.data)
-    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")

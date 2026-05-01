@@ -4,9 +4,8 @@ import {
   TeamOutlined, UserOutlined, PlusCircleOutlined, ThunderboltOutlined,
   SearchOutlined, HistoryOutlined, LineChartOutlined, CompassOutlined,
   CheckSquareOutlined, BugOutlined, AlertOutlined, ExperimentOutlined,
-  SafetyCertificateOutlined, ScissorOutlined, FormOutlined,
-  EyeOutlined, RobotOutlined, InboxOutlined, FileSearchOutlined,
-  PushpinOutlined, FileProtectOutlined, AimOutlined, BulbOutlined,
+  RobotOutlined,
+  PushpinOutlined, AimOutlined, BulbOutlined,
   ClockCircleOutlined, ApartmentOutlined, NodeIndexOutlined,
   ClusterOutlined, ApiOutlined,
 } from '@ant-design/icons'
@@ -237,13 +236,6 @@ const toolDisplayMap: Record<string, ToolDisplayInfo> = {
     userAction: '正在更新某条记录的内容…',
   },
 
-  resolve_timeline_entry: {
-    displayName: '标记条目完成',
-    displayDescription: '将一条追踪条目标记为已解决（伏笔回收）或已完成（规划落实），并记录解决说明',
-    icon: <FileProtectOutlined />,
-    color: '#52c41a',
-    userAction: '正在标记某个伏笔已回收 / 某个规划已完成…',
-  },
 
   get_timeline_context: {
     displayName: '获取AI写作参考',
@@ -253,21 +245,6 @@ const toolDisplayMap: Record<string, ToolDisplayInfo> = {
     userAction: '正在为本次写作准备参考资料…',
   },
 
-  edit_chapter_content: {
-    displayName: '编辑章节内容',
-    displayDescription: '直接对章节内容执行编辑操作，自动管理编辑会话的生命周期',
-    icon: <FormOutlined />,
-    color: '#1677ff',
-    userAction: '正在编辑章节内容…',
-  },
-
-  get_edit_status: {
-    displayName: '查看编辑状态',
-    displayDescription: '查看当前章节是否有进行中的编辑会话、已累积了多少处修改、以及修改的差异对比',
-    icon: <EyeOutlined />,
-    color: '#1677ff',
-    userAction: '正在查看当前的编辑状态…',
-  },
 
   run_subagent: {
     displayName: '调度AI子任务',
@@ -277,21 +254,6 @@ const toolDisplayMap: Record<string, ToolDisplayInfo> = {
     userAction: '正在调度专业AI助手处理任务…',
   },
 
-  get_pending_changes: {
-    displayName: '查看待确认修改',
-    displayDescription: '查看所有已经修改但尚未被用户确认接受的变更列表',
-    icon: <InboxOutlined />,
-    color: '#1677ff',
-    userAction: '正在收集所有待确认的修改…',
-  },
-
-  read_chapter_for_edit: {
-    displayName: '读取待编辑原文',
-    displayDescription: '以带行号的方式读取章节完整内容，方便精确定位要修改的位置',
-    icon: <FileSearchOutlined />,
-    color: '#1677ff',
-    userAction: '正在加载带行号的原文…',
-  },
 }
 
 export function getToolDisplayName(toolName: string): string {

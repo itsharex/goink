@@ -241,11 +241,16 @@ class GetChapterContentTool(BaseMCPTool):
                 "type": "boolean",
                 "default": True,
                 "description": "是否包含摘要"
+            },
+            "include_lines": {
+                "type": "boolean",
+                "default": False,
+                "description": "是否返回带行号的行数组（用于按行号编辑）"
             }
         },
         "required": []
     }
-    
+
     async def execute(
         self,
         db: AsyncSession,
@@ -254,6 +259,7 @@ class GetChapterContentTool(BaseMCPTool):
         chapter_id: Optional[int] = None,
         chapter_number: Optional[int] = None,
         include_summary: bool = True,
+        include_lines: bool = False,
         **kwargs
     ) -> MCPToolResult:
         novel = await verify_novel_ownership(db, novel_id, user_id)
@@ -295,7 +301,13 @@ class GetChapterContentTool(BaseMCPTool):
         
         if include_summary:
             data["summary"] = chapter.summary
-        
+
+        if include_lines:
+            content = chapter.content or ""
+            lines = content.splitlines()
+            data["lines"] = [{"line_number": i + 1, "content": line} for i, line in enumerate(lines)]
+            data["line_count"] = len(lines)
+
         return MCPToolResult(
             success=True,
             data=data,

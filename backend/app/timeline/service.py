@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func, and_, or_, desc, asc, case
+from sqlalchemy import select, func, or_, desc, asc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.timeline.models import (
@@ -19,8 +19,6 @@ from app.timeline.models import (
 from app.timeline.schemas import (
     TimelineEntryCreate,
     TimelineEntryUpdate,
-    TimelineEntryResolve,
-    TimelineContextRequest,
     TimelineEntryCategory as SchemaTimelineEntryCategory,
     TimeHorizon as SchemaTimeHorizon,
 )
@@ -143,12 +141,32 @@ class TimelineService:
         }
 
         update_data = data.model_dump(exclude_unset=True)
+        # 抽离 resolve 相关字段，单独处理
+        resolved_chapter_id = update_data.pop("resolved_chapter_id", None)
+        resolution_notes = update_data.pop("resolution_notes", None)
+
         for field, value in update_data.items():
             if value is not None and hasattr(entry, field):
                 if isinstance(value, Enum):
                     setattr(entry, field, value.value)
                 else:
                     setattr(entry, field, value)
+
+        # 当状态变更为 resolved/completed 时，自动处理伏笔回收逻辑
+        new_status = update_data.get("status")
+        if new_status is not None:
+            status_val = new_status.value if isinstance(new_status, Enum) else new_status
+            if status_val == "resolved" and entry.category != TimelineEntryCategory.FORESHADOWING.value:
+                # 非伏笔条目不能标记为 resolved，改用 completed
+                entry.status = TimelineEntryStatus.COMPLETED.value
+            if status_val in ("resolved", "completed"):
+                if resolved_chapter_id is not None:
+                    entry.resolved_chapter_id = resolved_chapter_id
+                entry.resolved_at = datetime.now(timezone.utc)
+                if resolution_notes:
+                    if entry.detail_json is None:
+                        entry.detail_json = {}
+                    entry.detail_json["resolution_notes"] = resolution_notes
 
         if entry.original_ai_output is None and entry.source == "ai":
             entry.original_ai_output = current_snapshot
@@ -159,29 +177,6 @@ class TimelineService:
         await self.db.commit()
         await self.db.refresh(entry)
         logger.info(f"Timeline entry updated: id={entry_id}, version={entry.version}, editor={editor}")
-        return entry
-
-    async def resolve_entry(self, entry_id: int, data: TimelineEntryResolve) -> Optional[TimelineEntry]:
-        entry = await self.get_entry(entry_id)
-        if not entry:
-            return None
-
-        if entry.category == TimelineEntryCategory.FORESHADOWING.value:
-            entry.status = TimelineEntryStatus.RESOLVED.value
-        else:
-            entry.status = TimelineEntryStatus.COMPLETED.value
-
-        entry.resolved_chapter_id = data.resolved_chapter_id
-        entry.resolved_at = datetime.now(timezone.utc)
-
-        if data.resolution_notes:
-            if entry.detail_json is None:
-                entry.detail_json = {}
-            entry.detail_json["resolution_notes"] = data.resolution_notes
-
-        await self.db.commit()
-        await self.db.refresh(entry)
-        logger.info(f"Timeline entry resolved: id={entry_id}, status={entry.status}")
         return entry
 
     async def delete_entry(self, entry_id: int) -> bool:

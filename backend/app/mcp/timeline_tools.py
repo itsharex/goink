@@ -14,7 +14,6 @@ from app.timeline.models import TimelineEntry
 from app.timeline.schemas import (
     TimelineEntryCreate,
     TimelineEntryUpdate,
-    TimelineEntryResolve,
 )
 from app.mcp.novel_tools import _invalidate_novel_cache
 from app.timeline.service import TimelineService
@@ -210,7 +209,8 @@ class UpdateTimelineEntryTool(BaseMCPTool):
         "更新已有的时间线条目内容。适用于AI根据新信息修正规划、或应用户要求修改条目时使用。"
         "每次更新会递增版本号并保留原始AI输出（如果之前是AI创建的），方便追踪变更历史。"
         "无需传novel_id，系统会注入当前小说ID。"
-        "\n注意：只能修改标题、描述、详情等字段；要改变状态（如标记已解决）请用 resolve_timeline_entry。"
+        "\n支持状态变更：设置 status=resolved 可标记伏笔回收，status=completed 可标记规划完成，status=abandoned 可废弃条目。"
+        "状态变更时可选传 resolved_chapter_id 和 resolution_notes。"
     )
     category = MCPToolCategory.WRITING_ASSISTANT
     parameters_schema = {
@@ -229,10 +229,12 @@ class UpdateTimelineEntryTool(BaseMCPTool):
             "status": {
                 "type": "string",
                 "enum": ["pending", "active", "completed", "resolved", "abandoned", "deferred"],
-                "description": "新状态"
+                "description": "新状态。resolved=伏笔回收（仅foreshadowing类），completed=规划完成，abandoned=废弃"
             },
             "importance": {"type": "integer", "description": "新的重要程度(1-5)"},
             "tags": {"type": "array", "items": {"type": "string"}, "description": "新的标签列表"},
+            "resolved_chapter_id": {"type": ["integer", "null"], "description": "解决时关联的章节ID（仅状态变更时可选）"},
+            "resolution_notes": {"type": "string", "description": "解决说明（仅状态变更为resolved/completed时可选）"},
         },
         "required": ["entry_id"],
     }
@@ -251,6 +253,8 @@ class UpdateTimelineEntryTool(BaseMCPTool):
         status: Optional[str] = None,
         importance: Optional[int] = None,
         tags: Optional[List[str]] = None,
+        resolved_chapter_id: Optional[int] = None,
+        resolution_notes: Optional[str] = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -275,6 +279,10 @@ class UpdateTimelineEntryTool(BaseMCPTool):
                 update_data["importance"] = importance
             if tags is not None:
                 update_data["tags"] = tags
+            if resolved_chapter_id is not None:
+                update_data["resolved_chapter_id"] = resolved_chapter_id
+            if resolution_notes is not None:
+                update_data["resolution_notes"] = resolution_notes
 
             if not update_data:
                 return MCPToolResult(success=False, error="没有提供更新字段")
@@ -292,64 +300,6 @@ class UpdateTimelineEntryTool(BaseMCPTool):
             )
         except Exception as e:
             return MCPToolResult(success=False, error=f"更新时间线条目失败: {str(e)}")
-
-
-class ResolveTimelineEntryTool(BaseMCPTool):
-    """解决/完成时间线条目"""
-
-    name = "resolve_timeline_entry"
-    description = (
-        "将一条时间线条目标记为已解决/已完成/已废弃。主要用于："
-        "1. 伏笔被回收时标记为resolved；2. 规划事项完成时标记为completed；3. 不再需要的条目标记为abandoned。"
-        "无需传novel_id，系统会注入当前小说ID。"
-        "\n💡 提示：此工具是 update_timeline_entry 的快捷方式（专门用于状态变更），也可以直接用 update_timeline_entry 并设置 status 参数。"
-    )
-    category = MCPToolCategory.WRITING_ASSISTANT
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "entry_id": {"type": "integer", "description": "条目ID（必填）"},
-            "resolved_chapter_id": {"type": ["integer", "null"], "description": "解决时的章节ID（可选，不确定时传null）"},
-            "resolution_notes": {"type": "string", "description": "解决说明（可选）"},
-        },
-        "required": ["entry_id"],
-    }
-
-    async def execute(
-        self,
-        db,
-        novel_id: int,
-        user_id: int,
-        entry_id: int,
-        resolved_chapter_id: Optional[int] = None,
-        resolution_notes: Optional[str] = None,
-        **kwargs
-    ) -> MCPToolResult:
-        try:
-            novel = await verify_novel_ownership(db, novel_id, user_id)
-            if not novel:
-                return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
-            
-            data = TimelineEntryResolve(
-                resolved_chapter_id=resolved_chapter_id,
-                resolution_notes=resolution_notes,
-            )
-            service = TimelineService(db, novel_id)
-            entry = await service.resolve_entry(entry_id, data)
-            if not entry:
-                return MCPToolResult(success=False, error=f"条目 {entry_id} 不存在")
-            await _invalidate_novel_cache(novel_id)
-            return MCPToolResult(
-                success=True,
-                data=_entry_to_dict(entry),
-                metadata={
-                    "tool": self.name,
-                    "novel_id": novel_id,
-                    "new_status": entry.status,
-                }
-            )
-        except Exception as e:
-            return MCPToolResult(success=False, error=f"解决时间线条目失败: {str(e)}")
 
 
 class GetTimelineContextTool(BaseMCPTool):
@@ -433,5 +383,4 @@ def register_timeline_tools(registry: MCPToolRegistry):
     registry.register(GetStoryTimelineTool())
     registry.register(AddTimelineEntryTool())
     registry.register(UpdateTimelineEntryTool())
-    registry.register(ResolveTimelineEntryTool())
     registry.register(GetTimelineContextTool())

@@ -134,12 +134,10 @@ function getToolDisplayName(toolName: string, chapterNumber?: number, chapterTit
     : chapterTitle || ''
 
   const chapterAwareMap: Record<string, (label: string) => string> = {
-    read_chapter_for_edit: (l) => l ? `查看 ${l}` : '读取待编辑原文',
     read_chapter: (l) => l ? `查看 ${l}` : '读取章节正文',
     get_chapter_content: (l) => l ? `查看 ${l}` : '读取章节正文',
     edit_chapter: (l) => l ? `编辑 ${l}` : '编辑章节内容',
     create_new_chapter: (l) => l ? `创建 ${l}` : '创建新章节',
-    get_edit_status: (l) => l ? `查看 ${l} 的修改进度` : '查看编辑状态',
   }
 
   if (chapterAwareMap[toolName]) {

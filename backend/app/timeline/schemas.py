@@ -50,7 +50,7 @@ class TimelineEntryCreate(BaseModel):
 
 
 class TimelineEntryUpdate(BaseModel):
-    """更新时间线条目请求"""
+    """更新时间线条目请求。当 status 设为 resolved/completed 时，自动处理伏笔回收逻辑。"""
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None)
     detail_json: dict[str, Any] | None = Field(default=None)
@@ -60,6 +60,8 @@ class TimelineEntryUpdate(BaseModel):
     importance: int | None = Field(default=None, ge=1, le=5)
     related_entry_ids: list[int] | None = Field(default=None)
     tags: list[str] | None = Field(default=None)
+    resolved_chapter_id: int | None = Field(default=None, description="解决时关联的章节 ID（可选）")
+    resolution_notes: str | None = Field(default=None, description="解决说明（仅 status 为 resolved/completed 时生效）")
 
 
 class TimelineEntryResolve(BaseModel):
