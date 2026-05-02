@@ -75,6 +75,7 @@ interface ToolCallInfo {
 }
 
 interface TurnSegmentText {
+  id: string
   type: 'text'
   content: string
   thinkingContent: string
@@ -83,6 +84,7 @@ interface TurnSegmentText {
 }
 
 interface TurnSegmentTool {
+  id: string
   type: 'tool'
   call: ToolCallInfo
 }
@@ -231,9 +233,18 @@ export default function EditorPage() {
   const pendingMessageRef = useRef<string | null>(null)
   const pendingInterruptMessageRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const turnIdCounter = useRef(0)
+  const segIdCounter = useRef(0)
+  const isUserScrolledUp = useRef(false)
+  const scrollRafId = useRef<number | null>(null)
+  const originalContentRef = useRef(originalContent)
+  const dispatchMessageRef = useRef<((msg: string) => void) | null>(null)
   const updateTurn = useCallback((turnId: string, updater: (turn: ConversationTurn) => ConversationTurn) => {
     setTurns(prev => prev.map(t => t.id === turnId ? updater(t) : t))
   }, [])
+
+  const nextTurnId = useCallback(() => `turn_${++turnIdCounter.current}`, [])
+  const nextSegId = useCallback(() => `seg_${++segIdCounter.current}`, [])
 
   const computedStats = useMemo(() => {
     if (!workingContent) return null
@@ -301,10 +312,27 @@ export default function EditorPage() {
   }, [connected, urlSessionId])
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+    const el = chatContainerRef.current
+    if (!el) return
+    const handleScroll = () => {
+      const threshold = 80
+      isUserScrolledUp.current = el.scrollTop + el.clientHeight < el.scrollHeight - threshold
     }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  useEffect(() => {
+    if (isUserScrolledUp.current) return
+    const el = chatContainerRef.current
+    if (!el) return
+    if (scrollRafId.current) cancelAnimationFrame(scrollRafId.current)
+    scrollRafId.current = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight
+    })
   }, [turns])
+
+  useEffect(() => { originalContentRef.current = originalContent }, [originalContent])
 
   const refreshChapterList = useCallback(async () => {
     if (!novelId) return
@@ -404,6 +432,7 @@ export default function EditorPage() {
                   : JSON.parse(msg.metadata.tool_calls || '[]')
                 toolCalls.forEach((tc: any) => {
                   turn.segments.push({
+                    id: nextSegId(),
                     type: 'tool',
                     call: {
                       tool_name: tc.function?.name || tc.name || 'unknown',
@@ -418,6 +447,7 @@ export default function EditorPage() {
 
               if (msg.content || msg.metadata?.thinking_content) {
                 turn.segments.push({
+                  id: nextSegId(),
                   type: 'text',
                   content: msg.content || '',
                   thinkingContent: msg.metadata?.thinking_content || '',
@@ -437,7 +467,8 @@ export default function EditorPage() {
       case 'chat_started': {
         const m = msg as { type: 'chat_started'; task_id?: string }
         setIsStreaming(true)
-        const turnId = m.task_id || `task_${Date.now()}`
+        isUserScrolledUp.current = false
+        const turnId = m.task_id || nextTurnId()
         currentTurnIdRef.current = turnId
         setTurns(prev => {
           const closed = prev.map(t =>
@@ -464,6 +495,7 @@ export default function EditorPage() {
             }
           } else {
             segs.push({
+              id: nextSegId(),
               type: 'text',
               content: '',
               thinkingContent: m.chunk,
@@ -502,6 +534,7 @@ export default function EditorPage() {
             }
           } else {
             segs.push({
+              id: nextSegId(),
               type: 'text',
               content: m.chunk,
               thinkingContent: '',
@@ -532,7 +565,7 @@ export default function EditorPage() {
         if (pendingInterruptMessageRef.current) {
           const nextMessage = pendingInterruptMessageRef.current
           pendingInterruptMessageRef.current = null
-          dispatchMessage(nextMessage)
+          dispatchMessageRef.current?.(nextMessage)
         }
         break
       }
@@ -583,11 +616,11 @@ export default function EditorPage() {
             if (idx >= 0) {
               const existing = (segs[idx] as TurnSegmentTool).call
               segs[idx] = {
-                type: 'tool',
+                ...segs[idx] as TurnSegmentTool,
                 call: { ...existing, ...toolCall },
               }
             } else {
-              segs.push({ type: 'tool', call: toolCall })
+              segs.push({ id: nextSegId(), type: 'tool', call: toolCall })
             }
             return { ...turn, segments: segs }
           })
@@ -646,7 +679,7 @@ export default function EditorPage() {
         if (m.chapter_id && selectedChapterId !== m.chapter_id) {
           void revealChapterFromTool(m.chapter_id)
         }
-        setOriginalContent(m.diff?.old_content || originalContent)
+        setOriginalContent(m.diff?.old_content || originalContentRef.current)
         setWorkingContent(m.working_content)
         setChangeCount(m.change_count)
         if (m.diff) {
@@ -731,7 +764,7 @@ export default function EditorPage() {
         if (pendingInterruptMessageRef.current) {
           const nextMessage = pendingInterruptMessageRef.current
           pendingInterruptMessageRef.current = null
-          dispatchMessage(nextMessage)
+          dispatchMessageRef.current?.(nextMessage)
         }
         break
       }
@@ -751,12 +784,12 @@ export default function EditorPage() {
         if (pendingInterruptMessageRef.current) {
           const nextMessage = pendingInterruptMessageRef.current
           pendingInterruptMessageRef.current = null
-          dispatchMessage(nextMessage)
+          dispatchMessageRef.current?.(nextMessage)
         }
         break
       }
     }
-  }, [dispatchMessage, originalContent, refreshChapterList, refreshSelectedChapter, selectedChapterId, updateTurn])
+  }, [nextSegId, nextTurnId, refreshChapterList, refreshSelectedChapter, selectedChapterId, updateTurn])
 
   useEffect(() => {
     const unsub = wsEditorService.onMessage(handleMsg)
@@ -831,7 +864,8 @@ export default function EditorPage() {
   }
 
   function dispatchMessage(msg: string) {
-    const turnId = `turn_${Date.now()}`
+    isUserScrolledUp.current = false
+    const turnId = nextTurnId()
     currentTurnIdRef.current = turnId
     setTurns(prev => [...prev, {
       id: turnId,
@@ -857,6 +891,7 @@ export default function EditorPage() {
       setTurns(prev => prev.filter(t => t.id !== turnId))
     }
   }
+  dispatchMessageRef.current = dispatchMessage
 
   const handleEditorChange = (value: string | undefined) => {
     if (!value) return
@@ -1226,11 +1261,11 @@ export default function EditorPage() {
                     </div>
                   )}
 
-                  {turn.segments.map((seg, idx) => {
+                  {turn.segments.map((seg) => {
                     if (seg.type === 'text') {
                       if (!seg.content && !seg.thinkingContent) return null
                       return (
-                        <div key={`text_${idx}`} className={styles.chatTurnAssistant}>
+                        <div key={seg.id} className={styles.chatTurnAssistant}>
                           {seg.thinkingContent && (
                             <details className={`${styles.thinkingBlock} ${!seg.thinkingDone && seg.isStreaming ? styles.thinkingThinking : ''}`} open={seg.isStreaming ? true : !seg.thinkingDone}>
                               <summary className={styles.thinkingSummary}>
@@ -1258,7 +1293,7 @@ export default function EditorPage() {
                     const visual = getActivityVisual(tc.activity_kind)
                     return (
                       <div
-                        key={`tool_${tc.tool_id || `${tc.task_id}_${idx}`}`}
+                        key={seg.id}
                         className={`${styles.toolInlineCompact} ${tc.status === 'executing' ? styles.toolInlineActive : ''}`}
                       >
                         <span className={styles.toolCompactIcon}>{visual.icon}</span>
