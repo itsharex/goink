@@ -269,35 +269,6 @@ async def get_character_detail(
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
 
 
-@router.post("/novels/{novel_id}/memory/search")
-async def search_plot_memory(
-    novel: NovelOwner,
-    db: DBSession,
-    current_user: CurrentUserDep,
-    query: str = Query(..., description="搜索查询文本"),
-    top_k: int = Query(10, ge=1, le=50, description="返回结果数量"),
-    chapter_ids: Optional[str] = Query(None, description="限定章节ID，逗号分隔")
-):
-    ids = None
-    if chapter_ids:
-        ids = [int(x.strip()) for x in chapter_ids.split(",") if x.strip().isdigit()]
-    
-    registry = get_mcp_registry()
-    result = await registry.execute(
-        "search_plot_memory",
-        db=db,
-        user_id=current_user.id,
-        novel_id=novel.id,
-        query=query,
-        top_k=top_k,
-        chapter_ids=ids
-    )
-    
-    if result.success:
-        return ApiResponse.success(result.data)
-    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
-
-
 @router.post("/characters/{character_id}/memory")
 async def get_character_memory(
     character_id: int,
@@ -334,42 +305,6 @@ async def get_character_memory(
     return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
 
 
-@router.post("/chapters/{chapter_id}/context")
-async def get_recent_context(
-    chapter_id: int,
-    db: DBSession,
-    current_user: CurrentUserDep,
-    window_size: int = Query(3, ge=1, le=10, description="前文章节数量"),
-    context_size: int = Query(3000, ge=500, le=10000, description="上下文最大字符数")
-):
-    from app.chapters.models import Chapter
-    from app.core.exceptions import NotFoundException, UnauthorizedException
-    from sqlalchemy import select
-    
-    result = await db.execute(select(Chapter).where(Chapter.id == chapter_id))
-    chapter = result.scalar_one_or_none()
-    if not chapter:
-        raise NotFoundException("章节")
-    
-    result = await db.execute(select(Novel).where(Novel.id == chapter.novel_id))
-    novel = result.scalar_one_or_none()
-    if not novel or novel.author_id != current_user.id:
-        raise UnauthorizedException("无权访问此章节")
-    
-    registry = get_mcp_registry()
-    result = await registry.execute(
-        "get_recent_context",
-        db=db,
-        user_id=current_user.id,
-        novel_id=novel.id,
-        chapter_id=chapter_id,
-        window_size=window_size,
-        context_size=context_size
-    )
-    
-    if result.success:
-        return ApiResponse.success(result.data)
-    return ApiResponse.error("TOOL_ERROR", result.error or "Unknown error")
 
 
 @router.post("/novels/{novel_id}/consistency/character")

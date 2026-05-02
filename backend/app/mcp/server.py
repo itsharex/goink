@@ -179,17 +179,14 @@ async def search_story_memory(
 async def create_character(
     novel_id: int,
     name: str,
-    personality: Optional[str] = None,
-    abilities: Optional[str] = None,
+    personality: Optional[Dict[str, Any]] = None,
+    abilities: Optional[List[str]] = None,
     ctx: Context = None
 ) -> dict:
-    import json as _json
-    _personality = _json.loads(personality) if personality else None
-    _abilities = _json.loads(abilities) if abilities else None
     return await _execute_tool(
         "create_character", ctx,
         novel_id=novel_id, name=name,
-        personality=_personality, abilities=_abilities
+        personality=personality, abilities=abilities
     )
 
 
@@ -198,17 +195,14 @@ async def update_character(
     novel_id: int,
     character_id: int,
     name: Optional[str] = None,
-    personality: Optional[str] = None,
-    abilities: Optional[str] = None,
+    personality: Optional[Dict[str, Any]] = None,
+    abilities: Optional[List[str]] = None,
     ctx: Context|None = None
 ) -> dict:
-    import json as _json
-    _personality = _json.loads(personality) if personality else None
-    _abilities = _json.loads(abilities) if abilities else None
     return await _execute_tool(
         "update_character", ctx,
         novel_id=novel_id, character_id=character_id,
-        name=name, personality=_personality, abilities=_abilities
+        name=name, personality=personality, abilities=abilities
     )
 
 
@@ -263,42 +257,6 @@ async def edit_chapter(
         dry_run=dry_run,
         undo=undo,
         undo_from_snapshot=undo_from_snapshot,
-    )
-
-
-@mcp.tool()
-async def search_plot_memory(
-    novel_id: int,
-    query: str,
-    top_k: int = 10,
-    chapter_ids: Optional[List[int]] = None,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "search_plot_memory",
-        ctx,
-        novel_id=novel_id,
-        query=query,
-        top_k=top_k,
-        chapter_ids=chapter_ids
-    )
-
-
-@mcp.tool()
-async def get_recent_context(
-    novel_id: int,
-    chapter_id: int,
-    window_size: int = 3,
-    context_size: int = 3000,
-    ctx: Context = None
-) -> dict:
-    return await _execute_tool(
-        "get_recent_context",
-        ctx,
-        novel_id=novel_id,
-        chapter_id=chapter_id,
-        window_size=window_size,
-        context_size=context_size
     )
 
 
@@ -499,17 +457,15 @@ async def create_location(
     name: str,
     location_type: Optional[str] = None,
     description: Optional[str] = None,
-    tags: Optional[List] = None,
+    tags: Optional[List[str]] = None,
     parent_location_id: Optional[int] = None,
     ctx: Context = None
 ) -> dict:
-    import json
-    _tags = json.dumps(tags) if tags else None
     return await _execute_tool(
         "create_location", ctx,
         novel_id=novel_id, name=name,
         location_type=location_type, description=description,
-        tags=_tags, parent_location_id=parent_location_id
+        tags=tags, parent_location_id=parent_location_id
     )
 
 
@@ -520,17 +476,15 @@ async def update_location(
     name: Optional[str] = None,
     location_type: Optional[str] = None,
     description: Optional[str] = None,
-    tags: Optional[List] = None,
+    tags: Optional[List[str]] = None,
     parent_location_id: Optional[int] = None,
     ctx: Context = None
 ) -> dict:
-    import json
-    _tags = json.dumps(tags) if tags else None
     return await _execute_tool(
         "update_location", ctx,
         novel_id=novel_id, location_id=location_id,
         name=name, location_type=location_type, description=description,
-        tags=_tags, parent_location_id=parent_location_id
+        tags=tags, parent_location_id=parent_location_id
     )
 
 

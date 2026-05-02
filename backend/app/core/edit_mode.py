@@ -121,11 +121,13 @@ class EditModeConfig:
             "get_novel_info", "get_chapter_list", "get_chapter_content", "get_creative_profile",
             "get_characters",
             "search_story_memory",
+            "get_timeline", "run_review",
         },
         EditMode.PLAN: {
             "get_novel_info", "get_chapter_list", "get_chapter_content", "get_creative_profile",
             "get_characters",
             "search_story_memory",
+            "get_timeline",
         }
     }
     
