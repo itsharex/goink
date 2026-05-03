@@ -550,5 +550,15 @@ async def update_story_arc(
     )
 
 
+@mcp.tool()
+async def get_story_state(novel_id: int, ctx: Context = None) -> dict:
+    return await _execute_tool("get_story_state", ctx, novel_id=novel_id)
+
+
+@mcp.tool()
+async def update_story_state(novel_id: int, content: str, ctx: Context = None) -> dict:
+    return await _execute_tool("update_story_state", ctx, novel_id=novel_id, content=content)
+
+
 def get_mcp_transport():
     return mcp.streamable_http_app()

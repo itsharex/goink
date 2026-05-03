@@ -1498,6 +1498,18 @@ def _format_creative_profile_for_prompt(profile: NovelCreativeProfile) -> str:
     if llm_brief:
         return str(llm_brief).strip()
     parts: List[str] = []
+    if profile.premise:
+        parts.append(f"- 故事前提：{profile.premise}")
+    if profile.theme:
+        parts.append(f"- 主题：{profile.theme}")
+    if profile.beginning:
+        parts.append(f"- 开头：{profile.beginning}")
+    if profile.middle:
+        parts.append(f"- 中段：{profile.middle}")
+    if profile.climax:
+        parts.append(f"- 高潮：{profile.climax}")
+    if profile.ending:
+        parts.append(f"- 结尾：{profile.ending}")
     if profile.author_intent:
         parts.append(f"- 长期作者意图：{profile.author_intent}")
     if profile.preferred_tone:

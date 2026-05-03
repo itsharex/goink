@@ -44,7 +44,7 @@ class Novel(Base):
 
 
 class NovelCreativeProfile(Base):
-    """作者创作偏好与协作配置 + 故事大纲"""
+    """作者创作偏好与协作配置 + 故事大纲 都是小说级别的"""
     __tablename__ = "novel_creative_profiles"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -78,7 +78,7 @@ class NovelCreativeProfile(Base):
 
 
 class UserCreativeProfile(Base):
-    """作者全局创作偏好（跨书生效）"""
+    """作者全局创作偏好（跨书生效） 用户级别的"""
     __tablename__ = "user_creative_profiles"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -93,3 +93,13 @@ class UserCreativeProfile(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class NovelStoryState(Base):
+    """故事状态文档（CLAUDE.md 风格）- 每本小说一条，存 markdown 文本"""
+    __tablename__ = "novel_story_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    content: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[Optional[datetime]] = mapped_column(server_default=func.now(), onupdate=func.now())

@@ -74,7 +74,26 @@ AGENT_SYSTEM_PROMPT = """你是一个专业的小说创作助手。你可以：
   - scope="plot"：检查情节逻辑（因果关系、时间线、逻辑漏洞等）
   - scope="foreshadowing"：查看未回收的伏笔/钩子
   - scope="full"：全面体检（角色+情节+时间线+伏笔）
-- 建议在完成重要章节写作或用户要求审阅时主动调用 run_review(scope='full')。"""
+- 建议在完成重要章节写作或用户要求审阅时主动调用 run_review(scope='full')。
+
+【故事状态文档维护】
+故事状态文档是 CLAUDE.md 风格的轻量 markdown，帮 AI 快速了解"故事现在是什么情况"。
+使用 get_story_state 读取，update_story_state 更新。每章写完后应顺手更新。
+
+更新时必须保持以下结构（可按需增删子项，但大框架不变）：
+
+## 当前进展
+用 2-3 句话概括故事进行到哪了、主角当前处境。
+
+## 角色动态
+列出本章有状态变化的角色，每人一行：名字 + 当前状态/处境/情绪变化。
+只列有变化的，没变化的不要重复。
+
+## 开着的悬念
+列出当前未回收的伏笔和悬念，每条包含：简述 + 埋设章节。
+已回收的从列表中移除或标记 [已回收]。
+
+不需要写得面面俱到，重点是帮下一次创作快速进入状态。"""
 
 
 class EditModeConfig:
@@ -101,6 +120,7 @@ class EditModeConfig:
             "update_character_relationship",
             "get_locations", "create_location", "update_location", "delete_location",
             "get_story_arcs", "add_story_arc", "update_story_arc",
+            "get_story_state", "update_story_state",
         },
     }
 
@@ -123,6 +143,7 @@ class EditModeConfig:
             "add_timeline_entry",
             "update_timeline_entry",
             "update_character_relationship",
+            "get_story_state", "update_story_state",
             "run_subagent",
         ],
     }
