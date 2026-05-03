@@ -35,8 +35,10 @@ from app.core.prompt_templates import (
 )
 from app.chapters.models import Chapter
 from app.core.text_utils import count_words, compute_text_stats
-from app.novels.models import NovelCreativeProfile
+from app.novels.models import NovelCreativeProfile, NovelStoryState, ReaderPerspective
 from app.novels.models import Novel
+from app.characters.models import Character
+from app.locations.models import Location
 from app.editor.service import get_edit_session_manager
 from app.mcp.registry import get_mcp_registry
 from app.generation.service import ChapterGenerationService
@@ -882,6 +884,8 @@ async def _run_chat_with_tools(
                         session = await session_manager.compressor.compress_with_llm(session)
                     else:
                         session = session_manager.compressor.compress(session)
+                    # 压缩后清除快照，下次重新生成
+                    session.metadata.pop("novel_context_snapshot", None)
                 
                 context_builder = ContextBuilder(db, novel_id)
                 retrieved = await context_builder.search_relevant_context(query=user_message, top_k=5)
@@ -925,6 +929,17 @@ async def _run_chat_with_tools(
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }, websocket)
             
+            # --- 构建/获取小说上下文快照（system2）---
+            novel_context_snapshot = session.metadata.get("novel_context_snapshot")
+            if not novel_context_snapshot:
+                try:
+                    novel_context_snapshot = await _build_novel_context_snapshot(db, novel_id)
+                    if novel_context_snapshot:
+                        session.metadata["novel_context_snapshot"] = novel_context_snapshot
+                except Exception as exc:
+                    logger.warning(f"Failed to build novel context snapshot: {exc}")
+                    novel_context_snapshot = ""
+
             all_tools = registry.get_openai_functions() if tools_enabled else None
             if all_tools:
                 selected_tool_names = EditModeConfig.get_llm_tools_for_message(edit_mode, user_message)
@@ -938,7 +953,7 @@ async def _run_chat_with_tools(
                 tools = None
             
             # --- 构建消息结构 ---
-            # 稳定 system message（base prompt + creative profile，跨工具循环不变）
+            # system1：基础指令 + 创作偏好（永远不变）
             base_system_prompt = EditModeConfig.get_system_prompt(edit_mode)
             stable_sections = [base_system_prompt]
             if creative_profile_text:
@@ -947,6 +962,12 @@ async def _run_chat_with_tools(
                 "role": "system",
                 "content": "\n\n".join(s for s in stable_sections if s).strip()
             }]
+            # system2：小说上下文快照（对话开始时注入，压缩时才更新）
+            if novel_context_snapshot:
+                prefix_messages.append({
+                    "role": "system",
+                    "content": novel_context_snapshot,
+                })
 
             # 动态内容（conditional_reminders + RAG）追加到用户消息末尾
             user_parts = [user_message]
@@ -1523,6 +1544,102 @@ def _format_creative_profile_for_prompt(profile: NovelCreativeProfile) -> str:
     for item in (profile.must_avoid or [])[:8]:
         parts.append(f"- 必须长期避免：{item}")
     return "\n".join(parts)
+
+
+async def _build_novel_context_snapshot(db, novel_id: int) -> str:
+    """构建小说上下文快照（system2），对话开始时注入一次，压缩时才重新生成"""
+    sections: List[str] = []
+
+    # 1. 故事状态文档
+    state_result = await db.execute(
+        select(NovelStoryState).where(NovelStoryState.novel_id == novel_id)
+    )
+    story_state = state_result.scalar_one_or_none()
+    if story_state and story_state.content.strip():
+        sections.append(f"## 故事状态\n{story_state.content.strip()}")
+
+    # 2. 读者认知
+    rp_result = await db.execute(
+        select(ReaderPerspective)
+        .where(
+            ReaderPerspective.novel_id == novel_id,
+            ReaderPerspective.revealed_chapter.is_(None),
+        )
+        .order_by(ReaderPerspective.type, ReaderPerspective.planted_chapter)
+    )
+    entries = rp_result.scalars().all()
+    known = [e for e in entries if e.type == "known"]
+    suspenses = [e for e in entries if e.type == "suspense"]
+    misconceptions = [e for e in entries if e.type == "misconception"]
+
+    if known or suspenses or misconceptions:
+        rp_lines = ["## 读者认知"]
+        if known:
+            rp_lines.append("### 已知信息")
+            for e in known:
+                rp_lines.append(f"- {e.content} [第{e.planted_chapter}章起]")
+        if suspenses:
+            rp_lines.append("### 活跃悬念")
+            for e in suspenses:
+                ref = f"（第{e.planted_chapter}章种下"
+                if e.last_mentioned_chapter:
+                    ref += f"，最近提及：第{e.last_mentioned_chapter}章"
+                ref += "）"
+                rp_lines.append(f"- {e.content}{ref}")
+        if misconceptions:
+            rp_lines.append("### 读者误知")
+            for e in misconceptions:
+                truth = f" → 实际：{e.related_truth}" if e.related_truth else ""
+                rp_lines.append(f"- {e.content}{truth}")
+        sections.append("\n".join(rp_lines))
+
+    # 3. 角色索引
+    char_result = await db.execute(
+        select(Character.id, Character.name, Character.personality)
+        .where(Character.novel_id == novel_id)
+        .limit(30)
+    )
+    characters = char_result.all()
+    if characters:
+        char_lines = ["## 角色索引"]
+        for cid, name, personality in characters:
+            brief = ""
+            if personality and isinstance(personality, dict):
+                brief = personality.get("brief") or personality.get("summary") or ""
+                if not brief:
+                    traits = personality.get("traits") or personality.get("性格") or []
+                    if isinstance(traits, list) and traits:
+                        brief = "、".join(str(t) for t in traits[:3])
+            if brief:
+                char_lines.append(f"- {name}：{brief}")
+            else:
+                char_lines.append(f"- {name}")
+        sections.append("\n".join(char_lines))
+
+    # 4. 世界设定概要（地点）
+    loc_result = await db.execute(
+        select(Location.name, Location.location_type, Location.description)
+        .where(Location.novel_id == novel_id)
+        .limit(20)
+    )
+    locations = loc_result.all()
+    if locations:
+        loc_lines = ["## 世界设定"]
+        for name, loc_type, desc in locations:
+            brief = (desc or "")[:80]
+            if brief:
+                loc_lines.append(f"- {name}（{loc_type}）：{brief}")
+            else:
+                loc_lines.append(f"- {name}（{loc_type}）")
+        sections.append("\n".join(loc_lines))
+
+    if not sections:
+        return ""
+
+    return (
+        "【小说上下文快照 — 对话开始时生成，仅作参考。如你在对话中做了修改，以后边的工具调用结果为准。】\n\n"
+        + "\n\n".join(sections)
+    )
 
 
 async def _run_generation_task(
