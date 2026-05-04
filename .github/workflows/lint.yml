@@ -12,4 +12,3 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v3
-      - run: ruff check --select UP045,UP006,UP035,F401

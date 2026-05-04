@@ -1,0 +1,5 @@
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["UP045", "UP006", "UP035", "F401"]
