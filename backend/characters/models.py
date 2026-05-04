@@ -4,7 +4,7 @@
 from sqlalchemy import String, Text, Integer, JSON, ForeignKey, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 from core.database import Base
 
@@ -16,9 +16,9 @@ class Character(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    personality: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-    relationships: Mapped[Optional[Dict[str, List[int]]]] = mapped_column(JSON)
-    abilities: Mapped[Optional[List[str]]] = mapped_column(JSON)
+    personality: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    relationships: Mapped[dict[str, list[int]] | None] = mapped_column(JSON)
+    abilities: Mapped[list[str] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     novel: Mapped["Novel"] = relationship(back_populates="characters")
@@ -39,14 +39,14 @@ class CharacterRelation(Base):
     target_character_id: Mapped[int] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
 
     relationship_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
     intensity: Mapped[int] = mapped_column(Integer, default=3)
     status: Mapped[str] = mapped_column(String(30), default="active")
 
-    established_chapter_id: Mapped[Optional[int]] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
-    evolved_from_id: Mapped[Optional[int]] = mapped_column(ForeignKey("character_relations.id", ondelete="SET NULL"))
+    established_chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
+    evolved_from_id: Mapped[int | None] = mapped_column(ForeignKey("character_relations.id", ondelete="SET NULL"))
 
-    extra_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

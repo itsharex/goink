@@ -1,8 +1,7 @@
 """
 统一响应格式
 """
-from typing import Any, Optional
-from fastapi import status
+from typing import Any
 from fastapi.responses import JSONResponse
 
 class ApiResponse:
@@ -15,7 +14,7 @@ class ApiResponse:
         }
     
     @staticmethod
-    def error(code: str, message: str, details: Optional[Any] = None, status_code: int = 400):
+    def error(code: str, message: str, details: Any | None = None, status_code: int = 400):
         return JSONResponse(
             status_code=status_code,
             content={

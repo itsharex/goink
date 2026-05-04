@@ -2,7 +2,6 @@
 记忆检索类MCP工具
 提供记忆检索的标准接口
 """
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry

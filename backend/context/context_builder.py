@@ -5,7 +5,7 @@
 import asyncio
 import logging
 import hashlib
-from typing import List, Dict, Any, Optional
+from typing import Any
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -35,7 +35,7 @@ class ContextCache:
         key_data = f"{args}_{sorted(kwargs.items())}"
         return hashlib.md5(key_data.encode()).hexdigest()
     
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """获取缓存"""
         if key in self._cache:
             timestamp = self._timestamps.get(key)
@@ -126,7 +126,7 @@ class ContextBuilder:
     def _generate_layer_cache_key(
         self,
         layer: str,
-        chapter_number: Optional[int] = None,
+        chapter_number: int | None = None,
         context_size: int = 3000,
         **extra_params
     ) -> str:
@@ -141,7 +141,7 @@ class ContextBuilder:
         key_str = "_".join(f"{k}={v}" for k, v in sorted(base_key_data.items()))
         return f"{layer}_{hashlib.md5(key_str.encode()).hexdigest()}"
     
-    async def _fetch_layer_static(self) -> Optional[str]:
+    async def _fetch_layer_static(self) -> str | None:
         """
         Layer 1 (Static): 小说标题、简介
         变化频率：极低（仅当用户手动修改时）
@@ -171,7 +171,7 @@ class ContextBuilder:
             
         return result
     
-    async def _fetch_layer_stable(self) -> Optional[str]:
+    async def _fetch_layer_stable(self) -> str | None:
         """
         Layer 2 (Stable): 角色信息、人物关系网络
         变化频率：低（角色增删改时变化）
@@ -203,8 +203,8 @@ class ContextBuilder:
     
     async def _fetch_layer_sliding(
         self,
-        target_chapter_number: Optional[int] = None
-    ) -> Optional[str]:
+        target_chapter_number: int | None = None
+    ) -> str | None:
         """
         Layer 3 (Sliding): 前文摘要
         变化频率：中（随章节推进滚动）
@@ -237,8 +237,8 @@ class ContextBuilder:
     
     async def _fetch_layer_dynamic(
         self,
-        target_chapter_number: Optional[int] = None
-    ) -> Optional[str]:
+        target_chapter_number: int | None = None
+    ) -> str | None:
         """
         Layer 4 (Dynamic): 情节线索、故事时间线
         变化频率：高（每次创作都可能更新）
@@ -261,12 +261,12 @@ class ContextBuilder:
     
     async def build_writing_context(
         self,
-        chapter_number: Optional[int] = None,
-        chapter_id: Optional[int] = None,
+        chapter_number: int | None = None,
+        chapter_id: int | None = None,
         context_size: int = 3000,
         include_previous_chapters: bool = True,
         include_characters: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         构建写作上下文 - 分层缓存优化版
 
@@ -369,8 +369,8 @@ class ContextBuilder:
         return result_data
     def _smart_truncate_by_layers(
         self,
-        layer_parts: List[str],
-        layer_order: List[str],
+        layer_parts: list[str],
+        layer_order: list[str],
         max_size: int
     ) -> str:
         """
@@ -436,9 +436,9 @@ class ContextBuilder:
         self,
         query: str,
         top_k: int = 5,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         min_relevance_score: float = 0.5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         搜索相关上下文 - 优化版
         
@@ -513,7 +513,7 @@ class ContextBuilder:
             logger.error(f"❌ Vector search failed: {e}")
             return []
     
-    def _mmr_rerank(self, results: List[Dict], final_k: int, lambda_param: float = 0.7) -> List[Dict]:
+    def _mmr_rerank(self, results: list[dict], final_k: int, lambda_param: float = 0.7) -> list[dict]:
         """
         Maximal Marginal Relevance (MMR) 重排序算法
         
@@ -527,7 +527,6 @@ class ContextBuilder:
         if len(results) <= final_k:
             return results
         
-        import numpy as np
         
         selected = []
         remaining = list(range(len(results)))
@@ -575,7 +574,7 @@ class ContextBuilder:
         
         return jaccard
     
-    async def _get_previous_chapters_summary(self, current_chapter_num: int) -> Optional[str]:
+    async def _get_previous_chapters_summary(self, current_chapter_num: int) -> str | None:
         """获取前几章的摘要"""
         result = await self.db.execute(
             select(Chapter).where(
@@ -598,7 +597,7 @@ class ContextBuilder:
         
         return "\n".join(summaries) if summaries else None
 
-    async def _get_characters_context(self) -> Optional[str]:
+    async def _get_characters_context(self) -> str | None:
         """获取角色上下文（原始版本，保持兼容性）"""
         result = await self.db.execute(
             select(Character).where(Character.novel_id == self.novel_id)
@@ -619,7 +618,7 @@ class ContextBuilder:
         
         return "\n".join(char_info)
     
-    async def _get_characters_context_sorted(self) -> Optional[str]:
+    async def _get_characters_context_sorted(self) -> str | None:
         """
         获取角色上下文（排序版本）
         按名称排序以确保缓存键稳定
@@ -644,7 +643,7 @@ class ContextBuilder:
             char_info.append(info)
         
         return "\n".join(char_info)
-    async def _get_characters_list(self) -> List[Dict[str, Any]]:
+    async def _get_characters_list(self) -> list[dict[str, Any]]:
         """获取角色列表"""
         result = await self.db.execute(
             select(Character).where(Character.novel_id == self.novel_id)
@@ -661,7 +660,7 @@ class ContextBuilder:
             for char in characters
         ]
     
-    async def _get_plot_hints(self) -> List[Dict[str, Any]]:
+    async def _get_plot_hints(self) -> list[dict[str, Any]]:
         """获取情节提示（从 TimelineEntry 的活跃条目中提取）"""
         result = await self.db.execute(
             select(TimelineEntry).where(
@@ -681,7 +680,7 @@ class ContextBuilder:
             for entry in entries
         ]
     
-    async def _get_timeline_context(self, current_chapter: Optional[int] = None) -> Optional[str]:
+    async def _get_timeline_context(self, current_chapter: int | None = None) -> str | None:
         try:
             from timeline.service import TimelineService
             service = TimelineService(self.db, self.novel_id)
@@ -696,7 +695,7 @@ class ContextBuilder:
             logger.warning(f"Timeline context injection failed (non-fatal): {exc}")
             return None
     
-    async def _get_relation_network_context(self) -> Optional[str]:
+    async def _get_relation_network_context(self) -> str | None:
         """获取人物关系概要（原始版本，保持兼容性）"""
         try:
             from characters.service import CharacterService
@@ -718,7 +717,7 @@ class ContextBuilder:
             logger.warning(f"Relation network context injection failed (non-fatal): {exc}")
             return None
     
-    async def _get_relation_network_context_sorted(self) -> Optional[str]:
+    async def _get_relation_network_context_sorted(self) -> str | None:
         """
         获取人物关系概要（排序版本）
         按source_name和target_name排序以确保缓存键稳定
@@ -755,7 +754,7 @@ def _format_creative_profile_for_prompt(profile: NovelCreativeProfile) -> str:
     llm_brief = (profile.extra_metadata or {}).get("llm_brief")
     if llm_brief:
         return str(llm_brief).strip()
-    parts: List[str] = []
+    parts: list[str] = []
     if profile.premise:
         parts.append(f"- 故事前提：{profile.premise}")
     if profile.theme:
@@ -785,7 +784,7 @@ def _format_creative_profile_for_prompt(profile: NovelCreativeProfile) -> str:
 
 async def _build_novel_context_snapshot(db, novel_id: int) -> str:
     """构建小说上下文快照（system2），对话开始时注入一次，压缩时才重新生成"""
-    sections: List[str] = []
+    sections: list[str] = []
 
     # 1. 故事状态文档
     state_result = await db.execute(

@@ -8,15 +8,15 @@ import logging
 import hashlib
 import httpx
 import json
-from typing import Dict, Any, List, Optional, AsyncGenerator
-from dataclasses import dataclass, field
+from typing import Any
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from collections import defaultdict
 
-from context.prompt_templates import LLMModel
 from core.exceptions import SystemError
 from chat.session_manager import (
-    Session, SessionManager, SessionConfig, MessageRole,
+    Session, MessageRole,
     session_manager
 )
 from sessions.session_storage import session_storage
@@ -28,7 +28,7 @@ class PromptCacheMonitor:
     """Prompt Cache命中率监控器"""
     
     def __init__(self):
-        self._stats: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+        self._stats: dict[str, dict[str, Any]] = defaultdict(lambda: {
             "total_calls": 0,
             "cache_hit_calls": 0,
             "total_input_tokens": 0,
@@ -37,7 +37,7 @@ class PromptCacheMonitor:
             "last_seen": None
         })
     
-    def compute_prefix_hash(self, messages: List[Dict], tools: Optional[List] = None) -> str:
+    def compute_prefix_hash(self, messages: list[dict], tools: list | None = None) -> str:
         """计算消息前缀的hash（用于识别是否命中缓存）"""
         tool_names = []
         if tools:
@@ -57,7 +57,7 @@ class PromptCacheMonitor:
         self,
         model: str,
         prefix_hash: str,
-        usage: Optional[Dict[str, Any]] = None
+        usage: dict[str, Any] | None = None
     ):
         """记录一次API调用及其缓存情况"""
         stats = self._stats[model]
@@ -88,7 +88,7 @@ class PromptCacheMonitor:
                     f"tokens={prompt_tokens}"
                 )
     
-    def get_stats(self, model: str) -> Dict[str, Any]:
+    def get_stats(self, model: str) -> dict[str, Any]:
         """获取指定模型的缓存统计"""
         stats = self._stats.get(model, {})
         total_calls = stats.get("total_calls", 0)
@@ -108,7 +108,7 @@ class PromptCacheMonitor:
             "last_call": stats.get("last_seen")
         }
     
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """获取所有模型的汇总统计"""
         summary = {}
         for model in self._stats.keys():
@@ -141,7 +141,7 @@ def _provider_name(model: str) -> str:
     return "DeepSeek"
 
 
-def _extract_error_message(payload: Dict[str, Any]) -> Optional[str]:
+def _extract_error_message(payload: dict[str, Any]) -> str | None:
     error = payload.get("error")
     if isinstance(error, dict):
         return error.get("message") or error.get("code")
@@ -157,7 +157,7 @@ _REASONING_MODELS = {
 
 
 def _apply_reasoning_params(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     model: str,
     *,
     thinking_enabled: bool | None = None,
@@ -243,8 +243,8 @@ class LLMService:
         
         logger.info(f"LLM Service initialized, default model: {self.config.default_model}, GLM model: {self.config.glm_model}")
 
-    def get_available_models(self) -> List[Dict[str, Any]]:
-        models: List[Dict[str, Any]] = []
+    def get_available_models(self) -> list[dict[str, Any]]:
+        models: list[dict[str, Any]] = []
         if self.config.api_key:
             models.append({"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "provider": "DeepSeek", "supports_thinking": True})
             models.append({"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "DeepSeek", "supports_thinking": True})
@@ -253,7 +253,7 @@ class LLMService:
             models.append({"id": self.config.glm_model, "name": f"GLM {label}", "provider": "GLM", "supports_thinking": False})
         return models
 
-    def _get_model_config(self, model: Optional[str] = None) -> tuple[str, str, str]:
+    def _get_model_config(self, model: str | None = None) -> tuple[str, str, str]:
         if not model:
             model = self.config.default_model
 
@@ -271,10 +271,10 @@ class LLMService:
         self,
         *,
         selected_model: str,
-        status_code: Optional[int] = None,
-        response_text: Optional[str] = None,
-        response_json: Optional[Dict[str, Any]] = None,
-        request_error: Optional[Exception] = None
+        status_code: int | None = None,
+        response_text: str | None = None,
+        response_json: dict[str, Any] | None = None,
+        request_error: Exception | None = None
     ) -> LLMServiceError:
         provider = _provider_name(selected_model)
         upstream_message = _extract_error_message(response_json or {})
@@ -323,16 +323,16 @@ class LLMService:
     
     async def chat_completion(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         stream: bool = False,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        response_format: Optional[Dict[str, Any]] = None,
+        tools: list[dict[str, Any]] | None = None,
+        response_format: dict[str, Any] | None = None,
         reasoning_effort: str | None = None,
         thinking_enabled: bool | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         api_base, api_key, selected_model = self._get_model_config(model)
         
         url = self._build_chat_url(api_base, selected_model)
@@ -462,11 +462,11 @@ class LLMService:
     async def generate_text(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        response_format: Optional[Dict[str, Any]] = None,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
         reasoning_effort: str | None = None,
         thinking_enabled: bool | None = None,
     ) -> str:
@@ -500,11 +500,11 @@ class LLMService:
     async def generate_json(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        model: Optional[str] = None,
+        system_prompt: str | None = None,
+        model: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 1024
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -539,10 +539,10 @@ class LLMService:
     async def generate_stream(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         reasoning_effort: str | None = None,
         thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[str, None]:
@@ -630,8 +630,8 @@ class LLMService:
         self,
         session: Session,
         user_message: str,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
+        model: str | None = None,
+        temperature: float | None = None,
         stream: bool = False
     ) -> AsyncGenerator[str, None] | str:
         session_manager.add_message(session, MessageRole.USER, user_message)
@@ -665,9 +665,9 @@ class LLMService:
     async def _stream_with_session(
         self,
         session: Session,
-        messages: List[Dict[str, str]],
-        model: Optional[str],
-        temperature: Optional[float]
+        messages: list[dict[str, str]],
+        model: str | None,
+        temperature: float | None
     ) -> AsyncGenerator[str, None]:
         selected_model = model or self.config.default_model
         
@@ -739,15 +739,15 @@ class LLMService:
     
     async def chat_stream_with_tools(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        temperature: Optional[float] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
         max_tool_iterations: int = 5,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         reasoning_effort: str | None = None,
         thinking_enabled: bool | None = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         支持工具调用的流式对话
         

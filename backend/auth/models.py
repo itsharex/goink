@@ -2,7 +2,7 @@
 认证模块 - 数据库模型
 """
 from sqlalchemy import String, Index, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 
 from core.database import Base

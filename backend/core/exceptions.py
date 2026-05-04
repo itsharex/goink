@@ -14,7 +14,7 @@
       ├── VectorStoreError
       └── ConfigurationError
 """
-from fastapi import HTTPException, status
+from fastapi import status
 
 
 class BusinessError(Exception):

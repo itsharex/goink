@@ -2,7 +2,6 @@
 写作Agent - 负责章节内容生成
 """
 import logging
-from typing import Dict, Any, Optional
 
 from .base import BaseAgent, AgentTask, AgentResult, AgentRole, TaskType, SubAgentSpec
 from .registry import register_agent

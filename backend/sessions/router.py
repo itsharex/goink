@@ -4,13 +4,12 @@
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body
-from typing import Optional, List
 
 from core.response import ApiResponse
 from core.database import DBSession
 from core.auth import CurrentUserDep
 from chat.session_manager import (
-    Session, MessageRole,
+    MessageRole,
     NovelContext, ChapterContext,
     session_manager
 )
@@ -28,8 +27,8 @@ async def create_session(
     db: DBSession,
     novel_id: int = Body(..., description="小说ID"),
     model: str = Body("deepseek-v4-flash", description="LLM模型"),
-    title: Optional[str] = Body(None, description="会话标题"),
-    subtitle: Optional[str] = Body(None, description="会话副标题"),
+    title: str | None = Body(None, description="会话标题"),
+    subtitle: str | None = Body(None, description="会话副标题"),
 ):
     """创建新会话"""
     from novels.models import Novel
@@ -83,7 +82,7 @@ async def create_session(
 @router.get("/list")
 async def list_sessions(
     user: CurrentUserDep,
-    novel_id: Optional[int] = Query(None, description="按小说ID过滤"),
+    novel_id: int | None = Query(None, description="按小说ID过滤"),
     limit: int = Query(20, ge=1, le=100),
 ):
     """列出用户会话"""
@@ -198,7 +197,7 @@ async def update_session_title(
     user: CurrentUserDep,
     session_id: str,
     title: str = Body(..., embed=True, description="会话标题"),
-    subtitle: Optional[str] = Body(None, embed=True, description="会话副标题")
+    subtitle: str | None = Body(None, embed=True, description="会话副标题")
 ):
     """更新会话标题"""
     session = await session_manager.load_session(session_id)
@@ -323,8 +322,8 @@ async def update_chapter_context(
     chapter_title: str = Body(""),
     previous_summary: str = Body(""),
     current_outline: str = Body(""),
-    key_events: List[str] = Body(default_factory=list),
-    focus_characters: List[str] = Body(default_factory=list)
+    key_events: list[str] = Body(default_factory=list),
+    focus_characters: list[str] = Body(default_factory=list)
 ):
     """更新章节级上下文"""
     session = await session_manager.load_session(session_id)

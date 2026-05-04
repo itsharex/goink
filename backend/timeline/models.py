@@ -4,10 +4,11 @@ TimelineEntry: 统一的时间线条目，替代分散的 Foreshadowing 系统
 """
 from __future__ import annotations
 
+
 from sqlalchemy import String, Text, Integer, ForeignKey, JSON, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 import enum
 
 from core.database import Base
@@ -51,37 +52,37 @@ class TimelineEntry(Base):
     status: Mapped[str] = mapped_column(String(50), default=TimelineEntryStatus.PENDING.value, index=True)
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    detail_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    description: Mapped[str | None] = mapped_column(Text)
+    detail_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
-    target_chapter: Mapped[Optional[int]] = mapped_column(Integer, index=True)
-    time_horizon: Mapped[Optional[str]] = mapped_column(String(20))
+    target_chapter: Mapped[int | None] = mapped_column(Integer, index=True)
+    time_horizon: Mapped[str | None] = mapped_column(String(20))
 
-    arc_id: Mapped[Optional[int]] = mapped_column(ForeignKey("story_arcs.id", ondelete="SET NULL"), index=True)
+    arc_id: Mapped[int | None] = mapped_column(ForeignKey("story_arcs.id", ondelete="SET NULL"), index=True)
     sequence: Mapped[int] = mapped_column(Integer, default=0)
 
     importance: Mapped[int] = mapped_column(Integer, default=3)
     source: Mapped[str] = mapped_column(String(50), default="ai")
-    source_chapter_id: Mapped[Optional[int]] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
+    source_chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
 
-    resolved_chapter_id: Mapped[Optional[int]] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
-    related_entry_ids: Mapped[Optional[List[int]]] = mapped_column(JSON)
-    tags: Mapped[Optional[List[str]]] = mapped_column(JSON)
+    resolved_chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
+    related_entry_ids: Mapped[list[int] | None] = mapped_column(JSON)
+    tags: Mapped[list[str] | None] = mapped_column(JSON)
 
     version: Mapped[int] = mapped_column(Integer, default=1)
-    last_editor: Mapped[Optional[str]] = mapped_column(String(50))
-    original_ai_output: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    last_editor: Mapped[str | None] = mapped_column(String(50))
+    original_ai_output: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
-    extra_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
-    resolved_at: Mapped[Optional[datetime]] = mapped_column()
+    resolved_at: Mapped[datetime | None] = mapped_column()
 
     novel: Mapped["Novel"] = relationship(back_populates="timeline_entries")
     source_chapter: Mapped["Chapter"] = relationship(foreign_keys=[source_chapter_id])
     resolved_chapter: Mapped["Chapter"] = relationship(foreign_keys=[resolved_chapter_id])
-    arc: Mapped[Optional["StoryArc"]] = relationship(foreign_keys=[arc_id])
+    arc: Mapped["StoryArc | None"] = relationship(foreign_keys=[arc_id])
 
     __table_args__ = (
         Index('idx_timeline_novel_category', 'novel_id', 'category'),

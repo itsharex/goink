@@ -1,14 +1,12 @@
 """
 文本编辑API路由 - 副本编辑机制
 """
-from fastapi import APIRouter, Query, Body
-from typing import Optional
+from fastapi import APIRouter, Body
 
 from core.response import ApiResponse
 from core.database import DBSession
 from core.auth import CurrentUserDep
-from editor.service import EditSessionManager, get_edit_session_manager
-from editor.models import EditSession, EditChange
+from editor.service import get_edit_session_manager
 from chapters.models import Chapter
 from novels.models import Novel
 from sqlalchemy import select
@@ -81,9 +79,9 @@ async def apply_edit(
     edit_session_id: str,
     change_type: str = Body(..., description="变更类型: full_replace/partial_edit/insert/delete"),
     new_content: str = Body(..., description="新内容"),
-    start_line: Optional[int] = Body(None, description="起始行号"),
-    end_line: Optional[int] = Body(None, description="结束行号"),
-    reason: Optional[str] = Body(None, description="修改原因"),
+    start_line: int | None = Body(None, description="起始行号"),
+    end_line: int | None = Body(None, description="结束行号"),
+    reason: str | None = Body(None, description="修改原因"),
     source: str = Body("ai", description="来源: ai/user")
 ):
     """

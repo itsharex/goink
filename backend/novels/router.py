@@ -3,7 +3,6 @@
 """
 from fastapi import APIRouter, Query
 from sqlalchemy import select, func
-from typing import Optional
 
 from core.response import ApiResponse
 from core.database import DBSession
@@ -22,9 +21,9 @@ async def get_novels(
     current_user: CurrentUserDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: Optional[str] = None,
-    genre: Optional[str] = None,
-    search: Optional[str] = Query(None, max_length=100)
+    status: str | None = None,
+    genre: str | None = None,
+    search: str | None = Query(None, max_length=100)
 ):
     """
     获取小说列表（仅返回当前用户的小说）

@@ -1,7 +1,6 @@
 """
 地点管理模块 - HTTP API路由
 """
-from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,7 +11,7 @@ from core.response import ApiResponse
 from core.exceptions import NotFoundException, BadRequestException
 from .models import Location
 from .schemas import (
-    LocationCreate, LocationUpdate, LocationResponse, LocationNetworkResponse,
+    LocationCreate, LocationUpdate, LocationResponse,
 )
 from .service import LocationService
 
@@ -23,8 +22,8 @@ router = APIRouter(prefix="/locations", tags=["地点管理"])
 async def list_locations(
     user: CurrentUserDep,
     novel_id: int = Query(...),
-    location_type: Optional[str] = None,
-    search: Optional[str] = None,
+    location_type: str | None = None,
+    search: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

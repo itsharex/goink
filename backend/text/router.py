@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from core.response import ApiResponse
 from core.database import DBSession
 from core.dependencies import NovelOwner
-from text.service import TextGenerator, GenerationType, GenerationConfig
+from text.service import TextGenerator
 
 router = APIRouter(prefix="/text", tags=["text-generation"])
 logger = logging.getLogger(__name__)

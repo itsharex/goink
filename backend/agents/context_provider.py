@@ -5,7 +5,8 @@ SubAgent上下文自动注入
 主Agent无需手动传递章节内容、角色列表等，后端自动交付。
 """
 import logging
-from typing import Any, Callable, Awaitable
+from typing import Any
+from collections.abc import Callable, Awaitable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select

@@ -2,9 +2,7 @@
 一致性检查API路由
 """
 import logging
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
-from typing import Optional
+from fastapi import APIRouter
 
 from core.database import DBSession
 from core.response import ApiResponse

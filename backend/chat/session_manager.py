@@ -9,7 +9,7 @@ import logging
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -30,9 +30,9 @@ class Message:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     token_count: int = 0
     importance: float = 0.5
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "role": self.role.value,
             "content": self.content,
@@ -43,7 +43,7 @@ class Message:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Message":
+    def from_dict(cls, data: dict[str, Any]) -> "Message":
         return cls(
             role=MessageRole(data["role"]),
             content=data["content"],
@@ -53,8 +53,8 @@ class Message:
             metadata=data.get("metadata", {})
         )
     
-    def to_api_format(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"role": self.role.value, "content": self.content}
+    def to_api_format(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"role": self.role.value, "content": self.content}
         if self.role == MessageRole.ASSISTANT:
             if self.metadata.get("tool_calls"):
                 payload["tool_calls"] = self.metadata["tool_calls"]
@@ -82,7 +82,7 @@ class NovelContext:
     characters_summary: str = ""
     main_plot: str = ""
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
             "description": self.description,
@@ -94,7 +94,7 @@ class NovelContext:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "NovelContext":
+    def from_dict(cls, data: dict[str, Any]) -> "NovelContext":
         return cls(
             title=data.get("title", ""),
             description=data.get("description", ""),
@@ -130,10 +130,10 @@ class ChapterContext:
     chapter_title: str = ""
     previous_summary: str = ""
     current_outline: str = ""
-    key_events: List[str] = field(default_factory=list)
-    focus_characters: List[str] = field(default_factory=list)
+    key_events: list[str] = field(default_factory=list)
+    focus_characters: list[str] = field(default_factory=list)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "chapter_number": self.chapter_number,
             "chapter_title": self.chapter_title,
@@ -144,7 +144,7 @@ class ChapterContext:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ChapterContext":
+    def from_dict(cls, data: dict[str, Any]) -> "ChapterContext":
         return cls(
             chapter_number=data.get("chapter_number", 0),
             chapter_title=data.get("chapter_title", ""),
@@ -177,7 +177,7 @@ class ModelContextConfig:
     description: str
 
 
-MODEL_CONFIGS: Dict[str, ModelContextConfig] = {
+MODEL_CONFIGS: dict[str, ModelContextConfig] = {
     "deepseek-v4-flash": ModelContextConfig(
         name="deepseek-v4-flash",
         context_window=1048576,
@@ -238,23 +238,23 @@ class SessionConfig:
 class Session:
     session_id: str
     user_id: int
-    novel_id: Optional[int] = None
+    novel_id: int | None = None
     title: str = ""
-    messages: List[Message] = field(default_factory=list)
-    summary: Optional[str] = None
-    novel_context: Optional[NovelContext] = None
-    chapter_context: Optional[ChapterContext] = None
-    pending_changes: List[str] = field(default_factory=list)
+    messages: list[Message] = field(default_factory=list)
+    summary: str | None = None
+    novel_context: NovelContext | None = None
+    chapter_context: ChapterContext | None = None
+    pending_changes: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     model: str = "deepseek-v4-flash"
     edit_mode: str = "agent"
-    chapter_ids: List[int] = field(default_factory=list)
+    chapter_ids: list[int] = field(default_factory=list)
     subtitle: str = ""
-    current_chapter_id: Optional[int] = None
+    current_chapter_id: int | None = None
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
             "user_id": self.user_id,
@@ -275,7 +275,7 @@ class Session:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Session":
+    def from_dict(cls, data: dict[str, Any]) -> "Session":
         novel_context = None
         if data.get("novel_context"):
             novel_context = NovelContext.from_dict(data["novel_context"])
@@ -356,7 +356,7 @@ class ContextCompressor:
             or session.get_message_count() >= self.config.max_messages
         )
 
-    def compress(self, session: Session, summary_text: Optional[str] = None) -> Session:
+    def compress(self, session: Session, summary_text: str | None = None) -> Session:
         if not self.should_compress(session):
             return session
         messages = session.messages
@@ -458,15 +458,15 @@ class ContextCompressor:
             logger.warning(f"LLM summary generation failed, using fallback: {e}")
             return self._build_fallback_summary(older_messages)
 
-    def build_summary_request_prompt(self, messages: List[Message]) -> str:
+    def build_summary_request_prompt(self, messages: list[Message]) -> str:
         content = "\n".join([
             f"[{m.role.value}]: {m.content[:200]}..."
             for m in messages[-5:]
         ])
         return f"[历史对话摘要]\n{content}"
 
-    def _build_fallback_summary(self, messages: List[Message]) -> str:
-        lines: List[str] = ["【历史对话压缩摘要】"]
+    def _build_fallback_summary(self, messages: list[Message]) -> str:
+        lines: list[str] = ["【历史对话压缩摘要】"]
         for message in messages[-8:]:
             snippet = (message.content or "").strip().replace("\n", " ")
             if not snippet:
@@ -488,12 +488,12 @@ class SessionManager:
     def create_session(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
-        novel_context: Optional[NovelContext] = None,
-        chapter_context: Optional[ChapterContext] = None,
-        system_prompt: Optional[str] = None,
+        novel_id: int | None = None,
+        novel_context: NovelContext | None = None,
+        chapter_context: ChapterContext | None = None,
+        system_prompt: str | None = None,
         model: str = "deepseek-v4-flash",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Session:
         session_id = f"sess_{user_id}_{uuid.uuid4().hex[:8]}"
 
@@ -523,7 +523,7 @@ class SessionManager:
         session: Session,
         role: MessageRole,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: dict[str, Any] | None = None
     ) -> Message:
         message_metadata = metadata or {}
         probe = Message(role=role, content=content, metadata=message_metadata)
@@ -561,9 +561,9 @@ class SessionManager:
         self,
         session: Session,
         include_context: bool = True,
-        extra_context: Optional[str] = None
-    ) -> List[Dict[str, str]]:
-        messages: List[Dict[str, Any]] = []
+        extra_context: str | None = None
+    ) -> list[dict[str, str]]:
+        messages: list[dict[str, Any]] = []
         context_tokens = 0
         if include_context:
             context_prompt = self.build_context_prompt(session)
@@ -587,13 +587,13 @@ class SessionManager:
             messages.append(msg.to_api_format())
         return messages
 
-    def _select_messages_for_api(self, session_messages: List[Message]) -> List[Message]:
+    def _select_messages_for_api(self, session_messages: list[Message]) -> list[Message]:
         system_messages = [m for m in session_messages if m.role == MessageRole.SYSTEM]
         non_system_messages = [m for m in session_messages if m.role != MessageRole.SYSTEM]
         if len(non_system_messages) <= self.config.api_max_history_messages:
             return system_messages + non_system_messages
 
-        selected: List[Message] = []
+        selected: list[Message] = []
         required_tool_call_ids: set[str] = set()
 
         for msg in reversed(non_system_messages):
@@ -621,13 +621,13 @@ class SessionManager:
         selected.reverse()
         return system_messages + selected
 
-    def _trim_history_to_token_limit(self, messages: List[Message], max_tokens: int) -> List[Message]:
+    def _trim_history_to_token_limit(self, messages: list[Message], max_tokens: int) -> list[Message]:
         if max_tokens <= 0:
             return [m for m in messages if m.role == MessageRole.SYSTEM]
 
         system_messages = [m for m in messages if m.role == MessageRole.SYSTEM]
         non_system_messages = [m for m in messages if m.role != MessageRole.SYSTEM]
-        trimmed: List[Message] = []
+        trimmed: list[Message] = []
         required_tool_call_ids: set[str] = set()
         total = 0
 
@@ -678,7 +678,7 @@ class SessionManager:
             await self._storage.save(session)
         logger.debug(f"Session {session.session_id} saved")
     
-    async def load_session(self, session_id: str) -> Optional[Session]:
+    async def load_session(self, session_id: str) -> Session | None:
         if self._storage:
             return await self._storage.load(session_id)
         return None
@@ -691,8 +691,8 @@ class SessionManager:
     async def list_user_sessions(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
-    ) -> List[Session]:
+        novel_id: int | None = None,
+    ) -> list[Session]:
         if self._storage:
             return await self._storage.list_by_user(user_id, novel_id)
         return []
@@ -700,11 +700,11 @@ class SessionManager:
     def compress_session(
         self,
         session: Session,
-        summary: Optional[str] = None
+        summary: str | None = None
     ) -> Session:
         return self.compressor.compress(session, summary)
     
-    def get_session_stats(self, session: Session) -> Dict[str, Any]:
+    def get_session_stats(self, session: Session) -> dict[str, Any]:
         model_config = MODEL_CONFIGS.get(session.model, MODEL_CONFIGS["deepseek-v4-flash"])
         token_count = session.get_token_count()
         return {

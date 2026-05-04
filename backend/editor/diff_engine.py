@@ -10,7 +10,7 @@ Diff引擎 - 文本差异计算
 输出格式兼容前端diff展示库
 """
 import difflib
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -37,9 +37,9 @@ class DiffHunk:
     old_lines: int
     new_start: int
     new_lines: int
-    changes: List[Dict[str, Any]] = field(default_factory=list)
+    changes: list[dict[str, Any]] = field(default_factory=list)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "old_start": self.old_start,
             "old_lines": self.old_lines,
@@ -52,12 +52,12 @@ class DiffHunk:
 @dataclass
 class DiffResult:
     change_type: ChangeType
-    hunks: List[DiffHunk] = field(default_factory=list)
+    hunks: list[DiffHunk] = field(default_factory=list)
     old_content: str = ""
     new_content: str = ""
-    summary: Dict[str, int] = field(default_factory=dict)
+    summary: dict[str, int] = field(default_factory=dict)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "change_type": self.change_type.value,
             "hunks": [h.to_dict() for h in self.hunks],
@@ -75,7 +75,7 @@ class DiffEngine:
         self,
         old_content: str,
         new_content: str,
-        change_type: Optional[ChangeType] = None
+        change_type: ChangeType | None = None
     ) -> DiffResult:
         if change_type == ChangeType.FULL_REPLACE:
             return self._full_replace_diff(old_content, new_content)
@@ -260,7 +260,7 @@ class DiffEngine:
         content: str,
         start_line: int,
         end_line: int,
-        new_lines: List[str]
+        new_lines: list[str]
     ) -> str:
         lines = content.splitlines(keepends=True)
         

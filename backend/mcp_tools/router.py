@@ -3,7 +3,6 @@ MCP工具API路由
 提供MCP工具的HTTP接口
 """
 from fastapi import APIRouter, Query, Body
-from typing import Optional
 
 from core.response import ApiResponse
 from core.database import DBSession
@@ -142,7 +141,7 @@ async def get_chapter_list(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
 ):
@@ -217,7 +216,7 @@ async def get_character_list(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    search: Optional[str] = Query(None)
+    search: str | None = Query(None)
 ):
     registry = get_mcp_registry()
     result = await registry.execute(
@@ -312,8 +311,8 @@ async def check_character_consistency(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔"),
-    character_id: Optional[int] = Query(None, description="指定角色ID")
+    chapter_ids: str | None = Query(None, description="章节ID，逗号分隔"),
+    character_id: int | None = Query(None, description="指定角色ID")
 ):
     ids = None
     if chapter_ids:
@@ -339,7 +338,7 @@ async def check_plot_consistency(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔")
+    chapter_ids: str | None = Query(None, description="章节ID，逗号分隔")
 ):
     ids = None
     if chapter_ids:
@@ -365,7 +364,7 @@ async def run_full_consistency_check(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    chapter_ids: Optional[str] = Query(None, description="章节ID，逗号分隔"),
+    chapter_ids: str | None = Query(None, description="章节ID，逗号分隔"),
 ):
     ids = None
     if chapter_ids:
@@ -391,7 +390,7 @@ async def list_unresolved_plots(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    min_importance: Optional[int] = Query(None, ge=1, le=5, description="最小重要程度"),
+    min_importance: int | None = Query(None, ge=1, le=5, description="最小重要程度"),
 ):
     registry = get_mcp_registry()
     result = await registry.execute(
@@ -427,9 +426,9 @@ async def create_new_chapter(
     novel: NovelOwner,
     db: DBSession,
     current_user: CurrentUserDep,
-    chapter_number: Optional[int] = Body(None, description="章节号，不传则自动创建下一章"),
-    title: Optional[str] = Body(None, description="章节标题"),
-    content: Optional[str] = Body(None, description="章节内容")
+    chapter_number: int | None = Body(None, description="章节号，不传则自动创建下一章"),
+    title: str | None = Body(None, description="章节标题"),
+    content: str | None = Body(None, description="章节内容")
 ):
     """
     创建新章节

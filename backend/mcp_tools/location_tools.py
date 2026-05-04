@@ -1,7 +1,6 @@
 """
 地点管理MCP工具
 """
-from typing import Any, Dict, List, Optional
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory
 from core.permissions import verify_novel_ownership
@@ -44,8 +43,8 @@ class GetLocationsTool(BaseMCPTool):
     }
 
     async def execute(self, db, novel_id: int, user_id: int, mode: str = "list",
-                     location_id: Optional[int] = None, location_type: Optional[str] = None,
-                     search: Optional[str] = None, **kwargs) -> MCPToolResult:
+                     location_id: int | None = None, location_type: str | None = None,
+                     search: str | None = None, **kwargs) -> MCPToolResult:
         try:
             novel = await verify_novel_ownership(db, novel_id, user_id)
             if not novel:
@@ -148,8 +147,8 @@ class CreateLocationTool(BaseMCPTool):
     }
 
     async def execute(self, db, novel_id: int, user_id: int, name: str="",
-                     location_type: Optional[str]=None, description: Optional[str]=None,
-                     tags: Optional[List[str]]=None, parent_location_id: Optional[int]=None,
+                     location_type: str | None=None, description: str | None=None,
+                     tags: list[str] | None=None, parent_location_id: int | None=None,
                      **kwargs) -> MCPToolResult:
         try:
             novel = await verify_novel_ownership(db, novel_id, user_id)

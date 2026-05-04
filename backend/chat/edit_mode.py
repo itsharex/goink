@@ -2,7 +2,6 @@
 编辑模式系统 - 统一使用 AGENT 模式
 """
 from enum import Enum
-from typing import List, Set, Dict
 
 
 class EditMode(str, Enum):
@@ -113,7 +112,7 @@ class EditModeConfig:
         EditMode.AGENT: AGENT_SYSTEM_PROMPT,
     }
 
-    MODE_ALLOWED_TOOLS: dict[EditMode, Set[str]] = {
+    MODE_ALLOWED_TOOLS: dict[EditMode, set[str]] = {
         EditMode.AGENT: {
             "get_novel_info", "get_chapter_list", "get_chapter_content", "create_new_chapter",
             "get_creative_profile", "update_creative_profile",
@@ -135,7 +134,7 @@ class EditModeConfig:
         EditMode.AGENT: True,
     }
 
-    MODE_LLM_PRIMARY_TOOLS: dict[EditMode, List[str]] = {
+    MODE_LLM_PRIMARY_TOOLS: dict[EditMode, list[str]] = {
         EditMode.AGENT: [
             "get_creative_profile",
             "update_creative_profile",
@@ -156,7 +155,7 @@ class EditModeConfig:
         ],
     }
 
-    TOOL_BUNDLES: Dict[str, Set[str]] = {
+    TOOL_BUNDLES: dict[str, set[str]] = {
         "editing": {
             "get_chapter_list", "get_chapter_content",
             "edit_chapter",
@@ -180,7 +179,7 @@ class EditModeConfig:
         },
     }
 
-    TOOL_BUNDLE_CUES: Dict[str, tuple[str, ...]] = {
+    TOOL_BUNDLE_CUES: dict[str, tuple[str, ...]] = {
         "editing": ("修改", "改写", "润色", "重写", "编辑", "替换", "局部改", "edit_chapter", "副本"),
         "characters": ("角色", "人物", "关系", "师徒", "敌对", "盟友", "恋人", "创建角色"),
         "locations": ("地点", "场景", "地图", "城市", "房间", "森林", "宫殿", "地点设定"),
@@ -209,12 +208,12 @@ class EditModeConfig:
         return cls.MODE_DESCRIPTIONS.get(mode, "")
 
     @classmethod
-    def filter_tools(cls, mode: EditMode, all_tools: List[str]) -> List[str]:
+    def filter_tools(cls, mode: EditMode, all_tools: list[str]) -> list[str]:
         """AGENT 模式允许所有工具"""
         return list(all_tools)
 
     @classmethod
-    def get_llm_primary_tools(cls, mode: EditMode = EditMode.AGENT) -> List[str]:
+    def get_llm_primary_tools(cls, mode: EditMode = EditMode.AGENT) -> list[str]:
         """
         给 LLM 的主工具子集。
 
@@ -226,7 +225,7 @@ class EditModeConfig:
         return list(cls.MODE_LLM_PRIMARY_TOOLS.get(EditMode.AGENT, []))
 
     @classmethod
-    def get_llm_tools_for_message(cls, mode: EditMode = EditMode.AGENT, user_message: str = "") -> List[str]:
+    def get_llm_tools_for_message(cls, mode: EditMode = EditMode.AGENT, user_message: str = "") -> list[str]:
         """
         给当前这轮消息挑选工具集。
 

@@ -2,7 +2,6 @@
 人物关系MCP工具集
 供AI调用的核心工具：创建更新演变关系
 """
-from typing import Any, Dict, List, Optional
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from characters.schemas import (
@@ -59,16 +58,16 @@ class UpdateCharacterRelationTool(BaseMCPTool):
         db,
         novel_id: int,
         user_id: int,
-        source_character_id: Optional[int] = None,
-        target_character_id: Optional[int] = None,
-        relation_id: Optional[int] = None,
-        relationship_type: Optional[str] = None,
-        description: Optional[str] = None,
+        source_character_id: int | None = None,
+        target_character_id: int | None = None,
+        relation_id: int | None = None,
+        relationship_type: str | None = None,
+        description: str | None = None,
         intensity: int = 3,
         status: str = "active",
         evolve: bool = False,
-        evolution_notes: Optional[str] = None,
-        established_chapter_id: Optional[int] = None,
+        evolution_notes: str | None = None,
+        established_chapter_id: int | None = None,
         **kwargs
     ) -> MCPToolResult:
         try:

@@ -2,7 +2,6 @@
 章节摘要工具
 统一章节摘要生成逻辑，避免不同链路出现分叉。
 """
-from typing import Optional
 import logging
 
 from core.llm_service import llm_service
@@ -10,7 +9,7 @@ from core.llm_service import llm_service
 logger = logging.getLogger(__name__)
 
 
-async def generate_chapter_summary(content: str) -> Optional[str]:
+async def generate_chapter_summary(content: str) -> str | None:
     if not content or len(content.strip()) < 200:
         return content[:200] if content else None
 

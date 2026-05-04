@@ -6,7 +6,6 @@ SubAgent注册表
 Registry 自动找到对应的 Agent 和规格。
 """
 import logging
-from typing import Any
 
 from agents.base import BaseAgent, SubAgentSpec
 

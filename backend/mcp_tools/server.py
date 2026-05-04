@@ -1,7 +1,7 @@
-from __future__ import annotations
 # pyright: reportArgumentType=false, reportCallIssue=false
+from __future__ import annotations
 
-from typing import Any, Optional, List, Dict
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -15,7 +15,7 @@ from sqlalchemy import select
 mcp = FastMCP("AI Novel Generator")
 
 
-async def _get_user_id_from_token(token: str) -> Optional[int]:
+async def _get_user_id_from_token(token: str) -> int | None:
     try:
         payload = decode_token(token)
         if payload and payload.get("sub"):
@@ -25,7 +25,7 @@ async def _get_user_id_from_token(token: str) -> Optional[int]:
     return None
 
 
-async def _get_user_id_from_context(ctx: Optional[Context]) -> Optional[int]:
+async def _get_user_id_from_context(ctx: Context | None) -> int | None:
     if not ctx:
         return None
     request = ctx.request_context.request if ctx.request_context else None
@@ -38,7 +38,7 @@ async def _get_user_id_from_context(ctx: Optional[Context]) -> Optional[int]:
     return await _get_user_id_from_token(token) if token else None
 
 
-async def _execute_tool(name: str, ctx: Optional[Context] = None, **params) -> dict:
+async def _execute_tool(name: str, ctx: Context | None = None, **params) -> dict:
     user_id = await _get_user_id_from_context(ctx)
     if not user_id:
         return {"success": False, "error": "Unauthorized"}
@@ -66,7 +66,7 @@ async def get_novel_info(novel_id: int, mode: str, ctx: Context) -> dict:
 @mcp.tool()
 async def get_chapter_list(
     novel_id: int,
-    status: Optional[str] = None,
+    status: str | None = None,
     page: int = 1,
     page_size: int = 20,
     ctx: Context = None
@@ -84,8 +84,8 @@ async def get_chapter_list(
 @mcp.tool()
 async def get_chapter_content(
     novel_id: int,
-    chapter_id: Optional[int] = None,
-    chapter_number: Optional[int] = None,
+    chapter_id: int | None = None,
+    chapter_number: int | None = None,
     include_summary: bool = True,
     include_lines: bool = False,
     ctx: Context = None
@@ -109,14 +109,14 @@ async def get_creative_profile(novel_id: int, ctx: Context) -> dict:
 @mcp.tool()
 async def update_creative_profile(
     novel_id: int,
-    author_intent: Optional[str] = None,
-    preferred_tone: Optional[str] = None,
-    collaboration_style: Optional[str] = None,
-    scene_planning_notes: Optional[str] = None,
-    must_keep: Optional[List[str]] = None,
-    must_avoid: Optional[List[str]] = None,
-    long_term_goals: Optional[List[str]] = None,
-    extra_metadata: Optional[dict] = None,
+    author_intent: str | None = None,
+    preferred_tone: str | None = None,
+    collaboration_style: str | None = None,
+    scene_planning_notes: str | None = None,
+    must_keep: list[str] | None = None,
+    must_avoid: list[str] | None = None,
+    long_term_goals: list[str] | None = None,
+    extra_metadata: dict | None = None,
     merge_with_existing: bool = True,
     ctx: Context = None
 ) -> dict:
@@ -140,8 +140,8 @@ async def update_creative_profile(
 async def get_characters(
     novel_id: int,
     mode: str,
-    character_id: Optional[int] = None,
-    search: Optional[str] = None,
+    character_id: int | None = None,
+    search: str | None = None,
     include_relations: bool = True,
     include_recent_events: bool = True,
     include_memory: bool = False,
@@ -179,8 +179,8 @@ async def search_story_memory(
 async def create_character(
     novel_id: int,
     name: str,
-    personality: Optional[Dict[str, Any]] = None,
-    abilities: Optional[List[str]] = None,
+    personality: dict[str, Any] | None = None,
+    abilities: list[str] | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -194,9 +194,9 @@ async def create_character(
 async def update_character(
     novel_id: int,
     character_id: int,
-    name: Optional[str] = None,
-    personality: Optional[Dict[str, Any]] = None,
-    abilities: Optional[List[str]] = None,
+    name: str | None = None,
+    personality: dict[str, Any] | None = None,
+    abilities: list[str] | None = None,
     ctx: Context|None = None
 ) -> dict:
     return await _execute_tool(
@@ -209,9 +209,9 @@ async def update_character(
 @mcp.tool()
 async def create_new_chapter(
     novel_id: int,
-    chapter_number: Optional[int] = None,
-    title: Optional[str] = None,
-    content: Optional[str] = None,
+    chapter_number: int | None = None,
+    title: str | None = None,
+    content: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -229,16 +229,16 @@ async def edit_chapter(
     novel_id: int,
     chapter_id: int,
     change_type: str = "full_replace",
-    new_content: Optional[str] = None,
-    search_text: Optional[str] = None,
+    new_content: str | None = None,
+    search_text: str | None = None,
     match_mode: str = "first",
-    edits: Optional[List[Dict[str, str]]] = None,
-    start_line: Optional[int] = None,
-    end_line: Optional[int] = None,
-    reason: Optional[str] = None,
+    edits: list[dict[str, str]] | None = None,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    reason: str | None = None,
     dry_run: bool = False,
     undo: bool = False,
-    undo_from_snapshot: Optional[str] = None,
+    undo_from_snapshot: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -264,8 +264,8 @@ async def edit_chapter(
 async def run_review(
     novel_id: int,
     scope: str = "full",
-    chapter_ids: Optional[List[int]] = None,
-    min_importance: Optional[int] = None,
+    chapter_ids: list[int] | None = None,
+    min_importance: int | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -282,12 +282,12 @@ async def run_review(
 async def get_timeline(
     novel_id: int,
     mode: str = "context",
-    current_chapter: Optional[int] = None,
+    current_chapter: int | None = None,
     max_entries: int = 15,
-    category: Optional[str] = None,
-    status: Optional[str] = None,
-    time_horizon: Optional[str] = None,
-    search: Optional[str] = None,
+    category: str | None = None,
+    status: str | None = None,
+    time_horizon: str | None = None,
+    search: str | None = None,
     page: int = 1,
     page_size: int = 20,
     ctx: Context = None
@@ -303,7 +303,7 @@ async def get_timeline(
 @mcp.tool()
 async def add_timeline_entry(
     novel_id: int,
-    entries: List[Dict[str, Any]],
+    entries: list[dict[str, Any]],
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -316,16 +316,16 @@ async def add_timeline_entry(
 async def update_timeline_entry(
     novel_id: int,
     entry_id: int,
-    title: Optional[str] = None,
-    description: Optional[str] = None,
-    detail_json: Optional[dict] = None,
-    target_chapter: Optional[int] = None,
-    time_horizon: Optional[str] = None,
-    status: Optional[str] = None,
-    importance: Optional[int] = None,
-    tags: Optional[List[str]] = None,
-    resolved_chapter_id: Optional[int] = None,
-    resolution_notes: Optional[str] = None,
+    title: str | None = None,
+    description: str | None = None,
+    detail_json: dict | None = None,
+    target_chapter: int | None = None,
+    time_horizon: str | None = None,
+    status: str | None = None,
+    importance: int | None = None,
+    tags: list[str] | None = None,
+    resolved_chapter_id: int | None = None,
+    resolution_notes: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -341,16 +341,16 @@ async def update_timeline_entry(
 @mcp.tool()
 async def update_character_relationship(
     novel_id: int,
-    source_character_id: Optional[int] = None,
-    target_character_id: Optional[int] = None,
-    relation_id: Optional[int] = None,
-    relationship_type: Optional[str] = None,
-    description: Optional[str] = None,
+    source_character_id: int | None = None,
+    target_character_id: int | None = None,
+    relation_id: int | None = None,
+    relationship_type: str | None = None,
+    description: str | None = None,
     intensity: int = 3,
     status: str = "active",
     evolve: bool = False,
-    evolution_notes: Optional[str] = None,
-    established_chapter_id: Optional[int] = None,
+    evolution_notes: str | None = None,
+    established_chapter_id: int | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -374,12 +374,12 @@ async def update_character_relationship(
 async def run_subagent(
     task_type: str,
     novel_id: int,
-    chapter_id: Optional[int] = None,
-    instruction: Optional[str] = None,
-    parameters: Optional[dict] = None,
-    agent_role: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    model: Optional[str] = None,
+    chapter_id: int | None = None,
+    instruction: str | None = None,
+    parameters: dict | None = None,
+    agent_role: str | None = None,
+    agent_id: str | None = None,
+    model: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -435,9 +435,9 @@ async def edit_mode_prompt(mode: str = "agent") -> list[dict]:
 async def get_locations(
     novel_id: int,
     mode: str,
-    location_id: Optional[int] = None,
-    location_type: Optional[str] = None,
-    search: Optional[str] = None,
+    location_id: int | None = None,
+    location_type: str | None = None,
+    search: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -451,10 +451,10 @@ async def get_locations(
 async def create_location(
     novel_id: int,
     name: str,
-    location_type: Optional[str] = None,
-    description: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    parent_location_id: Optional[int] = None,
+    location_type: str | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    parent_location_id: int | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -469,11 +469,11 @@ async def create_location(
 async def update_location(
     novel_id: int,
     location_id: int,
-    name: Optional[str] = None,
-    location_type: Optional[str] = None,
-    description: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    parent_location_id: Optional[int] = None,
+    name: str | None = None,
+    location_type: str | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    parent_location_id: int | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -499,8 +499,8 @@ async def delete_location(
 @mcp.tool()
 async def get_story_arcs(
     novel_id: int,
-    arc_type: Optional[str] = None,
-    status: Optional[str] = None,
+    arc_type: str | None = None,
+    status: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -513,10 +513,10 @@ async def get_story_arcs(
 async def add_story_arc(
     novel_id: int,
     name: str,
-    description: Optional[str] = None,
+    description: str | None = None,
     arc_type: str = "sub",
-    start_chapter: Optional[int] = None,
-    end_chapter: Optional[int] = None,
+    start_chapter: int | None = None,
+    end_chapter: int | None = None,
     importance: int = 1,
     ctx: Context = None
 ) -> dict:
@@ -532,13 +532,13 @@ async def add_story_arc(
 async def update_story_arc(
     novel_id: int,
     arc_id: int,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    arc_type: Optional[str] = None,
-    start_chapter: Optional[int] = None,
-    end_chapter: Optional[int] = None,
-    importance: Optional[int] = None,
-    status: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
+    arc_type: str | None = None,
+    start_chapter: int | None = None,
+    end_chapter: int | None = None,
+    importance: int | None = None,
+    status: str | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -571,8 +571,8 @@ async def add_reader_perspective_entry(
     type: str,
     content: str,
     planted_chapter: int,
-    related_truth: Optional[str] = None,
-    planned_reveal_chapter: Optional[int] = None,
+    related_truth: str | None = None,
+    planned_reveal_chapter: int | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(
@@ -587,8 +587,8 @@ async def add_reader_perspective_entry(
 async def update_reader_perspective_entry(
     novel_id: int,
     entry_id: int,
-    last_mentioned_chapter: Optional[int] = None,
-    revealed_chapter: Optional[int] = None,
+    last_mentioned_chapter: int | None = None,
+    revealed_chapter: int | None = None,
     ctx: Context = None
 ) -> dict:
     return await _execute_tool(

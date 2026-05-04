@@ -1,10 +1,10 @@
 """
 RAG检索模块 - 数据库模型
 """
-from sqlalchemy import String, Text, Integer, ForeignKey, JSON, Index, func, Float
+from sqlalchemy import String, Text, ForeignKey, JSON, Index, func, Float
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any
 
 from core.database import Base
 
@@ -15,12 +15,12 @@ class RAGContext(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"), nullable=False, index=True)
-    chapter_id: Mapped[Optional[int]] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
+    chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"))
     context_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    query: Mapped[Optional[str]] = mapped_column(Text)
+    query: Mapped[str | None] = mapped_column(Text)
     context_content: Mapped[str] = mapped_column(Text, nullable=False)
-    source_chunks: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-    relevance_score: Mapped[Optional[float]] = mapped_column(Float)
+    source_chunks: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    relevance_score: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     __table_args__ = (

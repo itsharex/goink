@@ -3,16 +3,16 @@ Agent系统API路由
 """
 import logging
 import uuid
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from sqlalchemy import select, func
 
 from core.response import ApiResponse
 from core.exceptions import NotFoundException
 from core.database import DBSession
-from core.auth import get_current_user, CurrentUserDep
+from core.auth import CurrentUserDep
 from core.dependencies import NovelOwner
 from novels.models import Novel
-from .base import AgentTask, TaskType, TaskStatus
+from .base import AgentTask, TaskType
 from .factory import create_default_coordinator
 from .models import AgentTaskRecord
 

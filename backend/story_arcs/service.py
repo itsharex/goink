@@ -2,9 +2,9 @@
 叙事弧线服务层
 """
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from story_arcs.models import StoryArc, StoryArcType, StoryArcStatus
@@ -36,7 +36,7 @@ class StoryArcService:
         logger.info(f"StoryArc created: id={arc.id}, name={arc.name}")
         return arc
 
-    async def get_arc(self, arc_id: int) -> Optional[StoryArc]:
+    async def get_arc(self, arc_id: int) -> StoryArc | None:
         result = await self.db.execute(
             select(StoryArc).where(
                 StoryArc.id == arc_id,
@@ -47,8 +47,8 @@ class StoryArcService:
 
     async def list_arcs(
         self,
-        arc_type: Optional[str] = None,
-        status: Optional[str] = None,
+        arc_type: str | None = None,
+        status: str | None = None,
     ) -> list[StoryArc]:
         query = select(StoryArc).where(
             StoryArc.novel_id == self.novel_id
@@ -61,7 +61,7 @@ class StoryArcService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def update_arc(self, arc_id: int, data: StoryArcUpdate) -> Optional[StoryArc]:
+    async def update_arc(self, arc_id: int, data: StoryArcUpdate) -> StoryArc | None:
         arc = await self.get_arc(arc_id)
         if not arc:
             return None

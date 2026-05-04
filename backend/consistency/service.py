@@ -6,10 +6,9 @@ import uuid
 import time
 import json
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 
 from novels.models import Novel
@@ -44,7 +43,7 @@ class ConsistencyChecker:
         prompt: str,
         max_retries: int = 3,
         delay: float = 1.0
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         带重试机制的LLM调用
         
@@ -80,9 +79,9 @@ class ConsistencyChecker:
     
     async def check_all(
         self,
-        chapter_ids: Optional[List[int]] = None,
-        check_types: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        chapter_ids: list[int] | None = None,
+        check_types: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         执行全部一致性检查
         
@@ -101,7 +100,7 @@ class ConsistencyChecker:
         if check_types is None:
             check_types = ["character", "plot", "timeline", "foreshadowing"]
         
-        all_issues: List[ConsistencyIssue] = []
+        all_issues: list[ConsistencyIssue] = []
         
         chapters = await self._get_chapters(chapter_ids)
         
@@ -135,11 +134,11 @@ class ConsistencyChecker:
         issue_type: str,
         severity: str,
         description: str,
-        chapter_id: Optional[Any] = None,
-        chapter_number: Optional[Any] = None,
-        details: Optional[Dict[str, Any]] = None,
-        suggestion: Optional[str] = None
-    ) -> Optional[ConsistencyIssue]:
+        chapter_id: Any | None = None,
+        chapter_number: Any | None = None,
+        details: dict[str, Any] | None = None,
+        suggestion: str | None = None
+    ) -> ConsistencyIssue | None:
         """统一构造一致性问题，避免脏数据导致 Pydantic 实例化失败"""
         payload = {
             "issue_type": str(issue_type or "").strip() or "unknown",
@@ -159,7 +158,7 @@ class ConsistencyChecker:
             logger.warning("Failed to build ConsistencyIssue: %s, payload=%s", e, payload)
             return None
 
-    def _coerce_optional_int(self, value: Optional[Any]) -> Optional[int]:
+    def _coerce_optional_int(self, value: Any | None) -> int | None:
         if value is None or value == "":
             return None
         try:
@@ -167,7 +166,7 @@ class ConsistencyChecker:
         except (TypeError, ValueError):
             return None
     
-    async def _get_chapters(self, chapter_ids: Optional[List[int]] = None) -> List[Chapter]:
+    async def _get_chapters(self, chapter_ids: list[int] | None = None) -> list[Chapter]:
         """获取要检查的章节"""
         query = select(Chapter).where(
             Chapter.novel_id == self.novel_id,
@@ -181,7 +180,7 @@ class ConsistencyChecker:
         result = await self.db.execute(query)
         return result.scalars().all()
     
-    async def check_character_consistency(self, chapters: List[Chapter]) -> List[ConsistencyIssue]:
+    async def check_character_consistency(self, chapters: list[Chapter]) -> list[ConsistencyIssue]:
         """
         检查角色一致性
         
@@ -190,7 +189,7 @@ class ConsistencyChecker:
         - 角色能力是否突然变化
         - 角色关系是否矛盾
         """
-        issues: List[ConsistencyIssue] = []
+        issues: list[ConsistencyIssue] = []
         
         if not chapters:
             return issues
@@ -269,7 +268,7 @@ class ConsistencyChecker:
         
         return issues
     
-    async def check_plot_consistency(self, chapters: List[Chapter]) -> List[ConsistencyIssue]:
+    async def check_plot_consistency(self, chapters: list[Chapter]) -> list[ConsistencyIssue]:
         """
         检查情节一致性
 
@@ -278,7 +277,7 @@ class ConsistencyChecker:
         - 是否有逻辑漏洞
         - 事件因果关系是否清晰
         """
-        issues: List[ConsistencyIssue] = []
+        issues: list[ConsistencyIssue] = []
 
         if len(chapters) < 2:
             return issues
@@ -340,7 +339,7 @@ class ConsistencyChecker:
 
         return issues
 
-    async def check_foreshadowing_status(self) -> List[ConsistencyIssue]:
+    async def check_foreshadowing_status(self) -> list[ConsistencyIssue]:
         """
         检查伏笔状态（通过时间线系统查询）
 
@@ -348,7 +347,7 @@ class ConsistencyChecker:
         - 未解决的伏笔
         - 长期未填的坑
         """
-        issues: List[ConsistencyIssue] = []
+        issues: list[ConsistencyIssue] = []
 
         result = await self.db.execute(
             select(TimelineEntry).where(
@@ -389,7 +388,7 @@ class ConsistencyChecker:
 
         return issues
     
-    def _generate_summary(self, issues: List[ConsistencyIssue]) -> Dict[str, Any]:
+    def _generate_summary(self, issues: list[ConsistencyIssue]) -> dict[str, Any]:
         """生成检查摘要"""
         summary = {
             "total_issues": len(issues),

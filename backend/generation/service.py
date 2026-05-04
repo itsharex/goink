@@ -2,7 +2,7 @@
 章节生成服务 - 整合RAG、Memory、Agent系统
 """
 import logging
-from typing import Dict, Any, Optional
+from typing import Any
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -29,7 +29,7 @@ class ChapterGenerationService:
         self.context_builder = ContextBuilder(db, novel_id)
         self.coordinator = create_default_coordinator()
     
-    async def _get_novel(self) -> Optional[Novel]:
+    async def _get_novel(self) -> Novel | None:
         """获取小说"""
         result = await self.db.execute(
             select(Novel).where(Novel.id == self.novel_id)
@@ -41,12 +41,12 @@ class ChapterGenerationService:
         chapter_number: int,
         target_length: int = 3000,
         style: str = "narrative",
-        additional_context: Optional[Dict[str, Any]] = None,
-        agent_role: Optional[str] = None,
-        model: Optional[str] = None,
-        use_workflow: Optional[bool] = None,
+        additional_context: dict[str, Any] | None = None,
+        agent_role: str | None = None,
+        model: str | None = None,
+        use_workflow: bool | None = None,
         context_size: int = 3000
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成章节完整流程
         
@@ -155,9 +155,9 @@ class ChapterGenerationService:
     async def _prepare_context(
         self,
         chapter_number: int,
-        additional_context: Optional[Dict[str, Any]] = None,
+        additional_context: dict[str, Any] | None = None,
         context_size: int = 3600
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """准备生成上下文"""
         logger.info(f"Preparing context for chapter {chapter_number}")
         layered_context = await self.context_builder.build_writing_context(
@@ -167,7 +167,7 @@ class ChapterGenerationService:
             include_characters=True,
         )
 
-        context: Dict[str, Any] = {
+        context: dict[str, Any] = {
             "previous_summary": layered_context.get("previous_summary"),
             "characters": layered_context.get("characters", []),
             "plot_hints": layered_context.get("plot_hints", []),
@@ -186,9 +186,9 @@ class ChapterGenerationService:
 
         return context
 
-    def _build_generation_parameters(self, additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _build_generation_parameters(self, additional_context: dict[str, Any] | None = None) -> dict[str, Any]:
         additional_context = additional_context or {}
-        parameters: Dict[str, Any] = {}
+        parameters: dict[str, Any] = {}
         if additional_context.get("user_prompt"):
             parameters["writing_task"] = additional_context["user_prompt"]
         if additional_context.get("chapter_outline"):
@@ -261,7 +261,7 @@ class ChapterGenerationService:
 
         return chapter
     
-    async def _update_chapter_memory(self, chapter_id: int) -> Dict[str, Any]:
+    async def _update_chapter_memory(self, chapter_id: int) -> dict[str, Any]:
         task = AgentTask(
             task_id=f"memory_{self.novel_id}_{chapter_id}_{datetime.now(timezone.utc).timestamp()}",
             task_type=TaskType.UPDATE_MEMORY,
@@ -274,7 +274,7 @@ class ChapterGenerationService:
             logger.warning(f"Memory update failed for chapter {chapter_id}: {result.error}")
         return result.to_dict()
 
-    async def _get_chapter(self, chapter_number: int) -> Optional[Chapter]:
+    async def _get_chapter(self, chapter_number: int) -> Chapter | None:
         result = await self.db.execute(
             select(Chapter).where(
                 Chapter.novel_id == self.novel_id,
@@ -283,14 +283,14 @@ class ChapterGenerationService:
         )
         return result.scalar_one_or_none()
 
-    async def _generate_chapter_summary(self, content: str) -> Optional[str]:
+    async def _generate_chapter_summary(self, content: str) -> str | None:
         return await generate_chapter_summary(content)
     
     async def regenerate_chapter(
         self,
         chapter_id: int,
-        feedback: Optional[str] = None
-    ) -> Dict[str, Any]:
+        feedback: str | None = None
+    ) -> dict[str, Any]:
         """重新生成章节"""
         result = await self.db.execute(
             select(Chapter).where(Chapter.id == chapter_id)
@@ -309,7 +309,7 @@ class ChapterGenerationService:
             additional_context=additional_context
         )
     
-    async def get_generation_status(self, task_id: str) -> Dict[str, Any]:
+    async def get_generation_status(self, task_id: str) -> dict[str, Any]:
         """获取生成状态"""
         status = self.coordinator.get_task_status(task_id)
         return status or {"status": "not_found"}

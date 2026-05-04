@@ -2,10 +2,8 @@
 WebSocket管理器 - 实时通信
 """
 import logging
-import json
-from typing import Dict, Set, Optional, Any
 from datetime import datetime, timezone
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -18,8 +16,8 @@ class ConnectionManager:
     """WebSocket连接管理器"""
     
     def __init__(self):
-        self.active_connections: Dict[int, Set[WebSocket]] = defaultdict(set)
-        self.user_connections: Dict[int, Set[WebSocket]] = defaultdict(set)
+        self.active_connections: dict[int, set[WebSocket]] = defaultdict(set)
+        self.user_connections: dict[int, set[WebSocket]] = defaultdict(set)
     
     def get_user_connection_count(self, user_id: int) -> int:
         """获取用户当前连接数"""
@@ -29,7 +27,7 @@ class ConnectionManager:
         """检查用户是否可以建立新连接"""
         return self.get_user_connection_count(user_id) < MAX_CONNECTIONS_PER_USER
     
-    async def connect(self, websocket: WebSocket, user_id: int, novel_id: Optional[int] = None) -> bool:
+    async def connect(self, websocket: WebSocket, user_id: int, novel_id: int | None = None) -> bool:
         """
         接受WebSocket连接
         
@@ -47,7 +45,7 @@ class ConnectionManager:
         logger.info(f"WebSocket connected: user={user_id}, novel={novel_id}, total_connections={self.get_user_connection_count(user_id)}")
         return True
     
-    def disconnect(self, websocket: WebSocket, user_id: int, novel_id: Optional[int] = None):
+    def disconnect(self, websocket: WebSocket, user_id: int, novel_id: int | None = None):
         """断开WebSocket连接"""
         self.user_connections[user_id].discard(websocket)
         if novel_id:

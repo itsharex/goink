@@ -2,12 +2,12 @@
 叙事弧线API路由
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from core.database import get_db, DBSession
+from core.database import DBSession
 from core.response import ApiResponse
 from core.dependencies import NovelOwner
-from story_arcs.models import StoryArc, StoryArcType, StoryArcStatus
+from story_arcs.models import StoryArc
 from story_arcs.schemas import (
     StoryArcCreate,
     StoryArcUpdate,

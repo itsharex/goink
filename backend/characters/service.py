@@ -2,7 +2,7 @@
 角色管理模块 - 服务层
 提供角色和人物关系的业务逻辑
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,14 +26,14 @@ class CharacterService:
         self.db = db
         self.novel_id = novel_id
 
-    async def get_all_characters(self) -> List[Character]:
+    async def get_all_characters(self) -> list[Character]:
         """获取小说所有角色"""
         result = await self.db.execute(
             select(Character).where(Character.novel_id == self.novel_id)
         )
         return list(result.scalars().all())
 
-    async def get_network(self) -> Dict[str, Any]:
+    async def get_network(self) -> dict[str, Any]:
         """
         获取人物关系图结构 {nodes:[], edges:[]}
         nodes: [{id, name, role_hint}]
@@ -93,7 +93,7 @@ class CharacterService:
 
     async def get_character_relationships(
         self, character_id: int, include_inactive: bool = False
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         获取某角色的所有关系（作为source或target）
         返回 enriched 数据（含对方名字等）
@@ -179,7 +179,7 @@ class CharacterService:
 
     async def update_relation(
         self, relation_id: int, data: CharacterRelationUpdate
-    ) -> Optional[CharacterRelation]:
+    ) -> CharacterRelation | None:
         """更新关系"""
         relation = await self.db.get(CharacterRelation, relation_id)
         if not relation or relation.novel_id != self.novel_id:
@@ -195,7 +195,7 @@ class CharacterService:
 
     async def evolve_relation(
         self, relation_id: int, data: CharacterRelationEvolve
-    ) -> Tuple[CharacterRelation, CharacterRelation]:
+    ) -> tuple[CharacterRelation, CharacterRelation]:
         """
         关系演变：
         - 将旧关系标记为 dormant
@@ -240,13 +240,11 @@ class CharacterService:
         self,
         old_rel: CharacterRelation,
         new_rel: CharacterRelation,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ):
         try:
             from timeline.models import (
-                TimelineEntry,
                 TimelineEntryCategory,
-                TimelineEntryStatus,
             )
             from timeline.schemas import TimelineEntryCreate
             from timeline.service import TimelineService
@@ -289,7 +287,7 @@ class CharacterService:
 
     async def get_relation_history(
         self, char_a_id: int, char_b_id: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         获取两个角色之间的完整关系演变历史
         按时间正序排列，形成链条
@@ -335,7 +333,7 @@ class CharacterService:
 
         return history
 
-    async def migrate_from_json(self) -> Dict[str, Any]:
+    async def migrate_from_json(self) -> dict[str, Any]:
         """
         从旧的 Character.relationships JSON 字段迁移数据到 CharacterRelation 表
         迁移策略：遍历所有角色，解析 relationships JSON，创建 CharacterRelation 记录

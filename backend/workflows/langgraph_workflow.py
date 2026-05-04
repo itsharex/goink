@@ -13,7 +13,7 @@ LangGraph工作流 - 章节生成工作流 [DEPRECATED]
 # pyright: reportCallIssue=false, reportArgumentType=false, reportAttributeAccessIssue=false
 import logging
 import warnings
-from typing import TypedDict, Annotated, Literal, Optional, Dict, Any, List
+from typing import TypedDict, Literal, Any
 from datetime import datetime, timezone
 from sqlalchemy import select
 
@@ -37,7 +37,7 @@ from context.context_builder import ContextBuilder
 from consistency.service import ConsistencyChecker
 from rag.vector_store import vector_store
 from text.utils import count_words
-from agents.base import AgentTask, AgentResult, TaskType
+from agents.base import AgentTask, TaskType
 from agents.writer import WriterAgent
 from agents.reviewer import ReviewerAgent
 from chapters.summary import generate_chapter_summary
@@ -52,22 +52,22 @@ class WorkflowState(TypedDict):
     chapter_number: int
     target_length: int
     style: str
-    model: Optional[str]
-    agent_role: Optional[str]
+    model: str | None
+    agent_role: str | None
     context_size: int
-    extra_parameters: Dict[str, Any]
+    extra_parameters: dict[str, Any]
     
-    context: Dict[str, Any]
-    generated_content: Optional[str]
-    review_result: Optional[Dict[str, Any]]
-    consistency_result: Optional[Dict[str, Any]]
+    context: dict[str, Any]
+    generated_content: str | None
+    review_result: dict[str, Any] | None
+    consistency_result: dict[str, Any] | None
     
     iteration: int
     max_iterations: int
-    feedback: Optional[str]
+    feedback: str | None
     
     status: str
-    error: Optional[str]
+    error: str | None
     created_at: str
     updated_at: str
 
@@ -78,11 +78,11 @@ def create_initial_state(
     chapter_number: int,
     target_length: int = 3000,
     style: str = "narrative",
-    context: Optional[Dict[str, Any]] = None,
-    model: Optional[str] = None,
-    agent_role: Optional[str] = None,
+    context: dict[str, Any] | None = None,
+    model: str | None = None,
+    agent_role: str | None = None,
     context_size: int = 3000,
-    extra_parameters: Optional[Dict[str, Any]] = None
+    extra_parameters: dict[str, Any] | None = None
 ) -> WorkflowState:
     """创建初始状态"""
     now = datetime.now(timezone.utc).isoformat()
@@ -174,7 +174,7 @@ class ChapterWorkflow:
         
         return workflow.compile(checkpointer=self.memory_saver)
     
-    async def _prepare_context_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _prepare_context_node(self, state: WorkflowState) -> dict[str, Any]:
         """准备上下文节点"""
         logger.info(f"[{state['task_id']}] Preparing context for chapter {state['chapter_number']}")
 
@@ -212,7 +212,7 @@ class ChapterWorkflow:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
-    async def _generate_content_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _generate_content_node(self, state: WorkflowState) -> dict[str, Any]:
         """生成内容节点"""
         logger.info(f"[{state['task_id']}] Generating content for chapter {state['chapter_number']}")
         
@@ -255,7 +255,7 @@ class ChapterWorkflow:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
-    async def _review_content_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _review_content_node(self, state: WorkflowState) -> dict[str, Any]:
         """审核内容节点"""
         logger.info(f"[{state['task_id']}] Reviewing content")
         
@@ -303,7 +303,7 @@ class ChapterWorkflow:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
-    async def _check_consistency_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _check_consistency_node(self, state: WorkflowState) -> dict[str, Any]:
         """一致性检查节点"""
         logger.info(f"[{state['task_id']}] Checking consistency")
         
@@ -335,7 +335,7 @@ class ChapterWorkflow:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
-    async def _save_chapter_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _save_chapter_node(self, state: WorkflowState) -> dict[str, Any]:
         """保存章节节点"""
         logger.info(f"[{state['task_id']}] Saving chapter")
         
@@ -403,7 +403,7 @@ class ChapterWorkflow:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
-    async def _update_memory_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _update_memory_node(self, state: WorkflowState) -> dict[str, Any]:
         """更新记忆节点"""
         logger.info(f"[{state['task_id']}] Updating memory")
         
@@ -446,7 +446,7 @@ class ChapterWorkflow:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
     
-    async def _handle_revision_node(self, state: WorkflowState) -> Dict[str, Any]:
+    async def _handle_revision_node(self, state: WorkflowState) -> dict[str, Any]:
         """处理修订节点"""
         logger.info(f"[{state['task_id']}] Handling revision, iteration {state['iteration'] + 1}")
         
@@ -510,7 +510,7 @@ class ChapterWorkflow:
             return "end"
         return "retry"
 
-    async def _generate_chapter_summary(self, content: str) -> Optional[str]:
+    async def _generate_chapter_summary(self, content: str) -> str | None:
         return await generate_chapter_summary(content)
     
     async def run(
@@ -520,12 +520,12 @@ class ChapterWorkflow:
         chapter_number: int,
         target_length: int = 3000,
         style: str = "narrative",
-        context: Optional[Dict[str, Any]] = None,
-        model: Optional[str] = None,
-        agent_role: Optional[str] = None,
+        context: dict[str, Any] | None = None,
+        model: str | None = None,
+        agent_role: str | None = None,
         context_size: int = 3000,
-        extra_parameters: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        extra_parameters: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         运行工作流
         
@@ -578,7 +578,7 @@ class ChapterWorkflow:
                 "error": str(e)
             }
     
-    def get_state(self, task_id: str) -> Optional[Dict[str, Any]]:
+    def get_state(self, task_id: str) -> dict[str, Any] | None:
         """获取工作流状态"""
         try:
             config = {"configurable": {"thread_id": task_id}}

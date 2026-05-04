@@ -2,7 +2,7 @@
 故事时间线MCP工具集
 供AI调用的工具：查询/添加/更新时间线条目
 """
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
 from timeline.models import TimelineEntry
@@ -72,12 +72,12 @@ class GetTimelineTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         mode: str = "context",
-        current_chapter: Optional[int] = None,
+        current_chapter: int | None = None,
         max_entries: int = 15,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-        time_horizon: Optional[str] = None,
-        search: Optional[str] = None,
+        category: str | None = None,
+        status: str | None = None,
+        time_horizon: str | None = None,
+        search: str | None = None,
         page: int = 1,
         page_size: int = 20,
         **kwargs
@@ -175,7 +175,7 @@ class AddTimelineEntryTool(BaseMCPTool):
         db,
         novel_id: int,
         user_id: int,
-        entries: List[Dict[str, Any]],
+        entries: list[dict[str, Any]],
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -190,7 +190,7 @@ class AddTimelineEntryTool(BaseMCPTool):
 
             service = TimelineService(db, novel_id)
 
-            async def _add_single(op: Dict) -> Dict:
+            async def _add_single(op: dict) -> dict:
                 try:
                     data = TimelineEntryCreate(
                         category=op["category"],
@@ -281,18 +281,18 @@ class UpdateTimelineEntryTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         entry_id: int,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        detail_json: Optional[Dict] = None,
-        target_chapter: Optional[int] = None,
-        time_horizon: Optional[str] = None,
-        status: Optional[str] = None,
-        importance: Optional[int] = None,
-        tags: Optional[List[str]] = None,
-        arc_id: Optional[int] = None,
-        sequence: Optional[int] = None,
-        resolved_chapter_id: Optional[int] = None,
-        resolution_notes: Optional[str] = None,
+        title: str | None = None,
+        description: str | None = None,
+        detail_json: dict | None = None,
+        target_chapter: int | None = None,
+        time_horizon: str | None = None,
+        status: str | None = None,
+        importance: int | None = None,
+        tags: list[str] | None = None,
+        arc_id: int | None = None,
+        sequence: int | None = None,
+        resolved_chapter_id: int | None = None,
+        resolution_notes: str | None = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -344,7 +344,7 @@ class UpdateTimelineEntryTool(BaseMCPTool):
             return MCPToolResult(success=False, error=f"更新时间线条目失败: {str(e)}")
 
 
-def _entry_to_dict(entry: TimelineEntry) -> Dict[str, Any]:
+def _entry_to_dict(entry: TimelineEntry) -> dict[str, Any]:
     return {
         "id": entry.id,
         "category": entry.category,

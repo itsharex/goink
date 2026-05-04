@@ -13,11 +13,9 @@ from core.response import ApiResponse
 from core.database import DBSession, AsyncSessionLocal
 from core.dependencies import NovelOwner
 from core.llm_service import llm_service
-from context.context_builder import ContextBuilder
 from text.utils import count_words
 from context.prompt_templates import (
     get_system_prompt,
-    build_chapter_prompt,
     build_dialogue_prompt,
     build_description_prompt,
     build_outline_prompt,
@@ -28,7 +26,6 @@ from context.prompt_templates import (
     GenerationType
 )
 from chapters.models import Chapter
-from novels.models import Novel
 from generation.service import ChapterGenerationService
 
 router = APIRouter(prefix="/generation", tags=["generation"])

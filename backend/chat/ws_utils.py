@@ -3,7 +3,7 @@ WebSocket 工具函数 - 从 ws_chat.py 提取
 工具调用展示、错误处理、JSON 解析等纯工具函数
 """
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from sqlalchemy import select
 
@@ -42,7 +42,7 @@ def _sanitize_tool_error(error: str | None) -> str | None:
 
 
 def _decode_partial_json_string(raw: str) -> str:
-    result: List[str] = []
+    result: list[str] = []
     i = 0
     while i < len(raw):
         ch = raw[i]
@@ -70,7 +70,7 @@ def _decode_partial_json_string(raw: str) -> str:
     return "".join(result)
 
 
-def _extract_partial_argument_string(arguments_text: str, key: str) -> Optional[str]:
+def _extract_partial_argument_string(arguments_text: str, key: str) -> str | None:
     marker = f'"{key}"'
     key_idx = arguments_text.find(marker)
     if key_idx < 0:
@@ -82,7 +82,7 @@ def _extract_partial_argument_string(arguments_text: str, key: str) -> Optional[
     if quote_idx < 0:
         return None
 
-    buf: List[str] = []
+    buf: list[str] = []
     escape = False
     i = quote_idx + 1
     while i < len(arguments_text):
@@ -106,9 +106,9 @@ def _extract_partial_argument_string(arguments_text: str, key: str) -> Optional[
 async def _lookup_chapter_brief(
     db,
     novel_id: int,
-    chapter_id: Optional[int] = None,
-    chapter_number: Optional[int] = None
-) -> Dict[str, Any]:
+    chapter_id: int | None = None,
+    chapter_number: int | None = None
+) -> dict[str, Any]:
     stmt = None
     if chapter_id:
         stmt = select(Chapter).where(Chapter.id == chapter_id)
@@ -189,10 +189,10 @@ async def _build_tool_call_presentation(
     db,
     novel_id: int,
     tool_name: str,
-    arguments: Optional[Dict[str, Any]] = None,
-    result_payload: Optional[Any] = None,
+    arguments: dict[str, Any] | None = None,
+    result_payload: Any | None = None,
     status: str = "executing"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     arguments = arguments or {}
 
     if not isinstance(result_payload, dict):

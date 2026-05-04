@@ -2,7 +2,6 @@
 通用权限验证工具
 供MCP工具和业务逻辑复用
 """
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -13,7 +12,7 @@ async def verify_novel_ownership(
     db: AsyncSession,
     novel_id: int,
     user_id: int
-) -> Optional[Novel]:
+) -> Novel | None:
     """
     验证小说归属权
     

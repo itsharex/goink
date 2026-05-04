@@ -4,7 +4,7 @@
 """
 import logging
 from enum import Enum
-from typing import Dict, Any, List, Optional
+from typing import Any
 from datetime import datetime, timezone
 
 from sqlalchemy import select, func, or_, desc, asc, case
@@ -35,13 +35,13 @@ class TimelineService:
         self,
         page: int = 1,
         page_size: int = 20,
-        category: Optional[str] = None,
-        status: Optional[str] = None,
-        time_horizon: Optional[str] = None,
-        search: Optional[str] = None,
+        category: str | None = None,
+        status: str | None = None,
+        time_horizon: str | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[List[TimelineEntry], int]:
+    ) -> tuple[list[TimelineEntry], int]:
         query = select(TimelineEntry).where(TimelineEntry.novel_id == self.novel_id)
         count_query = select(func.count()).select_from(TimelineEntry).where(TimelineEntry.novel_id == self.novel_id)
 
@@ -84,7 +84,7 @@ class TimelineService:
 
         return items, total
 
-    async def get_entry(self, entry_id: int) -> Optional[TimelineEntry]:
+    async def get_entry(self, entry_id: int) -> TimelineEntry | None:
         result = await self.db.execute(
             select(TimelineEntry).where(
                 TimelineEntry.id == entry_id,
@@ -127,7 +127,7 @@ class TimelineService:
 
     async def update_entry(
         self, entry_id: int, data: TimelineEntryUpdate, editor: str = "user"
-    ) -> Optional[TimelineEntry]:
+    ) -> TimelineEntry | None:
         entry = await self.get_entry(entry_id)
         if not entry:
             return None
@@ -192,7 +192,7 @@ class TimelineService:
 
     async def get_context_for_generation(
         self, current_chapter: int, max_entries: int = 15
-    ) -> tuple[List[TimelineEntry], str]:
+    ) -> tuple[list[TimelineEntry], str]:
         entries = []
         seen_ids = set()
 
@@ -274,11 +274,11 @@ class TimelineService:
 
         return entries, summary_text
 
-    def _build_context_summary(self, entries: List[TimelineEntry], current_chapter: int) -> str:
+    def _build_context_summary(self, entries: list[TimelineEntry], current_chapter: int) -> str:
         if not entries:
             return ""
 
-        sections: Dict[str, List[str]] = {}
+        sections: dict[str, list[str]] = {}
         for entry in entries:
             cat = entry.category
             if cat not in sections:
@@ -360,8 +360,8 @@ class TimelineService:
         chapter_content: str,
         chapter_number: int,
         chapter_id: int,
-        structured_info: Optional[Dict[str, Any]] = None,
-    ) -> List[TimelineEntry]:
+        structured_info: dict[str, Any] | None = None,
+    ) -> list[TimelineEntry]:
         created_entries = []
         if not structured_info:
             return created_entries
@@ -440,8 +440,8 @@ class TimelineService:
         category: TimelineEntryCategory,
         title: str,
         description: str,
-        detail_json: Optional[Dict[str, Any]],
-        target_chapter: Optional[int],
+        detail_json: dict[str, Any] | None,
+        target_chapter: int | None,
         time_horizon: TimeHorizon,
         importance: int,
         chapter_id: int,
@@ -483,8 +483,8 @@ class TimelineService:
         *,
         category: str,
         title: str,
-        target_chapter: Optional[int]
-    ) -> Optional[TimelineEntry]:
+        target_chapter: int | None
+    ) -> TimelineEntry | None:
         result = await self.db.execute(
             select(TimelineEntry)
             .where(
@@ -503,7 +503,7 @@ class TimelineService:
         )
         return result.scalar_one_or_none()
 
-    def _parse_foreshadowing_text(self, text: str) -> Dict[str, str]:
+    def _parse_foreshadowing_text(self, text: str) -> dict[str, str]:
         result = {"title": "", "description": text, "type": "plot", "expected_resolution": ""}
         if "|" in text:
             parts = text.split("|")
@@ -519,7 +519,7 @@ class TimelineService:
             result["title"] = text.strip().lstrip("- ").strip()[:50]
         return result
 
-    async def get_unresolved_count(self) -> Dict[str, int]:
+    async def get_unresolved_count(self) -> dict[str, int]:
         counts = {}
         categories = [
             TimelineEntryCategory.FORESHADOWING.value,

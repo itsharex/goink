@@ -2,7 +2,6 @@
 记忆Agent - 负责向量索引更新和记忆维护
 """
 import logging
-from typing import Dict, Any, Optional
 
 from sqlalchemy import select
 

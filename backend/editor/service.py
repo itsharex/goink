@@ -5,7 +5,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,7 +71,7 @@ class EditSessionManager:
     async def get_edit_session(
         self,
         chapter_id: int
-    ) -> Optional[EditSession]:
+    ) -> EditSession | None:
         """获取章节的活动编辑会话"""
         result = await self.db.execute(
             select(EditSession).where(
@@ -84,7 +84,7 @@ class EditSessionManager:
     async def get_edit_session_by_id(
         self,
         edit_session_id: str
-    ) -> Optional[EditSession]:
+    ) -> EditSession | None:
         """通过ID获取编辑会话"""
         result = await self.db.execute(
             select(EditSession).where(
@@ -98,10 +98,10 @@ class EditSessionManager:
         edit_session: EditSession,
         change_type: str,
         new_content: str,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
         source: str = ChangeSource.AI,
-        reason: Optional[str] = None
+        reason: str | None = None
     ) -> EditChange:
         """应用变更到副本（事务性操作）"""
         old_working_content = edit_session.working_content or ""
@@ -172,7 +172,7 @@ class EditSessionManager:
     async def accept_edit_session(
         self,
         edit_session_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """接受所有变更"""
         result = await self.db.execute(
             select(EditSession).where(
@@ -240,7 +240,7 @@ class EditSessionManager:
     async def reject_edit_session(
         self,
         edit_session_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """拒绝所有变更，回退到原版本"""
         result = await self.db.execute(
             select(EditSession).where(
@@ -284,7 +284,7 @@ class EditSessionManager:
     async def get_diff(
         self,
         edit_session_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """获取副本与原版的diff"""
         result = await self.db.execute(
             select(EditSession).where(
@@ -309,10 +309,10 @@ class EditSessionManager:
             "diff": diff_result.to_dict()
         }
 
-    async def _generate_chapter_summary(self, content: str) -> Optional[str]:
+    async def _generate_chapter_summary(self, content: str) -> str | None:
         return await generate_chapter_summary(content)
 
-    async def _post_accept_refresh(self, chapter_snapshot: Dict[str, Any]) -> None:
+    async def _post_accept_refresh(self, chapter_snapshot: dict[str, Any]) -> None:
         summary = None
         try:
             summary = await self._generate_chapter_summary(chapter_snapshot["content"])
@@ -337,7 +337,7 @@ class EditSessionManager:
         except Exception as exc:
             logger.warning("Failed to invalidate cache after accept edit: %s", exc)
 
-    async def _refresh_chapter_memory(self, chapter: Dict[str, Any]) -> None:
+    async def _refresh_chapter_memory(self, chapter: dict[str, Any]) -> None:
         vector_store.delete_chapter_chunks(chapter["novel_id"], chapter["id"])
         content = chapter["content"]
         if not content.strip():
@@ -352,7 +352,7 @@ class EditSessionManager:
         if chunk_data:
             vector_store.add_chunks(chapter["novel_id"], chunk_data)
 
-    async def _invalidate_cache(self, chapter: Dict[str, Any]) -> None:
+    async def _invalidate_cache(self, chapter: dict[str, Any]) -> None:
         from core.redis_service import redis_service
         await redis_service.delete(f"chapter:{chapter['id']}:detail")
         await redis_service.clear_pattern(f"novel:{chapter['novel_id']}:chapters:*")

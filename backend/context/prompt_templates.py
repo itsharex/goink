@@ -2,7 +2,6 @@
 提示词模板管理 - 系统提示词和用户提示词分离
 支持多种生成类型的提示词模板
 """
-from typing import Dict, Any, Optional, List
 from enum import Enum
 from dataclasses import dataclass
 
@@ -31,7 +30,7 @@ class PromptTemplate:
     context_template: str
 
 
-SYSTEM_PROMPTS: Dict[str, str] = {
+SYSTEM_PROMPTS: dict[str, str] = {
     GenerationType.CHAPTER: """你是一位专业的小说作家。
 
 核心要求：
@@ -93,7 +92,7 @@ SYSTEM_PROMPTS: Dict[str, str] = {
 4. 输出清晰结构"""
 }
 
-STYLE_HINTS: Dict[str, str] = {
+STYLE_HINTS: dict[str, str] = {
     "narrative": "使用叙述性语言，流畅自然，注重情节推进。",
     "descriptive": "使用描写性语言，生动形象，注重场景和细节。",
     "dialogue": "使用对话形式，自然流畅，注重人物性格展现。",
@@ -106,7 +105,7 @@ STYLE_HINTS: Dict[str, str] = {
 
 def get_system_prompt(
     generation_type: str,
-    style: Optional[str] = None
+    style: str | None = None
 ) -> str:
     """
     获取系统提示词
@@ -134,15 +133,15 @@ def build_chapter_prompt(
     target_length: int,
     style: str,
     context: str,
-    user_prompt: Optional[str] = None,
-    author_intent: Optional[str] = None,
-    scene_goal: Optional[str] = None,
-    chapter_outline: Optional[str] = None,
-    tone: Optional[str] = None,
-    must_keep: Optional[List[str]] = None,
-    must_avoid: Optional[List[str]] = None,
-    key_events: Optional[List[str]] = None,
-    focus_characters: Optional[List[str]] = None
+    user_prompt: str | None = None,
+    author_intent: str | None = None,
+    scene_goal: str | None = None,
+    chapter_outline: str | None = None,
+    tone: str | None = None,
+    must_keep: list[str] | None = None,
+    must_avoid: list[str] | None = None,
+    key_events: list[str] | None = None,
+    focus_characters: list[str] | None = None
 ) -> str:
     """
     构建章节生成提示词
@@ -213,10 +212,10 @@ def build_chapter_prompt(
 
 
 def build_dialogue_prompt(
-    characters: List[str],
+    characters: list[str],
     context: str,
     style: str,
-    user_prompt: Optional[str] = None
+    user_prompt: str | None = None
 ) -> str:
     """构建对话生成提示词"""
     parts = []
@@ -235,7 +234,7 @@ def build_dialogue_prompt(
 def build_description_prompt(
     subject: str,
     style: str,
-    user_prompt: Optional[str] = None
+    user_prompt: str | None = None
 ) -> str:
     """构建描写生成提示词"""
     if user_prompt:
@@ -247,7 +246,7 @@ def build_outline_prompt(
     premise: str,
     genre: str,
     total_chapters: int,
-    user_prompt: Optional[str] = None
+    user_prompt: str | None = None
 ) -> str:
     """构建大纲生成提示词"""
     parts = []
@@ -271,7 +270,7 @@ def build_outline_prompt(
 def build_summary_prompt(
     content: str,
     max_length: int,
-    user_prompt: Optional[str] = None
+    user_prompt: str | None = None
 ) -> str:
     """构建摘要生成提示词"""
     parts = []
@@ -290,7 +289,7 @@ def build_character_profile_prompt(
     name: str,
     role: str,
     novel_context: str,
-    user_prompt: Optional[str] = None
+    user_prompt: str | None = None
 ) -> str:
     """构建角色档案生成提示词"""
     parts = []
@@ -312,7 +311,7 @@ def build_character_profile_prompt(
     return "\n".join(parts)
 
 
-def get_available_models() -> List[Dict[str, str]]:
+def get_available_models() -> list[dict[str, str]]:
     """获取可用的LLM模型列表"""
     return [
         {
@@ -328,7 +327,7 @@ def get_available_models() -> List[Dict[str, str]]:
     ]
 
 
-def get_available_styles() -> List[Dict[str, str]]:
+def get_available_styles() -> list[dict[str, str]]:
     """获取可用的写作风格列表"""
     return [
         {"value": k, "label": _style_label(k), "description": v}

@@ -125,6 +125,24 @@ Vite + React 19 + TypeScript + Ant Design 6 + Zustand + Monaco Editor.
 Required: `DATABASE_URL` (MySQL), `DEEPSEEK_API_KEY`, `SECRET_KEY` (JWT).
 Optional: `REDIS_URL` (cache/pub-sub, degrades gracefully).
 
+## Coding Standards
+
+### Type Annotations (Python)
+
+Must use modern syntax for all type annotations (ruff rules UP045, UP006):
+- `X | None` instead of `Optional[X]`
+- `list[X]` instead of `List[X]`
+- `dict[K, V]` instead of `Dict[K, V]`
+- `tuple[X]` instead of `Tuple[X]`
+- `set[X]` instead of `Set[X]`
+
+Only `Any`, `TYPE_CHECKING`, `Callable`, `Annotated`, `Literal`, `TypedDict` etc. are allowed from `typing` module.
+
+### Lint (CI)
+
+GitHub Actions runs `ruff check --select UP045,UP006,UP035,F401` on push/PR to master.
+Run locally: `ruff check --select UP045,UP006,UP035,F401 --fix backend/`
+
 ## Git Conventions
 
 - Do NOT include `Co-Authored-By` trailers in commit messages.

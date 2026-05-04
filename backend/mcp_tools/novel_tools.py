@@ -2,8 +2,7 @@
 小说管理类MCP工具
 提供小说信息查询的标准接口
 """
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,7 +13,6 @@ from novels.models import Novel, NovelCreativeProfile
 from chapters.models import Chapter
 from text.utils import count_words
 from characters.models import Character
-from generation.service import ChapterGenerationService
 from core.permissions import verify_novel_ownership
 from rag.vector_store import vector_store, VectorStoreError
 
@@ -52,14 +50,14 @@ async def _invalidate_chapter_cache(novel_id: int, chapter_id: int | None = None
 
 
 def _build_creative_profile_summary(
-    author_intent: Optional[str] = None,
-    preferred_tone: Optional[str] = None,
-    scene_planning_notes: Optional[str] = None,
-    must_keep: Optional[List[str]] = None,
-    must_avoid: Optional[List[str]] = None,
-    long_term_goals: Optional[List[str]] = None
+    author_intent: str | None = None,
+    preferred_tone: str | None = None,
+    scene_planning_notes: str | None = None,
+    must_keep: list[str] | None = None,
+    must_avoid: list[str] | None = None,
+    long_term_goals: list[str] | None = None
 ) -> str:
-    parts: List[str] = []
+    parts: list[str] = []
     if author_intent:
         parts.append(f"长期意图：{author_intent.strip()}")
     if preferred_tone:
@@ -75,7 +73,7 @@ def _build_creative_profile_summary(
     return "\n".join(parts[:6])
 
 
-def _attach_profile_summary(extra_metadata: Optional[Dict[str, Any]], summary: str) -> Dict[str, Any]:
+def _attach_profile_summary(extra_metadata: dict[str, Any] | None, summary: str) -> dict[str, Any]:
     merged = dict(extra_metadata or {})
     if summary.strip():
         merged["llm_brief"] = summary.strip()
@@ -218,7 +216,7 @@ class GetChapterListTool(BaseMCPTool):
         db: AsyncSession,
         novel_id: int,
         user_id: int,
-        status: Optional[str] = None,
+        status: str | None = None,
         page: int = 1,
         page_size: int = 20,
         **kwargs
@@ -304,8 +302,8 @@ class GetChapterContentTool(BaseMCPTool):
         db: AsyncSession,
         novel_id: int,
         user_id: int,
-        chapter_id: Optional[int] = None,
-        chapter_number: Optional[int] = None,
+        chapter_id: int | None = None,
+        chapter_number: int | None = None,
         include_summary: bool = True,
         include_lines: bool = False,
         **kwargs
@@ -401,8 +399,8 @@ class GetCreativeProfileTool(BaseMCPTool):
         )
         user_profile = up_result.scalar_one_or_none()
 
-        merged_must_keep: List[str] = []
-        merged_must_avoid: List[str] = []
+        merged_must_keep: list[str] = []
+        merged_must_avoid: list[str] = []
 
         if user_profile and user_profile.global_must_keep:
             merged_must_keep.extend(user_profile.global_must_keep)
@@ -428,7 +426,7 @@ class GetCreativeProfileTool(BaseMCPTool):
                 unique_avoid.append(text)
                 seen_avoid.add(text)
 
-        profile_summary_parts: List[str] = []
+        profile_summary_parts: list[str] = []
         if user_profile and user_profile.global_writing_style:
             profile_summary_parts.append(f"全局风格：{user_profile.global_writing_style.strip()}")
         if novel_profile and novel_profile.author_intent:
@@ -533,7 +531,7 @@ class UpdateCreativeProfileTool(BaseMCPTool):
     MAX_LIST_ITEMS = 15
 
     @staticmethod
-    def _enforce_limit(items: Optional[List[str]], limit: int = MAX_LIST_ITEMS) -> List[str]:
+    def _enforce_limit(items: list[str] | None, limit: int = MAX_LIST_ITEMS) -> list[str]:
         if items is None:
             return []
         if len(items) <= limit:
@@ -541,10 +539,10 @@ class UpdateCreativeProfileTool(BaseMCPTool):
         return [str(i).strip() for i in items[:limit] if str(i).strip()]
 
     @staticmethod
-    def _merge_unique_list(existing: Optional[List[str]], incoming: Optional[List[str]]) -> Optional[List[str]]:
+    def _merge_unique_list(existing: list[str] | None, incoming: list[str] | None) -> list[str] | None:
         if incoming is None:
             return existing
-        merged: List[str] = []
+        merged: list[str] = []
         seen: set[str] = set()
         for item in (existing or []) + (incoming or []):
             text = str(item).strip()
@@ -554,7 +552,7 @@ class UpdateCreativeProfileTool(BaseMCPTool):
         return merged
 
     @staticmethod
-    def _merge_dict(existing: Optional[Dict[str, Any]], incoming: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _merge_dict(existing: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any] | None:
         if incoming is None:
             return existing
         merged = dict(existing or {})
@@ -566,12 +564,12 @@ class UpdateCreativeProfileTool(BaseMCPTool):
         db: AsyncSession,
         novel_id: int,
         user_id: int,
-        author_intent: Optional[str] = None,
-        preferred_tone: Optional[str] = None,
-        global_writing_style: Optional[str] = None,
-        must_keep: Optional[List[str]] = None,
-        must_avoid: Optional[List[str]] = None,
-        long_term_goals: Optional[List[str]] = None,
+        author_intent: str | None = None,
+        preferred_tone: str | None = None,
+        global_writing_style: str | None = None,
+        must_keep: list[str] | None = None,
+        must_avoid: list[str] | None = None,
+        long_term_goals: list[str] | None = None,
         merge_with_existing: bool = True,
         **kwargs
     ) -> MCPToolResult:
@@ -721,10 +719,10 @@ class GetCharactersTool(BaseMCPTool):
     }
 
     @staticmethod
-    def _extract_personality_summary(personality: Optional[Dict[str, Any]]) -> str:
+    def _extract_personality_summary(personality: dict[str, Any] | None) -> str:
         if not personality or not isinstance(personality, dict):
             return ""
-        parts: List[str] = []
+        parts: list[str] = []
         for key, value in personality.items():
             text = str(value).strip()
             if text and len(text) < 200:
@@ -737,8 +735,8 @@ class GetCharactersTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         mode: str = "list",
-        character_id: Optional[int] = None,
-        search: Optional[str] = None,
+        character_id: int | None = None,
+        search: str | None = None,
         include_relations: bool = True,
         include_recent_events: bool = True,
         include_memory: bool = False,
@@ -934,8 +932,8 @@ class CreateCharacterTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         name: str,
-        personality: Optional[Dict] = None,
-        abilities: Optional[List[str]] = None,
+        personality: dict | None = None,
+        abilities: list[str] | None = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -1006,9 +1004,9 @@ class UpdateCharacterTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         character_id: int,
-        name: Optional[str] = None,
-        personality: Optional[Dict] = None,
-        abilities: Optional[List[str]] = None,
+        name: str | None = None,
+        personality: dict | None = None,
+        abilities: list[str] | None = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -1087,9 +1085,9 @@ class CreateNewChapterTool(BaseMCPTool):
         db: AsyncSession,
         novel_id: int,
         user_id: int,
-        chapter_number: Optional[int] = None,
-        title: Optional[str] = None,
-        content: Optional[str] = None,
+        chapter_number: int | None = None,
+        title: str | None = None,
+        content: str | None = None,
         **kwargs
     ) -> MCPToolResult:
         novel = await verify_novel_ownership(db, novel_id, user_id)

@@ -1,10 +1,9 @@
 """
 章节管理模块 - API路由
 """
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from typing import Optional
 
 from core.response import ApiResponse
 from core.database import DBSession
@@ -53,7 +52,7 @@ async def get_chapters_by_novel(
     db: DBSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: Optional[str] = None,
+    status: str | None = None,
     order: str = Query("asc", pattern="^(asc|desc)$")
 ):
     """
@@ -241,7 +240,7 @@ async def update_chapter(
     db: DBSession,
     current_user: CurrentUserDep,
     collaborative: bool = Query(False, description="是否与AI协作编辑副本"),
-    session_id: Optional[str] = Query(None, description="协作编辑会话ID")
+    session_id: str | None = Query(None, description="协作编辑会话ID")
 ):
     """
     更新章节

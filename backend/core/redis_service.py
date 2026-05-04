@@ -5,9 +5,8 @@ import os
 import json
 import hashlib
 import logging
-import asyncio
-from typing import Optional, Any, Dict, List, Callable
-from datetime import datetime, timedelta
+from typing import Any
+from collections.abc import Callable
 from functools import wraps
 import redis.asyncio as redis
 from redis.asyncio import Redis
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 class RedisConfig:
     """Redis配置"""
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")
+    REDIS_PASSWORD: str | None = os.getenv("REDIS_PASSWORD")
     REDIS_MAX_CONNECTIONS: int = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
     
     CACHE_DEFAULT_TTL: int = int(os.getenv("CACHE_DEFAULT_TTL", "300"))
@@ -34,7 +33,7 @@ class RedisService:
     """Redis服务 - 单例模式"""
     
     _instance = None
-    _redis: Optional[Redis] = None
+    _redis: Redis | None = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -73,7 +72,7 @@ class RedisService:
             raise RuntimeError("Redis not connected. Call connect() first.")
         return self._redis
     
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """获取缓存"""
         try:
             full_key = f"{RedisConfig.CACHE_PREFIX}{key}"
@@ -89,7 +88,7 @@ class RedisService:
         self, 
         key: str, 
         value: Any, 
-        ttl: Optional[int] = None
+        ttl: int | None = None
     ) -> bool:
         """设置缓存"""
         try:
@@ -150,7 +149,7 @@ class RedisService:
             logger.error(f"Redis decr error: {e}")
             return 0
     
-    async def mget(self, keys: List[str]) -> List[Optional[Any]]:
+    async def mget(self, keys: list[str]) -> list[Any | None]:
         """批量获取"""
         try:
             full_keys = [f"{RedisConfig.CACHE_PREFIX}{k}" for k in keys]
@@ -160,7 +159,7 @@ class RedisService:
             logger.error(f"Redis mget error: {e}")
             return [None] * len(keys)
     
-    async def mset(self, mapping: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    async def mset(self, mapping: dict[str, Any], ttl: int | None = None) -> bool:
         """批量设置"""
         try:
             ttl = ttl or RedisConfig.CACHE_DEFAULT_TTL
@@ -215,8 +214,8 @@ class RedisService:
     async def zadd(
         self, 
         key: str, 
-        mapping: Dict[str, float],
-        ttl: Optional[int] = None
+        mapping: dict[str, float],
+        ttl: int | None = None
     ) -> int:
         """
         添加有序集合成员
@@ -263,7 +262,7 @@ class RedisService:
         start: int, 
         stop: int,
         withscores: bool = False
-    ) -> List:
+    ) -> list:
         """
         获取有序集合指定范围成员（按分数降序）
         
@@ -306,7 +305,7 @@ class RedisService:
         start: int, 
         stop: int,
         withscores: bool = False
-    ) -> List:
+    ) -> list:
         """
         获取有序集合指定范围成员（按分数升序）
         
@@ -329,8 +328,8 @@ class RedisService:
     def acquire_lock(
         self, 
         lock_name: str, 
-        timeout: Optional[int] = None,
-        blocking_timeout: Optional[float] = None
+        timeout: int | None = None,
+        blocking_timeout: float | None = None
     ) -> Lock:
         """
         获取分布式锁
@@ -358,8 +357,8 @@ redis_service = RedisService()
 
 def cache_result(
     key_prefix: str,
-    ttl: Optional[int] = None,
-    key_builder: Optional[Callable] = None
+    ttl: int | None = None,
+    key_builder: Callable | None = None
 ):
     """
     缓存装饰器 - 自动缓存函数返回值
@@ -405,12 +404,12 @@ class NovelCache:
     """小说相关缓存管理"""
     
     @staticmethod
-    async def get_novel_summary(novel_id: int) -> Optional[Dict[str, Any]]:
+    async def get_novel_summary(novel_id: int) -> dict[str, Any] | None:
         """获取小说摘要缓存"""
         return await redis_service.get(f"novel:{novel_id}:summary")
     
     @staticmethod
-    async def set_novel_summary(novel_id: int, summary: Dict[str, Any], ttl: int = 600):
+    async def set_novel_summary(novel_id: int, summary: dict[str, Any], ttl: int = 600):
         """设置小说摘要缓存"""
         await redis_service.set(f"novel:{novel_id}:summary", summary, ttl)
     
@@ -420,7 +419,7 @@ class NovelCache:
         await redis_service.clear_pattern(f"novel:{novel_id}:*")
     
     @staticmethod
-    async def get_chapter_content(chapter_id: int) -> Optional[str]:
+    async def get_chapter_content(chapter_id: int) -> str | None:
         """获取章节内容缓存"""
         return await redis_service.get(f"chapter:{chapter_id}:content")
     
@@ -430,12 +429,12 @@ class NovelCache:
         await redis_service.set(f"chapter:{chapter_id}:content", content, ttl)
     
     @staticmethod
-    async def get_character_memory(character_id: int) -> Optional[Dict[str, Any]]:
+    async def get_character_memory(character_id: int) -> dict[str, Any] | None:
         """获取角色记忆缓存"""
         return await redis_service.get(f"character:{character_id}:memory")
     
     @staticmethod
-    async def set_character_memory(character_id: int, memory: Dict[str, Any], ttl: int = 300):
+    async def set_character_memory(character_id: int, memory: dict[str, Any], ttl: int = 300):
         """设置角色记忆缓存"""
         await redis_service.set(f"character:{character_id}:memory", memory, ttl)
 
@@ -445,7 +444,7 @@ class GenerationLock:
     
     def __init__(self, novel_id: int, chapter_number: int):
         self.lock_name = f"generation:{novel_id}:{chapter_number}"
-        self.lock: Optional[Lock] = None
+        self.lock: Lock | None = None
     
     async def __aenter__(self):
         self.lock = redis_service.acquire_lock(

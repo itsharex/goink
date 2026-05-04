@@ -2,12 +2,12 @@
 地点管理模块 - 服务层
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, or_
 
 from .models import Location
-from .schemas import LocationCreate, LocationUpdate, LocationType, LocationResponse, LocationNetworkResponse
+from .schemas import LocationCreate, LocationUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -19,16 +19,16 @@ class LocationService:
         self.db = db
         self.novel_id = novel_id
 
-    async def get_all(self) -> List[Location]:
+    async def get_all(self) -> list[Location]:
         result = await self.db.execute(
             select(Location).where(Location.novel_id == self.novel_id).order_by(Location.name)
         )
         return list(result.scalars().all())
 
-    async def get_by_id(self, location_id: int) -> Optional[Location]:
+    async def get_by_id(self, location_id: int) -> Location | None:
         return await self.db.get(Location, location_id)
 
-    async def get_children(self, parent_id: int) -> List[Location]:
+    async def get_children(self, parent_id: int) -> list[Location]:
         result = await self.db.execute(
             select(Location).where(
                 Location.novel_id == self.novel_id,
@@ -37,7 +37,7 @@ class LocationService:
         )
         return list(result.scalars().all())
 
-    async def get_by_type(self, location_type: str) -> List[Location]:
+    async def get_by_type(self, location_type: str) -> list[Location]:
         result = await self.db.execute(
             select(Location).where(
                 Location.novel_id == self.novel_id,
@@ -46,7 +46,7 @@ class LocationService:
         )
         return list(result.scalars().all())
 
-    async def search(self, query: str) -> List[Location]:
+    async def search(self, query: str) -> list[Location]:
         result = await self.db.execute(
             select(Location).where(
                 Location.novel_id == self.novel_id,
@@ -65,7 +65,7 @@ class LocationService:
         await self.db.refresh(location)
         return location
 
-    async def update(self, location_id: int, data: LocationUpdate) -> Optional[Location]:
+    async def update(self, location_id: int, data: LocationUpdate) -> Location | None:
         location = await self.db.get(Location, location_id)
         if not location or location.novel_id != self.novel_id:
             return None
@@ -84,7 +84,7 @@ class LocationService:
         await self.db.commit()
         return True
 
-    async def get_network(self) -> Dict[str, Any]:
+    async def get_network(self) -> dict[str, Any]:
         """获取地点层级网络结构"""
         all_locations = await self.get_all()
         
@@ -124,7 +124,7 @@ class LocationService:
             "root_locations": root_locations,
         }
 
-    async def get_for_chapter(self, chapter_id: int) -> List[Location]:
+    async def get_for_chapter(self, chapter_id: int) -> list[Location]:
         result = await self.db.execute(
             select(Location).where(
                 Location.novel_id == self.novel_id,

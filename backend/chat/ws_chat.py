@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from core.websocket import ws_manager
 from core.database import AsyncSessionLocal
@@ -65,7 +65,7 @@ AUTHORING_INTENT_CUES = (
 )
 
 
-async def get_user_from_token(token: str) -> Optional[int]:
+async def get_user_from_token(token: str) -> int | None:
     try:
         payload = decode_token(token)
         if payload and payload.get("sub"):
@@ -120,9 +120,9 @@ async def websocket_chat(
         await websocket.close(code=4005, reason="Too many connections")
         return
     
-    active_tasks: Dict[str, asyncio.Task] = {}
-    task_flags: Dict[str, bool] = {}
-    current_session: Optional[Session] = None
+    active_tasks: dict[str, asyncio.Task] = {}
+    task_flags: dict[str, bool] = {}
+    current_session: Session | None = None
     
     logger.info(f"WebSocket connected: user={user_id}, novel={novel_id}")
     
@@ -470,7 +470,7 @@ async def _handle_apply_edit(websocket, data, novel_id):
         }, websocket)
 
 
-async def _resolve_edit_session_for_action(db, edit_session_id: Optional[str], chapter_id: Optional[int]):
+async def _resolve_edit_session_for_action(db, edit_session_id: str | None, chapter_id: int | None):
     manager = get_edit_session_manager(db)
     edit_session = None
     if edit_session_id:
@@ -480,7 +480,7 @@ async def _resolve_edit_session_for_action(db, edit_session_id: Optional[str], c
     return manager, edit_session
 
 
-async def _get_latest_pending_edit_session_id(db, chapter_id: Optional[int]) -> Optional[str]:
+async def _get_latest_pending_edit_session_id(db, chapter_id: int | None) -> str | None:
     if not chapter_id:
         return None
     manager = get_edit_session_manager(db)
@@ -601,7 +601,7 @@ async def _run_chat_with_tools(
     tools_enabled: bool,
     novel_id: int,
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     """执行支持工具调用的对话 - 优化版：支持前缀缓存"""
     try:
@@ -734,11 +734,11 @@ async def _run_chat_with_tools(
             is_thinking = False
             loop_count = 0
             
-            tool_cache: Dict[str, Dict[str, Any]] = {}
+            tool_cache: dict[str, dict[str, Any]] = {}
             disabled_tools: set[str] = set()
-            failed_tool_keys: Dict[str, int] = {}
+            failed_tool_keys: dict[str, int] = {}
             max_tool_retries = 3
-            recent_tool_patterns: List[str] = []
+            recent_tool_patterns: list[str] = []
             max_tool_loops = 50
             max_context_tokens = session_manager.config.max_tokens
             READ_ONLY_TOOLS = {
@@ -748,7 +748,7 @@ async def _run_chat_with_tools(
                 "get_locations"
             }
             while loop_count < max_tool_loops:
-                tool_outputs: List[Dict[str, Any]] = []
+                tool_outputs: list[dict[str, Any]] = []
                 if tools:
                     tools = [t for t in tools if t["function"]["name"] not in disabled_tools]
                 async for event in llm_service.chat_stream_with_tools(
@@ -1110,7 +1110,7 @@ async def _run_chat_with_tools(
                             "display_text": item.get("display_text"),
                             "activity_kind": item.get("activity_kind"),
                         })
-                    tool_meta: Dict[str, Any] = {"tool_calls": combined_tool_calls}
+                    tool_meta: dict[str, Any] = {"tool_calls": combined_tool_calls}
                     tool_meta["thinking_content"] = thinking_buffer
                     thinking_buffer = ""
                     tool_call_content = response_buffer.strip()
@@ -1213,7 +1213,7 @@ async def _run_chat_with_tools(
                 break
             
             if response_buffer.strip():
-                final_meta: Dict[str, Any] = {}
+                final_meta: dict[str, Any] = {}
                 if thinking_buffer:
                     final_meta["thinking_content"] = thinking_buffer
                 session_manager.add_message(session, MessageRole.ASSISTANT, response_buffer, metadata=final_meta or None)

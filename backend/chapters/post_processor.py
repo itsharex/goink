@@ -10,7 +10,7 @@
 """
 import re
 import logging
-from typing import Optional, Dict, Any
+from typing import Any
 
 from core.llm_service import llm_service
 
@@ -42,7 +42,7 @@ def _get_last_paragraph(text: str) -> str:
     return ""
 
 
-async def complete_ending(text: str, model: Optional[str] = None) -> str:
+async def complete_ending(text: str, model: str | None = None) -> str:
     prompt = (
         f"以下是一段小说正文的末尾，它似乎在句子中间被截断了。"
         f"请补全最后一句话，使其自然收尾。\n\n"
@@ -76,8 +76,8 @@ class ChapterPostProcessor:
         self.novel_id = novel_id
 
     async def process(self, content: str, chapter_number: int, chapter_id: int,
-                      model: Optional[str] = None) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
+                      model: str | None = None) -> dict[str, Any]:
+        result: dict[str, Any] = {
             "original_content": content,
             "final_content": content,
             "was_truncated": False,

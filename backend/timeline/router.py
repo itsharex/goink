@@ -3,26 +3,20 @@
 统一管理伏笔/情节规划/章节安排/用户指令的RESTful接口
 """
 import logging
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from fastapi import APIRouter, Query
 
-from core.database import get_db, DBSession
+from core.database import DBSession
 from core.response import ApiResponse
-from core.auth import CurrentUserDep
 from core.dependencies import NovelOwner
-from timeline.models import TimelineEntry
 from timeline.schemas import (
     TimelineEntryCreate,
     TimelineEntryUpdate,
     TimelineEntryResolve,
     TimelineEntryResponse,
     TimelineListResponse,
-    TimelineContextRequest,
     TimelineContextResponse,
 )
 from timeline.service import TimelineService
-from novels.models import Novel
 
 router = APIRouter(prefix="/timeline", tags=["timeline"])
 logger = logging.getLogger(__name__)

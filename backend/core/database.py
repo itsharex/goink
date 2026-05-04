@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from typing import Annotated, AsyncGenerator
+from typing import Annotated
+from collections.abc import AsyncGenerator
 from fastapi import Depends
 import os
 from dotenv import load_dotenv
@@ -41,18 +42,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db():
-    from auth.models import User
-    from novels.models import Novel, NovelCreativeProfile
-    from characters.models import Character, CharacterRelation
-    from locations.models import Location
-    from chapters.models import Chapter
-    from memory.models import MemoryChunk
-    from rag.models import RAGContext
-    from agents.models import AgentTaskRecord
-    from story_arcs.models import StoryArc
-    from editor.models import EditSession, EditChange
-    from timeline.models import TimelineEntry
-    from novels.models import UserCreativeProfile
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

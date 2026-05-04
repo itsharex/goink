@@ -6,7 +6,7 @@ import os
 import logging
 import asyncio
 import gc
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 from core.exceptions import SystemError
 
@@ -149,7 +149,7 @@ class VectorStore:
     def add_chunks(
         self, 
         novel_id: int, 
-        chunks: List[Dict[str, Any]]
+        chunks: list[dict[str, Any]]
     ) -> int:
         """添加内容块到向量存储"""
         try:
@@ -201,8 +201,8 @@ class VectorStore:
         novel_id: int, 
         query: str, 
         top_k: int = 10,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+        filters: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """语义检索（异步）"""
         try:
             collection = self.get_or_create_collection(novel_id)
@@ -353,14 +353,14 @@ class VectorStore:
         self,
         *,
         chapter_id: int,
-        chapter_number: Optional[int],
-        chapter_title: Optional[str],
+        chapter_number: int | None,
+        chapter_title: str | None,
         content: str,
-        summary: Optional[str] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        summary: str | None = None,
+        extra_metadata: dict[str, Any] | None = None,
         chunk_size: int = 500,
         overlap: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         为章节构建更适合小说检索的多层记忆块。
 
@@ -378,7 +378,7 @@ class VectorStore:
             **(extra_metadata or {})
         }
 
-        chunks: List[Dict[str, Any]] = []
+        chunks: list[dict[str, Any]] = []
         if summary_text:
             chunks.append({
                 "id": f"{chapter_id}_summary",

@@ -2,10 +2,10 @@
 叙事弧线MCP工具集
 供AI调用的工具：查询/添加/更新叙事弧线
 """
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
-from story_arcs.models import StoryArc, StoryArcType, StoryArcStatus
+from story_arcs.models import StoryArc
 from story_arcs.schemas import StoryArcCreate, StoryArcUpdate
 from story_arcs.service import StoryArcService
 from core.permissions import verify_novel_ownership
@@ -42,8 +42,8 @@ class GetStoryArcsTool(BaseMCPTool):
         db,
         novel_id: int,
         user_id: int,
-        arc_type: Optional[str] = None,
-        status: Optional[str] = None,
+        arc_type: str | None = None,
+        status: str | None = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -100,10 +100,10 @@ class AddStoryArcTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         name: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         arc_type: str = "sub",
-        start_chapter: Optional[int] = None,
-        end_chapter: Optional[int] = None,
+        start_chapter: int | None = None,
+        end_chapter: int | None = None,
         importance: int = 1,
         **kwargs
     ) -> MCPToolResult:
@@ -170,13 +170,13 @@ class UpdateStoryArcTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         arc_id: int,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        arc_type: Optional[str] = None,
-        start_chapter: Optional[int] = None,
-        end_chapter: Optional[int] = None,
-        importance: Optional[int] = None,
-        status: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
+        arc_type: str | None = None,
+        start_chapter: int | None = None,
+        end_chapter: int | None = None,
+        importance: int | None = None,
+        status: str | None = None,
         **kwargs
     ) -> MCPToolResult:
         try:
@@ -184,7 +184,7 @@ class UpdateStoryArcTool(BaseMCPTool):
             if not novel:
                 return MCPToolResult(success=False, error="无权访问此小说或小说不存在")
 
-            update_data: Dict[str, Any] = {}
+            update_data: dict[str, Any] = {}
             if name is not None:
                 update_data["name"] = name
             if description is not None:
@@ -217,7 +217,7 @@ class UpdateStoryArcTool(BaseMCPTool):
             return MCPToolResult(success=False, error=f"更新叙事弧线失败: {str(e)}")
 
 
-def _arc_to_dict(arc: StoryArc) -> Dict[str, Any]:
+def _arc_to_dict(arc: StoryArc) -> dict[str, Any]:
     return {
         "id": arc.id,
         "name": arc.name,

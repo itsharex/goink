@@ -3,7 +3,6 @@
 策略：读缓存优先，写双写，保证数据一致性
 """
 import logging
-from typing import Optional, List
 from datetime import datetime, timezone
 
 from core.redis_service import redis_service
@@ -32,7 +31,7 @@ class SessionStorage:
     def _get_user_sessions_key(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
+        novel_id: int | None = None,
     ) -> str:
         if novel_id:
             return f"{self.USER_SESSIONS_PREFIX}{user_id}:novel:{novel_id}"
@@ -50,7 +49,7 @@ class SessionStorage:
             logger.error(f"Failed to save session: {e}")
             return False
     
-    async def load(self, session_id: str) -> Optional[Session]:
+    async def load(self, session_id: str) -> Session | None:
         """加载会话 - 先缓存后数据库"""
         try:
             cached = await self._load_from_cache(session_id)
@@ -90,9 +89,9 @@ class SessionStorage:
     async def list_by_user(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
+        novel_id: int | None = None,
         limit: int = 20
-    ) -> List[Session]:
+    ) -> list[Session]:
         """列出用户会话"""
         try:
             sessions = await self._list_from_db(user_id, novel_id, limit)
@@ -127,7 +126,7 @@ class SessionStorage:
     async def get_session_count(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
+        novel_id: int | None = None,
     ) -> int:
         """获取会话数量"""
         try:
@@ -147,7 +146,7 @@ class SessionStorage:
             logger.warning(f"Failed to save to cache: {e}")
             return False
     
-    async def _load_from_cache(self, session_id: str) -> Optional[Session]:
+    async def _load_from_cache(self, session_id: str) -> Session | None:
         """从Redis缓存加载"""
         try:
             session_key = self._get_session_key(session_id)
@@ -238,7 +237,7 @@ class SessionStorage:
             logger.error(f"Failed to save to DB: {e}")
             return False
     
-    async def _load_from_db(self, session_id: str) -> Optional[Session]:
+    async def _load_from_db(self, session_id: str) -> Session | None:
         """从数据库加载"""
         try:
             async with AsyncSessionLocal() as db:
@@ -277,9 +276,9 @@ class SessionStorage:
     async def _list_from_db(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
+        novel_id: int | None = None,
         limit: int = 20
-    ) -> List[Session]:
+    ) -> list[Session]:
         """从数据库列出会话"""
         try:
             async with AsyncSessionLocal() as db:
@@ -315,7 +314,7 @@ class SessionStorage:
     async def _count_from_db(
         self,
         user_id: int,
-        novel_id: Optional[int] = None,
+        novel_id: int | None = None,
     ) -> int:
         """从数据库统计数量"""
         try:

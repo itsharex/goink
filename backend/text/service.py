@@ -3,7 +3,7 @@
 支持多种生成模式：章节、对话、描写、大纲、摘要、角色档案
 """
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any
 from enum import Enum
 from dataclasses import dataclass
 
@@ -46,9 +46,9 @@ class TextGenerator:
     async def generate(
         self,
         prompt: str,
-        context: Dict[str, Any] = None,
+        context: dict[str, Any] = None,
         config: GenerationConfig = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成文本
         
@@ -94,8 +94,8 @@ class TextGenerator:
         chapter_number: int,
         target_length: int = 3000,
         style: str = "narrative",
-        additional_context: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+        additional_context: dict[str, Any] = None
+    ) -> dict[str, Any]:
         """
         生成章节
         
@@ -133,7 +133,7 @@ class TextGenerator:
         chapter_id: int,
         style: str = "narrative",
         feedback: str = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         润色已有章节
         
@@ -195,10 +195,10 @@ class TextGenerator:
     
     async def generate_dialogue(
         self,
-        characters: List[str],
+        characters: list[str],
         context: str,
         style: str = "natural"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成对话
         
@@ -227,7 +227,7 @@ class TextGenerator:
         self,
         subject: str,
         style: str = "vivid"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成描写
         
@@ -253,7 +253,7 @@ class TextGenerator:
         genre: str,
         total_chapters: int = 20,
         style: str = "narrative"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成大纲
         
@@ -289,7 +289,7 @@ class TextGenerator:
         self,
         content: str,
         max_length: int = 500
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成摘要
         
@@ -316,7 +316,7 @@ class TextGenerator:
         role: str,
         novel_context: str,
         style: str = "narrative"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         生成角色档案
         
@@ -376,7 +376,7 @@ class TextGenerator:
     def _build_full_prompt(
         self,
         user_prompt: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         system_prompt: str
     ) -> str:
         """构建完整提示词"""

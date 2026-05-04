@@ -4,7 +4,7 @@ WebSocket 生成任务 - 从 ws_chat.py 提取
 """
 import asyncio
 import logging
-from typing import Dict, Any
+from typing import Any
 
 from fastapi import WebSocket
 from sqlalchemy import select, func
@@ -35,9 +35,9 @@ async def _run_generation_task(
     task_id: str,
     novel_id: int,
     generation_type: str,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     """执行生成任务"""
     try:
@@ -98,9 +98,9 @@ async def _run_generation_task(
 async def _generate_chapter_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool],
+    task_flags: dict[str, bool],
     db,
     context_builder
 ):
@@ -272,9 +272,9 @@ async def _generate_chapter_ws(
 async def _generate_streaming_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool],
+    task_flags: dict[str, bool],
     gen_type: GenerationType,
     progress_label: str,
     prompt_builder,
@@ -333,9 +333,9 @@ async def _generate_streaming_ws(
 async def _generate_dialogue_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     await _generate_streaming_ws(
         task_id, novel_id, params, websocket, task_flags,
@@ -354,9 +354,9 @@ async def _generate_dialogue_ws(
 async def _generate_description_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     await _generate_streaming_ws(
         task_id, novel_id, params, websocket, task_flags,
@@ -374,9 +374,9 @@ async def _generate_description_ws(
 async def _generate_outline_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     await _generate_streaming_ws(
         task_id, novel_id, params, websocket, task_flags,
@@ -394,9 +394,9 @@ async def _generate_outline_ws(
 async def _generate_summary_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     await _generate_streaming_ws(
         task_id, novel_id, params, websocket, task_flags,
@@ -413,9 +413,9 @@ async def _generate_summary_ws(
 async def _generate_character_profile_ws(
     task_id: str,
     novel_id: int,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     websocket: WebSocket,
-    task_flags: Dict[str, bool]
+    task_flags: dict[str, bool]
 ):
     await _generate_streaming_ws(
         task_id, novel_id, params, websocket, task_flags,

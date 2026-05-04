@@ -4,7 +4,6 @@
 from fastapi import APIRouter, Query
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from typing import Optional
 
 from core.response import ApiResponse
 from core.database import DBSession
@@ -29,7 +28,7 @@ async def get_characters_by_novel(
     db: DBSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    search: Optional[str] = Query(None, max_length=50)
+    search: str | None = Query(None, max_length=50)
 ):
     """
     获取小说角色列表
@@ -265,8 +264,8 @@ async def list_relations(
     db: DBSession,
     current_user: CurrentUserDep,
     novel_id: int = Query(..., description="小说ID"),
-    character_id: Optional[int] = Query(None, description="角色ID筛选(source或target)"),
-    relationship_type: Optional[str] = Query(None, description="关系类型筛选"),
+    character_id: int | None = Query(None, description="角色ID筛选(source或target)"),
+    relationship_type: str | None = Query(None, description="关系类型筛选"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
 ):

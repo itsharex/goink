@@ -3,10 +3,11 @@
 """
 from __future__ import annotations
 
+
 from sqlalchemy import String, Text, Integer, Index, func, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from core.database import Base
 
@@ -24,12 +25,12 @@ class Novel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    genre: Mapped[Optional[str]] = mapped_column(String(100), index=True)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    author_id: Mapped[Optional[int]] = mapped_column()
+    genre: Mapped[str | None] = mapped_column(String(100), index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    author_id: Mapped[int | None] = mapped_column()
     status: Mapped[str] = mapped_column(String(50), default='draft', index=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[Optional[datetime]] = mapped_column(server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     characters: Mapped[list["Character"]] = relationship(back_populates="novel")
     chapters: Mapped[list["Chapter"]] = relationship(back_populates="novel")
@@ -50,29 +51,29 @@ class NovelCreativeProfile(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
-    author_intent: Mapped[Optional[str]] = mapped_column(Text)
-    preferred_tone: Mapped[Optional[str]] = mapped_column(String(255))
-    collaboration_style: Mapped[Optional[str]] = mapped_column(String(100), default="ai_ide")
-    scene_planning_notes: Mapped[Optional[str]] = mapped_column(Text)
+    author_intent: Mapped[str | None] = mapped_column(Text)
+    preferred_tone: Mapped[str | None] = mapped_column(String(255))
+    collaboration_style: Mapped[str | None] = mapped_column(String(100), default="ai_ide")
+    scene_planning_notes: Mapped[str | None] = mapped_column(Text)
 
-    must_keep: Mapped[Optional[List[str]]] = mapped_column(JSON)
-    must_avoid: Mapped[Optional[List[str]]] = mapped_column(JSON)
-    long_term_goals: Mapped[Optional[List[str]]] = mapped_column(JSON)
+    must_keep: Mapped[list[str] | None] = mapped_column(JSON)
+    must_avoid: Mapped[list[str] | None] = mapped_column(JSON)
+    long_term_goals: Mapped[list[str] | None] = mapped_column(JSON)
 
-    premise: Mapped[Optional[str]] = mapped_column(Text)
-    theme: Mapped[Optional[str]] = mapped_column(String(255))
-    act_structure: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-    beginning: Mapped[Optional[str]] = mapped_column(Text)
-    middle: Mapped[Optional[str]] = mapped_column(Text)
-    climax: Mapped[Optional[str]] = mapped_column(Text)
-    ending: Mapped[Optional[str]] = mapped_column(Text)
-    total_chapters: Mapped[Optional[int]] = mapped_column(Integer)
+    premise: Mapped[str | None] = mapped_column(Text)
+    theme: Mapped[str | None] = mapped_column(String(255))
+    act_structure: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    beginning: Mapped[str | None] = mapped_column(Text)
+    middle: Mapped[str | None] = mapped_column(Text)
+    climax: Mapped[str | None] = mapped_column(Text)
+    ending: Mapped[str | None] = mapped_column(Text)
+    total_chapters: Mapped[int | None] = mapped_column(Integer)
     current_chapter: Mapped[int] = mapped_column(Integer, default=1)
 
-    extra_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[Optional[datetime]] = mapped_column(server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     novel: Mapped["Novel"] = relationship(back_populates="creative_profile")
 
@@ -84,12 +85,12 @@ class UserCreativeProfile(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(unique=True, nullable=False, index=True)
 
-    global_writing_style: Mapped[Optional[str]] = mapped_column(Text)
-    preferred_sentence_length: Mapped[Optional[str]] = mapped_column(String(50))
-    default_pov: Mapped[Optional[str]] = mapped_column(String(50))
-    global_must_keep: Mapped[Optional[List[str]]] = mapped_column(JSON)
-    global_must_avoid: Mapped[Optional[List[str]]] = mapped_column(JSON)
-    extra_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    global_writing_style: Mapped[str | None] = mapped_column(Text)
+    preferred_sentence_length: Mapped[str | None] = mapped_column(String(50))
+    default_pov: Mapped[str | None] = mapped_column(String(50))
+    global_must_keep: Mapped[list[str] | None] = mapped_column(JSON)
+    global_must_avoid: Mapped[list[str] | None] = mapped_column(JSON)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -102,7 +103,7 @@ class NovelStoryState(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     content: Mapped[str] = mapped_column(Text, default="")
-    updated_at: Mapped[Optional[datetime]] = mapped_column(server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class ReaderPerspective(Base):
@@ -113,10 +114,10 @@ class ReaderPerspective(Base):
     novel_id: Mapped[int] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"), nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(20), nullable=False)  # known / suspense / misconception
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    related_truth: Mapped[Optional[str]] = mapped_column(Text)  # 仅 misconception：真实情况
+    related_truth: Mapped[str | None] = mapped_column(Text)  # 仅 misconception：真实情况
     planted_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
-    revealed_chapter: Mapped[Optional[int]] = mapped_column(Integer)
-    last_mentioned_chapter: Mapped[Optional[int]] = mapped_column(Integer)
+    revealed_chapter: Mapped[int | None] = mapped_column(Integer)
+    last_mentioned_chapter: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     __table_args__ = (

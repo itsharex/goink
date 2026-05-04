@@ -23,15 +23,12 @@
 - get_foreshadowing_status    → run_review(scope='foreshadowing_status') [统计信息]
 - run_full_consistency_check   → run_review(scope='full')
 """
-from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func
 from datetime import datetime, timezone
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory, MCPToolRegistry
-from novels.models import Novel
 from chapters.models import Chapter
-from characters.models import Character
 from timeline.models import TimelineEntry, TimelineEntryCategory, TimelineEntryStatus
 from consistency.service import ConsistencyChecker
 from core.permissions import verify_novel_ownership
@@ -86,8 +83,8 @@ class RunReviewTool(BaseMCPTool):
         novel_id: int,
         user_id: int,
         scope: str,
-        chapter_ids: Optional[List[int]] = None,
-        min_importance: Optional[int] = None,
+        chapter_ids: list[int] | None = None,
+        min_importance: int | None = None,
         **kwargs
     ) -> MCPToolResult:
         novel = await verify_novel_ownership(db, novel_id, user_id)

@@ -8,7 +8,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Any
 
 from sqlalchemy import select
 
@@ -310,7 +310,7 @@ class ReviewerAgent(BaseAgent):
                 error=f"Unknown foreshadowing action: {action}"
             )
 
-    async def _check_character_consistency(self, task: AgentTask) -> List[Dict[str, Any]]:
+    async def _check_character_consistency(self, task: AgentTask) -> list[dict[str, Any]]:
         """检查角色一致性"""
         async with AsyncSessionLocal() as db:
             checker = ConsistencyChecker(db, task.novel_id)
@@ -318,7 +318,7 @@ class ReviewerAgent(BaseAgent):
             issues = await checker.check_character_consistency(chapters)
             return [issue.model_dump() for issue in issues]
 
-    async def _check_plot_consistency(self, task: AgentTask) -> List[Dict[str, Any]]:
+    async def _check_plot_consistency(self, task: AgentTask) -> list[dict[str, Any]]:
         """检查情节一致性"""
         async with AsyncSessionLocal() as db:
             checker = ConsistencyChecker(db, task.novel_id)
@@ -326,7 +326,7 @@ class ReviewerAgent(BaseAgent):
             issues = await checker.check_plot_consistency(chapters)
             return [issue.model_dump() for issue in issues]
 
-    async def _list_foreshadowing(self, task: AgentTask) -> List[Dict[str, Any]] | Dict[str, Any]:
+    async def _list_foreshadowing(self, task: AgentTask) -> list[dict[str, Any]] | dict[str, Any]:
         """列出伏笔（通过时间线系统查询）"""
         parameters = task.parameters
         status = parameters.get("status")
@@ -365,7 +365,7 @@ class ReviewerAgent(BaseAgent):
                 for entry in items
             ]
 
-    async def _create_foreshadowing(self, task: AgentTask) -> Dict[str, Any]:
+    async def _create_foreshadowing(self, task: AgentTask) -> dict[str, Any]:
         """创建伏笔（写入时间线系统）"""
         parameters = task.parameters
         title = parameters.get("title")
@@ -419,7 +419,7 @@ class ReviewerAgent(BaseAgent):
                 "source_chapter_id": entry.source_chapter_id
             }
 
-    async def _resolve_foreshadowing(self, task: AgentTask) -> Dict[str, Any]:
+    async def _resolve_foreshadowing(self, task: AgentTask) -> dict[str, Any]:
         """解决伏笔（通过时间线系统更新状态）"""
         parameters = task.parameters
         entry_id = parameters.get("foreshadowing_id")
