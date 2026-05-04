@@ -34,3 +34,17 @@
 - [ ] 确认 `generation/router.py` 的 HTTP 生成端点是否需要保留
 - [ ] 如不需要，可将 `_generate_chapter_summary` 移出，删除 `ChapterGenerationService` 和 `generate_chapter()`
 **优先级**：低（不影响当前功能）
+
+## 4. Memory 和 Review Agent 能力未充分利用
+
+**问题**：章节工作流 `post_process` 节点目前用简单的 `llm_service.generate_text/generate_json` 做摘要和 review，没有复用 `agents/memory.py`（向量记忆入库、上下文检索）和 `agents/reviewer.py`（结构化评分、多维度审核、修改建议）的完整能力。
+
+**影响**：
+- Memory Agent：向量记忆更新不完整，长跨章节伏笔检索能力弱
+- Reviewer Agent：review 结果只有简单的 JSON 输出，没有结构化评分和迭代修订建议
+
+**需要做的**：
+- [ ] post_process 中接入 `agents/reviewer.py` 的 `ReviewerAgent`，获取结构化 review（scores/issues/suggestions）
+- [ ] post_process 中接入 `agents/memory.py` 的完整记忆更新流程
+- [ ] 或在 review/memory agent 中暴露可复用的独立函数
+**优先级**：中（当前能跑，但质量有提升空间）
