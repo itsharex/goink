@@ -1,10 +1,82 @@
 import { useEffect, useState } from 'react'
-import { Card, Descriptions, Tag, Button, Space, message } from 'antd'
+import { Card, Descriptions, Tag, Button, Space, message, Collapse } from 'antd'
 import { useParams, useNavigate } from 'react-router-dom'
 import { chapterApi } from '@/services/chapterService'
 import { getErrorMessage } from '@/types/error'
 import type { ChapterDetail } from '@/types/chapter'
+import { Markdown } from '@/components/Markdown'
 import dayjs from 'dayjs'
+
+interface OutlineScene {
+  name: string
+  description: string
+  purpose: string
+}
+
+interface OutlineChar {
+  name: string
+  role_in_chapter: string
+}
+
+interface OutlineOp {
+  action: string
+  content: string
+}
+
+function formatOutline(outline: Record<string, unknown> | null | undefined): string {
+  if (!outline || typeof outline !== 'object') return ''
+  const o = outline as Record<string, unknown>
+  const chNum = o.chapter_number ?? o.chapterNumber ?? '?'
+  const title = String(o.title ?? '未命名')
+  const tone = String(o.tone ?? '未指定')
+  const words = o.estimated_words ?? o.estimatedWords ?? '?'
+  const hook = String(o.chapter_hook ?? o.chapterHook ?? '无')
+
+  let md = `## 第${chNum}章：${title}\n\n`
+  md += `**语调**：${tone}　|　**预估字数**：${words}\n\n`
+  md += '### 场景\n'
+
+  const scenes = (o.scenes as OutlineScene[]) ?? []
+  scenes.forEach((s, i) => {
+    md += `${i + 1}. **${s.name}**\n`
+    md += `   ${s.description}\n`
+    md += `   > 目的：${s.purpose}\n\n`
+  })
+
+  const events = (o.key_events as string[]) ?? []
+  if (events.length) {
+    md += '### 关键事件\n'
+    events.forEach(e => { md += `- ${e}\n` })
+    md += '\n'
+  }
+
+  const chars = (o.focus_characters as (OutlineChar | string)[]) ?? []
+  if (chars.length) {
+    md += '### 重点角色\n'
+    chars.forEach(c => {
+      if (typeof c === 'object' && c !== null) {
+        md += `- **${c.name ?? '?'}**：${c.role_in_chapter ?? ''}\n`
+      } else {
+        md += `- ${c}\n`
+      }
+    })
+    md += '\n'
+  }
+
+  const ops = (o.foreshadowing_ops as OutlineOp[]) ?? []
+  if (ops.length) {
+    md += '### 伏笔操作\n'
+    const labels: Record<string, string> = { plant: '埋下', advance: '推进', resolve: '回收' }
+    ops.forEach(op => {
+      const label = labels[op.action] ?? op.action
+      md += `- [${label}] ${op.content}\n`
+    })
+    md += '\n'
+  }
+
+  md += `**章末钩子**：${hook}\n`
+  return md
+}
 
 interface StatusConfig {
   color: string
@@ -83,6 +155,21 @@ function ChapterDetailPage() {
         <Descriptions.Item label="摘要" span={2}>
           {chapter.summary || '-'}
         </Descriptions.Item>
+        {chapter.outline_json && (
+          <Descriptions.Item label="创作大纲" span={2}>
+            <Collapse
+              items={[{
+                key: 'outline',
+                label: `第${chapter.chapter_number}章大纲`,
+                children: (
+                  <div className="outline-content" style={{ maxHeight: '400px', overflow: 'auto' }}>
+                    <Markdown>{formatOutline(chapter.outline_json)}</Markdown>
+                  </div>
+                ),
+              }]}
+            />
+          </Descriptions.Item>
+        )}
         <Descriptions.Item label="内容" span={2}>
           <div style={{ whiteSpace: 'pre-wrap', maxHeight: '400px', overflow: 'auto' }}>
             {chapter.content || '-'}

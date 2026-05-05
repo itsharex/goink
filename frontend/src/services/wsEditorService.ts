@@ -62,6 +62,11 @@ export interface CancelMsg {
   task_id: string
 }
 
+export interface OutlineApprovalMsg {
+  approved: boolean
+  feedback?: string
+}
+
 export type ClientMsg =
   | StartEditMsg
   | ApplyEditMsg
@@ -73,6 +78,7 @@ export type ClientMsg =
   | ChatMsg
   | ReadChapterMsg
   | CancelMsg
+  | OutlineApprovalMsg
 
 export interface EditStartedMsg {
   type: 'edit_started'
@@ -325,6 +331,14 @@ export interface EditPendingMsg {
   timestamp?: string
 }
 
+export interface OutlineGeneratedMsg {
+  type: 'outline_generated'
+  novel_id: number
+  chapter_numbers: number[]
+  content: string
+  outlines: Array<Record<string, unknown>>
+}
+
 export type ServerMsg =
   | EditStartedMsg
   | EditAppliedMsg
@@ -347,6 +361,7 @@ export type ServerMsg =
   | EditPreviewMsg
   | EditPendingMsg
   | EditStreamMsg
+  | OutlineGeneratedMsg
 
 export type MsgHandler = (msg: ServerMsg) => void
 
@@ -480,6 +495,10 @@ export class WsEditorService {
 
   cancelTask(taskId: string): boolean {
     return this.send({ type: 'cancel', task_id: taskId })
+  }
+
+  sendOutlineApproval(approved: boolean, feedback?: string): boolean {
+    return this.send({ approved, feedback })
   }
 
   isConnected(): boolean {

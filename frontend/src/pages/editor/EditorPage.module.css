@@ -1613,3 +1613,95 @@
 .editorPageDark .scopeDash {
   color: #6a6a6a;
 }
+
+/* ---- Outline inline approval ---- */
+.outlineInline {
+  margin: 12px 0;
+  background: linear-gradient(135deg, #f0f5ff 0%, #fafbff 100%);
+  border: 1px solid #d6e4ff;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.outlineBody {
+  padding: 16px 20px 12px;
+  max-height: 420px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.outlineBody h2 {
+  font-size: 17px;
+  margin: 0 0 8px;
+  color: #1d39c4;
+}
+
+.outlineBody h3 {
+  font-size: 14px;
+  margin: 14px 0 6px;
+  color: #2f54eb;
+}
+
+.outlineActions {
+  padding: 10px 20px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.outlineFeedback {
+  flex: 1;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  resize: vertical;
+  background: #fff;
+}
+
+.outlineFeedback:focus {
+  border-color: #597ef7;
+  box-shadow: 0 0 0 2px rgba(89, 126, 247, 0.15);
+  outline: none;
+}
+
+.outlineButtons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.outlineButtons button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.outlineApproveBtn {
+  background: #2f54eb;
+  color: #fff;
+}
+
+.outlineApproveBtn:hover:not(:disabled) {
+  background: #1d39c4;
+}
+
+.outlineRejectBtn {
+  background: #fff;
+  color: #cf1322;
+  border: 1px solid #ffccc7 !important;
+}
+
+.outlineRejectBtn:hover:not(:disabled) {
+  background: #fff2f0;
+}
+
+.outlineButtons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

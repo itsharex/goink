@@ -33,6 +33,7 @@ import type {
   EditPreviewMsg,
   EditPendingMsg,
   ReasoningEffort,
+  OutlineGeneratedMsg,
 } from '@/services/wsEditorService'
 import { Markdown } from '@/components/Markdown'
 import styles from './EditorPage.module.css'
@@ -223,6 +224,13 @@ export default function EditorPage() {
   const [newChapterTitle, setNewChapterTitle] = useState('')
   const [newChapterNumber, setNewChapterNumber] = useState<number | null>(null)
   const [creatingChapter, setCreatingChapter] = useState(false)
+  const [outlineApproval, setOutlineApproval] = useState<{
+    chapterNumbers: number[]
+    content: string
+    outlines: Array<Record<string, unknown>>
+  } | null>(null)
+  const [approvalFeedback, setApprovalFeedback] = useState('')
+  const [approving, setApproving] = useState(false)
   const pendingMessageRef = useRef<string | null>(null)
   const pendingInterruptMessageRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -638,6 +646,16 @@ export default function EditorPage() {
         }
         break
       }
+
+      case 'outline_generated': {
+        const om = msg as OutlineGeneratedMsg
+        setOutlineApproval({
+          chapterNumbers: om.chapter_numbers,
+          content: om.content,
+          outlines: om.outlines,
+        })
+        break
+      }
       case 'edit_stream': {
         const m = msg as { type: 'edit_stream'; chapter_id?: number; edit_session_id?: string; working_content: string }
         if (m.chapter_id && selectedChapterId !== m.chapter_id) {
@@ -925,6 +943,23 @@ export default function EditorPage() {
     if (editSessionId || latestPendingEditSessionId || selectedChapterId) {
       wsEditorService.rejectEdit(latestPendingEditSessionId || editSessionId, selectedChapterId)
     }
+  }
+
+  const handleApproveOutline = () => {
+    setApproving(true)
+    wsEditorService.sendOutlineApproval(true)
+    setOutlineApproval(null)
+    setApprovalFeedback('')
+    setApproving(false)
+  }
+
+  const handleRejectOutline = () => {
+    if (!approvalFeedback.trim()) return
+    setApproving(true)
+    wsEditorService.sendOutlineApproval(false, approvalFeedback.trim())
+    setOutlineApproval(null)
+    setApprovalFeedback('')
+    setApproving(false)
   }
 
   const handleStop = () => {
@@ -1316,6 +1351,39 @@ export default function EditorPage() {
               )
             })}
           </div>
+
+          {outlineApproval && (
+            <div className={styles.outlineInline}>
+              <div className={styles.outlineBody}>
+                <Markdown>{outlineApproval.content}</Markdown>
+              </div>
+              <div className={styles.outlineActions}>
+                <textarea
+                  className={styles.outlineFeedback}
+                  value={approvalFeedback}
+                  onChange={e => setApprovalFeedback(e.target.value)}
+                  placeholder="修改意见（拒绝时必填）…"
+                  rows={2}
+                />
+                <div className={styles.outlineButtons}>
+                  <button
+                    className={styles.outlineRejectBtn}
+                    onClick={handleRejectOutline}
+                    disabled={approving || !approvalFeedback.trim()}
+                  >
+                    {approving ? '…' : '拒绝'}
+                  </button>
+                  <button
+                    className={styles.outlineApproveBtn}
+                    onClick={handleApproveOutline}
+                    disabled={approving}
+                  >
+                    {approving ? '…' : '批准'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className={styles.chatInput}>
             <div className={styles.inputRow}>

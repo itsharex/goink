@@ -8,6 +8,7 @@ export interface Chapter {
   word_count: number
   status: ChapterStatus
   summary: string
+  outline_json?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
