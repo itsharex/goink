@@ -138,6 +138,7 @@ class EditModeConfig:
             "get_story_arcs", "add_story_arc", "update_story_arc",
             "get_story_state", "update_story_state",
             "get_reader_perspective", "add_reader_perspective_entry", "update_reader_perspective_entry",
+            "create_chapter_workflow",
         },
     }
 
@@ -163,6 +164,7 @@ class EditModeConfig:
             "get_story_state", "update_story_state",
             "get_reader_perspective", "add_reader_perspective_entry", "update_reader_perspective_entry",
             "run_subagent",
+            "create_chapter_workflow",
         ],
     }
 
@@ -187,6 +189,7 @@ class EditModeConfig:
         "generation": {
             "create_new_chapter", "edit_chapter",
             "search_story_memory", "run_subagent",
+            "create_chapter_workflow",
         },
     }
 
