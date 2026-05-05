@@ -87,7 +87,16 @@ class CreateChapterWorkflowTool(BaseMCPTool):
                     outline_texts: list[str] = interrupt_data.get("outline_texts", [])
                     outlines: list[dict] = interrupt_data.get("outlines", [])
 
-                    # 3. 发送大纲给用户
+                    # 3. 从 graph state 取 Layer 2，追加到 session
+                    mid_state = chapter_graph.get_state(config)  # type: ignore[arg-type]
+                    layer2 = (mid_state.values or {}).get("layer2_context", "") if mid_state else ""
+                    if layer2:
+                        session_manager.add_message(
+                            chat_session, MessageRole.USER, layer2,
+                            metadata={"context_layer": "layer2"},
+                        )
+
+                    # 4. 发送大纲给用户
                     combined_text = "\n\n---\n\n".join(outline_texts)
                     await websocket.send_json({
                         "type": "outline_generated",
@@ -97,12 +106,12 @@ class CreateChapterWorkflowTool(BaseMCPTool):
                         "outlines": outlines,
                     })
 
-                    # 4. 等待用户审批
+                    # 5. 等待用户审批
                     approval_raw = await websocket.receive_json()
 
                     approved = approval_raw.get("approved", False)
 
-                    # 5. 追加大纲到 session
+                    # 6. 追加大纲到 session
                     approval_msg = (
                         "【大纲已审批通过，开始创作章节...】"
                         if approved else f"【大纲审批未通过，用户意见：{approval_raw.get('feedback', '请重新生成')}】"
@@ -118,21 +127,29 @@ class CreateChapterWorkflowTool(BaseMCPTool):
                         )
 
                     if approved:
-                        # 6. 恢复图：build_layer3 → write_chapter（流式）→ post_process
+                        # 7. 恢复图：build_layer3 → write_chapter（流式）→ post_process
                         await chapter_graph.ainvoke(Command(resume=True), config)  # type: ignore[arg-type]
 
-                        # 追加正文到 session
+                        # 8. 取最终状态，追加 Layer 3 和正文到 session
                         final_state = chapter_graph.get_state(config)  # type: ignore[arg-type]
-                        if final_state and final_state.values:
-                            completed = final_state.values.get("completed_chapters", [])
-                            for ch in completed:
-                                session_manager.add_message(
-                                    chat_session, MessageRole.ASSISTANT,
-                                    ch.get("content", ""),
-                                    metadata={"workflow_event": "chapter_body", "chapter_number": ch.get("chapter_number")},
-                                )
+                        final_values = final_state.values if final_state else {}
 
-                        # 7. 追加 user 消息驱动 LLM 全面维护小说状态
+                        layer3 = final_values.get("layer3_context", "")
+                        if layer3:
+                            session_manager.add_message(
+                                chat_session, MessageRole.USER, layer3,
+                                metadata={"context_layer": "layer3"},
+                            )
+
+                        completed = final_values.get("completed_chapters", [])
+                        for ch in completed:
+                            session_manager.add_message(
+                                chat_session, MessageRole.ASSISTANT,
+                                ch.get("content", ""),
+                                metadata={"workflow_event": "chapter_body", "chapter_number": ch.get("chapter_number")},
+                            )
+
+                        # 9. 追加 user 消息驱动 LLM 全面维护小说状态
                         session_manager.add_message(
                             chat_session, MessageRole.USER,
                             "正文已写入完成。请根据本章内容，全面检查并维护小说状态：\n"
