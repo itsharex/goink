@@ -1,7 +1,7 @@
 """
 章节管理模块 - Pydantic Schemas
 """
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 from datetime import datetime
 
 
@@ -36,6 +36,14 @@ class ChapterResponse(ChapterBase):
     updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field
+    @property
+    def outline_text(self) -> str | None:
+        if not self.outline_json:
+            return None
+        from chapters.workflow import _format_outline
+        return _format_outline(self.outline_json)
 
 
 class NextChapterNumberResponse(BaseModel):

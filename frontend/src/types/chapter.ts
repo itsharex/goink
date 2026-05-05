@@ -9,6 +9,7 @@ export interface Chapter {
   status: ChapterStatus
   summary: string
   outline_json?: Record<string, unknown> | null
+  outline_text?: string | null
   created_at: string
   updated_at: string
 }
