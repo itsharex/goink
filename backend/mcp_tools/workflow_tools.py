@@ -55,7 +55,6 @@ class CreateChapterWorkflowTool(BaseMCPTool):
 
         try:
             from langgraph.types import Command
-            from langgraph.errors import GraphInterrupt
 
             from chat.session_manager import session_manager, MessageRole
             from chapters.workflow import (
@@ -86,17 +85,20 @@ class CreateChapterWorkflowTool(BaseMCPTool):
             # === 运行图到 interrupt（build_layer2 → generate_outline → interrupt） ===
             # 图节点 _build_layer2 会把 Layer2 追加到 work 和 delta
             # 图节点 _generate_outline 会生成大纲并追加到 work 和 delta
-            try:
-                await chapter_graph.ainvoke(state, config)  # type: ignore[arg-type]
-                # 不应该走到这里（没有 interrupt 说明图跑完了）
+            # langgraph 1.x: interrupt() 不抛异常，返回带 __interrupt__ 的 state
+            first_result = await chapter_graph.ainvoke(state, config)  # type: ignore[arg-type]
+            interrupts = (first_result or {}).get("__interrupt__", [])
+            if not interrupts:
+                # 没有 interrupt，图已跑完（不应该发生）
                 return MCPToolResult(success=True, data={"inject": list(delta)})
-            except GraphInterrupt as gi:
-                interrupt_data = gi.args[0] if gi.args else None
-                if not isinstance(interrupt_data, dict) or interrupt_data.get("type") != "await_approval":
-                    return MCPToolResult(success=False, error="工作流中断数据异常")
 
-                outline_texts: list[str] = interrupt_data.get("outline_texts", [])
-                outlines: list[dict] = interrupt_data.get("outlines", [])
+            interrupt_obj = interrupts[0]  # Interrupt 对象
+            interrupt_data = interrupt_obj.value  # 传给 interrupt() 的 dict
+            if not isinstance(interrupt_data, dict) or interrupt_data.get("type") != "await_approval":
+                return MCPToolResult(success=False, error="工作流中断数据异常")
+
+            outline_texts: list[str] = interrupt_data.get("outline_texts", [])
+            outlines: list[dict] = interrupt_data.get("outlines", [])
 
             # === 审批阶段 ===
             # 大纲已在 _generate_outline 追加到 work 和 delta
