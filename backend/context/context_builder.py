@@ -477,10 +477,7 @@ class ContextBuilder:
             filtered_results = []
             for result in results:
                 distance = result["distance"]
-                if distance >= 0:
-                    relevance_score = 1.0 / (1.0 + distance)
-                else:
-                    relevance_score = 1.0
+                relevance_score = max(0.0, 1.0 - distance)
                 
                 if relevance_score < min_relevance_score:
                     logger.debug(f"丢弃低质量结果 (score={relevance_score:.3f}<{min_relevance_score}): {result['content'][:50]}...")
