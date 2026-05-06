@@ -153,6 +153,15 @@ _TOOL_SYNC_NAMES = {
     "update_character": "更新角色设定",
     "update_character_relationship": "更新人物关系",
     "run_subagent": "调度AI子任务",
+    "create_chapter_workflow": "章节创作工作流",
+    "get_reader_perspective": "查看读者视角",
+    "add_reader_perspective_entry": "添加读者视角",
+    "update_reader_perspective_entry": "更新读者视角",
+    "get_story_arcs": "查看故事弧线",
+    "add_story_arc": "创建故事弧线",
+    "update_story_arc": "更新故事弧线",
+    "get_story_state": "查看故事状态",
+    "update_story_state": "更新故事状态",
 }
 
 
@@ -182,6 +191,15 @@ _TOOL_SYNC_KINDS = {
     "update_character": "edit",
     "update_character_relationship": "edit",
     "run_subagent": "plan",
+    "create_chapter_workflow": "plan",
+    "get_reader_perspective": "view",
+    "add_reader_perspective_entry": "write",
+    "update_reader_perspective_entry": "edit",
+    "get_story_arcs": "view",
+    "add_story_arc": "create",
+    "update_story_arc": "edit",
+    "get_story_state": "view",
+    "update_story_state": "edit",
 }
 
 
