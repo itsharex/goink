@@ -30,7 +30,6 @@ def _normalize_subagent_task_type(task_type: str) -> str:
         "check_consistency": "review",
         "manage_foreshadowing": "review",
         "review": "review",
-        "memory": "update_memory",
     }
     return type_aliases.get(task_type, task_type)
 
@@ -91,7 +90,6 @@ async def _execute_subagent_task(
     registry_to_task_type = {
         "write_chapter": TaskType.GENERATE_CHAPTER,
         "review": TaskType.REVIEW_CHAPTER,
-        "update_memory": TaskType.UPDATE_MEMORY,
     }
 
     try:
@@ -448,8 +446,7 @@ class RunSubagentTool(BaseMCPTool):
     description = (
         "调度子Agent执行专业任务。可用任务类型：\n"
         "- write_chapter: 写作/续写章节内容\n"
-        "- review: 全量审核章节（规则初筛+LLM语义深审+一致性检查+伏笔管理）\n"
-        "- update_memory: 更新向量记忆索引\n\n"
+        "- review: 全量审核章节（规则初筛+LLM语义深审+一致性检查+伏笔管理）\n\n"
         "你只需指定任务类型和目标（如章节ID），后端会自动准备上下文。\n"
         "子Agent会返回结构化报告，包含摘要、关键发现和建议。"
     )
@@ -459,7 +456,7 @@ class RunSubagentTool(BaseMCPTool):
         "properties": {
             "task_type": {
                 "type": "string",
-                "description": "任务类型：write_chapter / review / update_memory"
+                "description": "任务类型：write_chapter / review"
             },
             "chapter_id": {
                 "type": "integer",

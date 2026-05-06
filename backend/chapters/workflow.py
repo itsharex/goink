@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-
+from rag.memory_updater import schedule_memory_update
 logger = logging.getLogger(__name__)
 
 # 工具设置，图节点读取
@@ -234,6 +234,8 @@ async def _write_chapter(state: WorkflowState) -> dict[str, Any]:
             )
             db.add(chapter)
         await db.commit()
+        
+        schedule_memory_update(state["novel_id"], chapter.id)
 
     # 正文追加到 work_msgs（下一批节点可见）和 delta
     msg = {"role": "assistant", "content": content, "workflow_event": "chapter_body", "chapter_number": chapter_number}
@@ -268,35 +270,7 @@ async def _post_process(state: WorkflowState) -> dict[str, Any]:
             model=state.get("model"),
         )
 
-    async def update_memory():
-        from core.database import AsyncSessionLocal
-        from sqlalchemy import select
-        from chapters.models import Chapter
-        from rag.vector_store import vector_store
-
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Chapter).where(
-                    Chapter.novel_id == state["novel_id"],
-                    Chapter.chapter_number == chapter_number,
-                )
-            )
-            ch = result.scalar_one_or_none()
-            if not ch or not ch.content:
-                return
-            chunk_data = vector_store.build_chapter_chunks(
-                chapter_id=ch.id,
-                chapter_number=ch.chapter_number,
-                chapter_title=ch.title,
-                content=ch.content,
-                summary=ch.summary,
-            )
-            if chunk_data:
-                vector_store.delete_chapter_chunks(state["novel_id"], ch.id)
-                vector_store.add_chunks(state["novel_id"], chunk_data)
-
-    results = await asyncio.gather(save_summary(), update_memory(), return_exceptions=True)
-    summary = results[0] if not isinstance(results[0], Exception) else None
+    summary = await save_summary()
 
     if summary and isinstance(summary, str):
         from core.database import AsyncSessionLocal

@@ -279,8 +279,6 @@ async def _build_tool_call_presentation(
         task_type = arguments.get("task_type")
         if task_type == "review":
             base_text, activity_kind = "检查剧情一致性", "review"
-        elif task_type == "update_memory":
-            base_text, activity_kind = "更新故事记忆", "memory"
         elif task_type == "write_chapter":
             base_text, activity_kind = "调度写作子任务", "write"
 

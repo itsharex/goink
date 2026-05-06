@@ -302,9 +302,13 @@ async def update_chapter(
     
     await redis_service.delete(f"chapter:{chapter_id}:detail")
     await redis_service.clear_pattern(f"novel:{db_chapter.novel_id}:chapters:*")
-    
+
     from context.context_builder import context_cache
     context_cache.invalidate_novel(db_chapter.novel_id)
+
+    if chapter.content is not None:
+        from rag.memory_updater import schedule_memory_update
+        schedule_memory_update(db_chapter.novel_id, chapter_id)
     
     return ApiResponse.success(
         {

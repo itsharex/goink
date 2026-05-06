@@ -226,18 +226,9 @@ class ChapterGenerationService:
 
         return chapter
     
-    async def _update_chapter_memory(self, chapter_id: int) -> dict[str, Any]:
-        task = AgentTask(
-            task_id=f"memory_{self.novel_id}_{chapter_id}_{datetime.now(timezone.utc).timestamp()}",
-            task_type=TaskType.UPDATE_MEMORY,
-            novel_id=self.novel_id,
-            chapter_id=chapter_id,
-            parameters={"chapter_id": chapter_id}
-        )
-        result = await self.coordinator.execute(task)
-        if not result.success:
-            logger.warning(f"Memory update failed for chapter {chapter_id}: {result.error}")
-        return result.to_dict()
+    async def _update_chapter_memory(self, chapter_id: int) -> None:
+        from rag.memory_updater import schedule_memory_update
+        schedule_memory_update(self.novel_id, chapter_id)
 
     async def _get_chapter(self, chapter_number: int) -> Chapter | None:
         result = await self.db.execute(
