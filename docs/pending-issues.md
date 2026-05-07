@@ -100,6 +100,41 @@
 - [ ] WriterAgent subagent 与章节工作流冗余，考虑移除或整合
 **优先级**：高（架构方向问题，越早重构代价越小）
 
+## 9. MCP 工具模块需重构 — 消除手写 JSON Schema 重复
+
+**问题**：每个工具同时定义 `...Args(BaseModel)` 和手写 `parameters_schema` 字典，同一份参数契约维护两遍。JSON Schema 完全可以通过 Pydantic v2 的 `model_json_schema()` 自动生成。
+
+**当前模式**：
+```python
+class SomeArgs(BaseModel):
+    novel_id: int
+    mode: str = Field(default="list", description="查询模式")
+
+class SomeTool(BaseMCPTool):
+    parameters_schema = {               # 手写，与上面重复
+        "type": "object",
+        "properties": {
+            "novel_id": {"type": "integer", ...},
+            "mode": {"type": "string", ...},
+        },
+        "required": ["novel_id"],
+    }
+```
+
+**目标模式**：
+```python
+class SomeTool(BaseMCPTool):
+    @property
+    def parameters_schema(self):
+        return SomeArgs.model_json_schema()
+```
+
+**收益**：单一真相源、Field(description) 写一次、新工具定义量减半、改参数自动同步。
+
+**建议**：开新 branch 做 MCP 模块重构。涉及所有工具文件，体量大但改动模式统一。
+
+**优先级**：中（不影响功能，但代码债务明确）
+
 ## 8. 编辑会话 accept/reject 与 LLM 状态维护的一致性
 
 **问题**：新方案中 LLM 通过 `edit_chapter` 写正文后立即收到维护指令，基于 pending 内容做 review 和状态维护。但如果用户 reject 了编辑会话，内容回退而状态已经改了，造成不一致。
