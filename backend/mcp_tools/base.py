@@ -133,6 +133,11 @@ class MCPToolRegistry:
 
     def _validate_params(self, tool: BaseMCPTool, params: dict[str, Any]) -> str | None:
         schema = tool.parameters_schema or {"type": "object"}
+        # 只保留 schema 中声明的字段，避免 chat_session 等内部对象
+        # 被 jsonschema 塞进报错消息，泄露整个会话上下文给 LLM
+        allowed = set(schema.get("properties", {}).keys())
+        if allowed:
+            params = {k: v for k, v in params.items() if k in allowed}
         try:
             validate(instance=params, schema=schema)
         except ValidationError as e:
