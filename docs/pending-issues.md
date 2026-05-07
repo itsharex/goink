@@ -100,7 +100,7 @@
 - [ ] WriterAgent subagent 与章节工作流冗余，考虑移除或整合
 **优先级**：高（架构方向问题，越早重构代价越小）
 
-## 9. MCP 工具模块需重构 — 消除手写 JSON Schema 重复
+## 8. MCP 工具模块需重构 — 消除手写 JSON Schema 重复
 
 **问题**：每个工具同时定义 `...Args(BaseModel)` 和手写 `parameters_schema` 字典，同一份参数契约维护两遍。JSON Schema 完全可以通过 Pydantic v2 的 `model_json_schema()` 自动生成。
 
@@ -135,7 +135,7 @@ class SomeTool(BaseMCPTool):
 
 **优先级**：中（不影响功能，但代码债务明确）
 
-## 8. 编辑会话 accept/reject 与 LLM 状态维护的一致性
+## 9. 编辑会话 accept/reject 与 LLM 状态维护的一致性
 
 **问题**：新方案中 LLM 通过 `edit_chapter` 写正文后立即收到维护指令，基于 pending 内容做 review 和状态维护。但如果用户 reject 了编辑会话，内容回退而状态已经改了，造成不一致。
 
@@ -144,3 +144,13 @@ class SomeTool(BaseMCPTool):
 **方案 C**：维护指令等 accept 后注入（但 accept 不在 LLM 循环内，实现在后端）。
 
 **优先级**：中（需要决策后实施）
+
+## 10. Monaco Editor 正文展示美化 + 行级 Diff 探索
+
+**问题**：正文使用 Monaco Editor 显示和编辑，不能渲染 Markdown 样式，视觉效果不如大纲部分的 Markdown 组件。若切换到 Markdown 渲染则失去编辑和 diff 能力。
+
+**可行方向**：
+- Monaco 层面：优化字体、行高、背景色、行号样式（低成本，不涉及 Markdown）
+- 如果 diff 仅需行级（绿色加行、红色删行）：正文用 Markdown 组件渲染，diff 状态时在渲染层标注新增/删除段落，放弃 Monaco 的 inline diff
+
+**优先级**：低（当前可用，体验优化）
