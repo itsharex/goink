@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from .base import BaseMCPTool, MCPToolResult, MCPToolCategory
-from mcp_tools.novel_tools import _invalidate_novel_cache
+from .utils import _invalidate_novel_cache
 
 LocationTypeEnum = Literal[
     "city", "town", "forest", "mountain", "building", "room",

@@ -14,7 +14,7 @@ from characters.schemas import (
     RelationStatus,
 )
 from characters.service import CharacterService
-from mcp_tools.novel_tools import _invalidate_character_cache
+from .utils import _invalidate_character_cache
 
 RelationTypeEnum = Literal[
     "ally", "enemy", "lover", "family", "mentor", "student", "rival", "acquaintance",

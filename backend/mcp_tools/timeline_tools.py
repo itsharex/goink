@@ -13,7 +13,7 @@ from timeline.schemas import (
     TimelineEntryCreate,
     TimelineEntryUpdate,
 )
-from mcp_tools.novel_tools import _invalidate_novel_cache
+from .utils import _invalidate_novel_cache 
 from timeline.service import TimelineService
 
 
