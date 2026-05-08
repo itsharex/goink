@@ -9,7 +9,6 @@ from .consistency_tools import ConsistencyCheckTools
 from .editing_tools import EditingTools
 
 from .registry import get_mcp_registry
-from .router import router
 
 __all__ = [
     "BaseMCPTool",
@@ -21,5 +20,4 @@ __all__ = [
     "ConsistencyCheckTools",
     "EditingTools",
     "get_mcp_registry",
-    "router",
 ]
