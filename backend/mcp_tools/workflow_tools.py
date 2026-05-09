@@ -112,10 +112,12 @@ class CreateOutlineTool(BaseMCPTool):
         # === 等待用户审批 ===
         session_id = chat_session.session_id
         event, result = _get_approval(session_id)
-        result.clear()
-        await event.wait()
-        approval_raw = dict(result)
-        cleanup_approval(session_id)
+        try:
+            result.clear()
+            await event.wait()
+            approval_raw = dict(result)
+        finally:
+            cleanup_approval(session_id)
         approved = approval_raw.get("approved", False)
 
         if not approved:
