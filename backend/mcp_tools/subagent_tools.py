@@ -97,7 +97,7 @@ AGENT_CONFIG: dict[str, tuple[str, frozenset[str], int]] = {
 # ---------------------------------------------------------------------------
 
 class RunSubagentArgs(BaseModel):
-    task_type: Literal["memory", "review"] = Field(
+    agent_type: Literal["memory", "review"] = Field(
         description="子Agent类型：memory(记忆探索，搜索和分析小说信息)、review(章节审阅，全面质量审核)")
     chapter_id: int | None = Field(default=None)
     instruction: str | None = Field(default=None, description="给子Agent的具体任务指令")
@@ -109,7 +109,7 @@ class RunSubagentTool(BaseMCPTool):
     name = "run_subagent"
     description = (
         "调度子Agent执行专项任务。子Agent会自主调用工具获取信息，"
-        "多轮思考后返回结构化报告。任务类型：\n"
+        "多轮思考后返回结构化报告。Agent类型：\n"
         "- memory：记忆探索，搜索和分析小说中的角色、时间线、伏笔、情节等信息\n"
         "- review：章节审阅，全面审核指定章节的角色一致性、情节逻辑、伏笔管理等\n\n"
         "传入明确的 instruction 以获得更好的结果。"
@@ -132,7 +132,7 @@ class RunSubagentTool(BaseMCPTool):
         on_message = extra.get("on_message")
         pre_display = extra.get("pre_display")
 
-        cfg = AGENT_CONFIG[args.task_type]
+        cfg = AGENT_CONFIG[args.agent_type]
         system_prompt, allowed_tools, max_turns = cfg
 
         # 构建用户指令
@@ -218,7 +218,7 @@ class RunSubagentTool(BaseMCPTool):
         return MCPToolResult(
             success=True,
             data={
-                "task_type": args.task_type,
+                "agent_type": args.agent_type,
                 "report": loop_result.final_text,
                 "turn_count": loop_result.turn_count,
             },

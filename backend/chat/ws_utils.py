@@ -152,10 +152,6 @@ _TOOL_SYNC_NAMES = {
 }
 
 
-def _sync_tool_display_name(tool_name: str) -> str:
-    return _TOOL_SYNC_NAMES.get(tool_name, "处理创作任务")
-
-
 _TOOL_SYNC_KINDS = {
     "get_chapter_list": "browse",
     "get_chapter_content": "view",
@@ -233,45 +229,22 @@ async def _build_tool_call_presentation(
     elif chapter_title:
         chapter_label = str(chapter_title)
 
-    base_text = tool_name
-    activity_kind = "general"
+    base_text = _TOOL_SYNC_NAMES.get(tool_name, tool_name)
+    activity_kind = _TOOL_SYNC_KINDS.get(tool_name, "general")
 
-    _TOOL_BASE_NAMES = {
-        "get_chapter_list": ("查看章节目录", "browse"),
-        "get_chapter_content": (f"查看 {chapter_label}" if chapter_label else "读取章节正文", "view"),
-        "edit_chapter": (f"编辑 {chapter_label}" if chapter_label else "编辑章节内容", "write"),
-        "create_new_chapter": (f"创建 {chapter_label}" if chapter_label else "创建新章节", "create"),
-        "get_creative_profile": ("查看创作规则", "memory"),
-        "update_creative_profile": ("设置创作规则", "memory"),
-        "search_story_memory": ("搜索故事记忆", "memory"),
-        "get_timeline": ("查看故事时间线", "view"),
-        "add_timeline_entry": ("记录追踪条目", "write"),
-        "update_timeline_entry": ("更新追踪条目", "edit"),
-        "run_review": ("执行审查", "review"),
-        "get_locations": ("查看地点信息", "view"),
-        "create_location": ("创建新地点", "create"),
-        "update_location": ("更新地点设定", "edit"),
-        "delete_location": ("删除地点", "delete"),
-        "get_novel_info": ("查看小说信息", "view"),
-        "get_characters": ("查看角色信息", "view"),
-        "create_character": ("创建新角色", "create"),
-        "update_character": ("更新角色设定", "edit"),
-        "update_character_relationship": ("更新人物关系", "edit"),
-        "create_outline": ("章节大纲审批", "plan"),
-        "run_subagent": ("调度AI子任务", "plan"),
-    }
+    if tool_name == "run_subagent":
+        _SUB_LABELS = {"memory": "探索故事记忆", "review": "审核章节内容"}
+        agent_type = str(arguments.get("agent_type", ""))
+        base_text = _SUB_LABELS.get(agent_type, base_text)
 
-    if tool_name in _TOOL_BASE_NAMES:
-        base_text, activity_kind = _TOOL_BASE_NAMES[tool_name]
-    elif tool_name in _TOOL_SYNC_NAMES:
-        base_text = _TOOL_SYNC_NAMES[tool_name]
-        activity_kind = _TOOL_SYNC_KINDS.get(tool_name, "general")
-    elif tool_name == "run_subagent":
-        task_type = arguments.get("task_type")
-        if task_type == "review":
-            base_text, activity_kind = "检查剧情一致性", "review"
-        elif task_type == "write_chapter":
-            base_text, activity_kind = "调度写作子任务", "write"
+    _CHAPTER_TOOLS = frozenset({"get_chapter_content", "edit_chapter", "create_new_chapter"})
+    if tool_name in _CHAPTER_TOOLS and chapter_label:
+        _PREFIX = {
+            "get_chapter_content": "查看",
+            "edit_chapter": "编辑",
+            "create_new_chapter": "创建",
+        }
+        base_text = f"{_PREFIX[tool_name]} {chapter_label}"
 
     is_active = status == "executing"
     display_text = f"正在{base_text}" if is_active else base_text
