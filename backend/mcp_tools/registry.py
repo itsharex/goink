@@ -12,6 +12,7 @@ from .story_arc_tools import register_story_arc_tools
 from .story_state_tools import register_story_state_tools
 from .reader_perspective_tools import register_reader_perspective_tools
 from .workflow_tools import register_workflow_tools
+from .subagent_tools import register_subagent_tools
 
 _registry: MCPToolRegistry | None = None
 
@@ -31,5 +32,6 @@ def get_mcp_registry() -> MCPToolRegistry:
         register_story_state_tools(registry)
         register_reader_perspective_tools(registry)
         register_workflow_tools(registry)
+        register_subagent_tools(registry)
         _registry = registry
     return _registry
