@@ -131,7 +131,7 @@ async def websocket_chat(
             message_type = data.get("type")
 
             # 审批消息拦截：工作流等在 _approval_events 上，直接通知
-            if data.get("type") == "outline_approval" and current_session.session_id:
+            if data.get("type") == "outline_approval" and current_session and current_session.session_id:
                 from mcp_tools.workflow_tools import signal_approval
                 signal_approval(current_session.session_id, data.get("approved", False), data.get("feedback", ""))
                 continue

@@ -127,6 +127,8 @@ class RunSubagentTool(BaseMCPTool):
         **extra,
     ) -> MCPToolResult:
         websocket = extra.get("websocket")
+        if not websocket:
+            raise ValueError("子 Agent 缺少 WebSocket 连接")
         on_message = extra.get("on_message")
         pre_display = extra.get("pre_display")
 
