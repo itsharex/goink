@@ -190,7 +190,30 @@ async def run_agent_loop(
                             "parent_task_id": parent_task_id,
                             "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
-                    logger.info(f"Agent loop {task_id}: tool_call_start: {event.get('tool_name', 'unknown')}")
+                    tool_name_start = event.get("tool_name", "")
+                    tool_id_selected = event.get("tool_id") or event.get("id") or ""
+                    logger.info(f"Agent loop {task_id}: 工具调用请求开始: {tool_name_start}")
+                    # 提前获取泛用展示文本，发出 selected 阶段事件，前端即时反馈
+                    display_text_selected: str | None = None
+                    activity_kind_selected: str | None = None
+                    if pre_display_handler and tool_name_start:
+                        try:
+                            display_text_selected, activity_kind_selected = await pre_display_handler(tool_name_start, {})
+                        except Exception:
+                            logger.warning("pre_display_handler failed at tool_call_start", exc_info=True)
+                    if tool_name_start:
+                        await ws_manager.send_personal_message({
+                            "type": "tool_call",
+                            "task_id": task_id,
+                            "parent_task_id": parent_task_id,
+                            "tool_name": tool_name_start,
+                            "tool_id": tool_id_selected or None,
+                            "status": "executing",
+                            "phase": "selected",
+                            "display_text": display_text_selected,
+                            "activity_kind": activity_kind_selected,
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }, websocket)
 
                 # ======== tool_call_arguments ========
                 elif event_type == "tool_call_arguments":
@@ -237,6 +260,7 @@ async def run_agent_loop(
                     }, websocket)
 
                     # -- 执行工具（回调）--
+                    logger.info(f"收到完整toolcall 开始执行: {tool_name}, 参数: {arguments}")
                     handler_result = await tool_call_handler(tool_name, tool_id, arguments)
 
                     if handler_result.should_disable:
@@ -258,6 +282,8 @@ async def run_agent_loop(
                     data_payload = tool_result_payload.get("data") or {}
                     if not isinstance(data_payload, dict):
                         data_payload = {}
+
+                    logger.info(f"Tool result payload: {tool_result_payload}")
 
                     await ws_manager.send_personal_message({
                         "type": "tool_call",
@@ -299,7 +325,8 @@ async def run_agent_loop(
 
         # ======== 流结束，判断是否有工具调用 ========
         if tool_outputs:
-            # -- 构建 assistant 消息（含 tool_calls 元数据，DeepSeek 协议要求）--
+            # 合并本轮所有工具调用为一条 assistant 消息（DeepSeek 要求）
+            # content 为模型在工具调用前输出的文本，reasoning_content 为思考内容
             combined_tool_calls: list[dict[str, Any]] = []
             for item in tool_outputs:
                 combined_tool_calls.append({
@@ -346,11 +373,24 @@ async def run_agent_loop(
                             "content": inj.get("content", ""),
                         })
 
+            # -- 循环详情日志 --
+            for i, m in enumerate(messages):
+                if m.get("role") == "assistant" and m.get("tool_calls"):
+                    has_rc = "reasoning_content" in m
+                    rc_len = len(str(m.get("reasoning_content", ""))) if has_rc else -1
+                    logger.info(
+                        f"Loop {loop_count + 1} msg[{i}]: assistant+tool_calls, "
+                        f"reasoning_content={'present(' + str(rc_len) + ' chars)' if has_rc else 'MISSING'}"
+                    )
+
             # -- token 预算检查 --
             estimated_tokens = sum(
                 len(str(m.get("content", ""))) // 2
                 for m in messages
                 if m.get("content")
+            )
+            logger.info(
+                f"Loop {loop_count + 1}: {len(messages)} messages, ~{estimated_tokens} tokens"
             )
             if estimated_tokens > max_context_tokens:
                 logger.warning(

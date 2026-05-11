@@ -4,6 +4,21 @@ FastAPI主应用 - AI IDE风格小说创作系统
 """
 from contextlib import asynccontextmanager
 import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[logging.StreamHandler()],
+)
+
+try:
+    from rich.console import Console
+    from rich.logging import RichHandler
+
+    logging.root.handlers = [RichHandler(console=Console(stderr=True), rich_tracebacks=True)]
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -220,4 +235,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
