@@ -48,8 +48,9 @@ class AgentLoopResult:
 ToolCallHandler = Callable[[str, str, dict[str, Any]], Awaitable[ToolCallResult]]
 """工具执行回调：async (tool_name, tool_id, arguments) -> ToolCallResult"""
 
-PreDisplayHandler = Callable[[str, dict[str, Any]], Awaitable[tuple[str | None, str | None]]]
-"""展示文本回调：async (tool_name, arguments) -> (display_text, activity_kind)"""
+DisplayHandler = Callable[[str, dict[str, Any], str], Awaitable[tuple[str | None, str | None]]]
+"""展示文本回调：async (tool_name, arguments, status) -> (display_text, activity_kind)
+循环在 selected / executing / completed 三个阶段统一调用，status 为 "executing" / "completed" / "failed" """
 
 OnArgsStreamHandler = Callable[[str, str, str], Awaitable[None]]
 """参数流式回调：async (tool_name, tool_id, arguments_text) -> None
@@ -84,7 +85,7 @@ async def run_agent_loop(
     parent_task_id: str | None,
     cancel_event: asyncio.Event,
     tool_call_handler: ToolCallHandler,
-    pre_display_handler: PreDisplayHandler | None = None,
+    display_handler: DisplayHandler | None = None,
     on_args_stream: OnArgsStreamHandler | None = None,
     on_message: OnMessageHandler | None = None,
     model: str | None = None,
@@ -101,8 +102,8 @@ async def run_agent_loop(
     messages : 初始消息列表（LLM API 格式）。循环会在每次工具调用后原地追加
               assistant + tool 消息。调用方负责初始构建和最终持久化。
     cancel_event : 初始为 clear（运行中），调用方 set() 后循环在下一检查点退出。
-    pre_display_handler : 工具执行前的展示文本回调。传入则推送 "executing" 事件时携带
-                         display_text / activity_kind。
+    display_handler : 展示文本回调，selected / executing / completed 三个阶段统一调用。
+                     传入则所有 tool_call 事件自动携带 display_text / activity_kind。
     on_args_stream : LLM 流式传输工具参数时的回调，用于 edit_chapter 实时预览等。
     """
     loop_count = 0
@@ -196,11 +197,11 @@ async def run_agent_loop(
                     # 提前获取泛用展示文本，发出 selected 阶段事件，前端即时反馈
                     display_text_selected: str | None = None
                     activity_kind_selected: str | None = None
-                    if pre_display_handler and tool_name_start:
+                    if display_handler and tool_name_start:
                         try:
-                            display_text_selected, activity_kind_selected = await pre_display_handler(tool_name_start, {})
+                            display_text_selected, activity_kind_selected = await display_handler(tool_name_start, {}, "executing")
                         except Exception:
-                            logger.warning("pre_display_handler failed at tool_call_start", exc_info=True)
+                            logger.warning("display_handler failed at tool_call_start", exc_info=True)
                     if tool_name_start:
                         await ws_manager.send_personal_message({
                             "type": "tool_call",
@@ -230,7 +231,7 @@ async def run_agent_loop(
                 # ======== tool_call_end ========
                 elif event_type == "tool_call_end":
                     tool_name: str = event.get("tool_name", "")
-                    tool_id: str = event.get("tool_id") or ""
+                    tool_id: str = event.get("tool_id") or event.get("id") or ""
                     arguments: dict[str, Any] = event.get("arguments", {})
 
                     if not tool_name:
@@ -239,11 +240,11 @@ async def run_agent_loop(
                     # -- pre-display（"executing" 展示文本）--
                     display_text: str | None = None
                     activity_kind: str | None = None
-                    if pre_display_handler:
+                    if display_handler:
                         try:
-                            display_text, activity_kind = await pre_display_handler(tool_name, arguments)
+                            display_text, activity_kind = await display_handler(tool_name, arguments, "executing")
                         except Exception:
-                            logger.warning("pre_display_handler failed", exc_info=True)
+                            logger.warning("display_handler failed", exc_info=True)
 
                     await ws_manager.send_personal_message({
                         "type": "tool_call",
@@ -285,14 +286,26 @@ async def run_agent_loop(
 
                     logger.info(f"Tool result payload: {tool_result_payload}")
 
+                    # -- completed 展示文本（回调统一生成）--
+                    status_result = "completed" if handler_result.success else "failed"
+                    display_text_result = handler_result.display_text
+                    activity_kind_result = handler_result.activity_kind
+                    if display_handler:
+                        try:
+                            display_text_result, activity_kind_result = await display_handler(
+                                tool_name, arguments, status_result
+                            )
+                        except Exception:
+                            logger.warning("display_handler failed at completed", exc_info=True)
+
                     await ws_manager.send_personal_message({
                         "type": "tool_call",
                         "task_id": task_id,
                         "parent_task_id": parent_task_id,
                         "tool_name": tool_name,
-                        "status": "completed" if handler_result.success else "failed",
+                        "status": status_result,
                         "tool_id": tool_id,
-                        "phase": "completed" if handler_result.success else "failed",
+                        "phase": status_result,
                         "arguments": arguments,
                         "result_summary": {
                             "success": handler_result.success,
@@ -300,8 +313,8 @@ async def run_agent_loop(
                             "metadata": handler_result.result.get("metadata") or {},
                             "data_keys": list(data_payload.keys()) if isinstance(data_payload, dict) else [],
                         },
-                        "display_text": handler_result.display_text,
-                        "activity_kind": handler_result.activity_kind,
+                        "display_text": display_text_result,
+                        "activity_kind": activity_kind_result,
                         "error": handler_result.error,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }, websocket)

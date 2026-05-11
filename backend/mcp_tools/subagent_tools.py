@@ -130,7 +130,7 @@ class RunSubagentTool(BaseMCPTool):
         if not websocket:
             raise ValueError("子 Agent 缺少 WebSocket 连接")
         on_message = extra.get("on_message")
-        pre_display = extra.get("pre_display")
+        display = extra.get("display")
 
         cfg = AGENT_CONFIG[args.agent_type]
         system_prompt, allowed_tools, max_turns = cfg
@@ -200,7 +200,7 @@ class RunSubagentTool(BaseMCPTool):
             parent_task_id=parent_task_id,
             cancel_event=cancel_event,
             tool_call_handler=sub_handler,
-            pre_display_handler=pre_display,
+            display_handler=display,
             on_args_stream=None,
             on_message=sub_on_message,
             max_turns=max_turns,

@@ -755,18 +755,18 @@ async def _run_chat_with_tools(
             loop_result: AgentLoopResult | None = None
 
             try:
-                # --- pre_display_handler ---
-                async def _pre_display(
-                    tool_name: str, arguments: dict[str, Any]
+                # --- display_handler ---
+                async def _display(
+                    tool_name: str, arguments: dict[str, Any], status: str = "executing"
                 ) -> tuple[str | None, str | None]:
                     try:
                         async with AsyncSessionLocal() as disp_db:
                             pres = await _build_tool_call_presentation(
-                                disp_db, novel_id, tool_name, arguments
+                                disp_db, novel_id, tool_name, arguments, status=status
                             )
                             return pres.get("display_text"), pres.get("activity_kind")
                     except Exception:
-                        logger.warning(f"pre_display_handler failed for {tool_name}", exc_info=True)
+                        logger.warning(f"display_handler failed for {tool_name}", exc_info=True)
                         return None, None
 
                 # --- 消息即时持久化回调 ---
@@ -843,7 +843,7 @@ async def _run_chat_with_tools(
                             chat_session=session,
                             tool_id=tool_id,
                             on_message=_on_message,
-                            pre_display=_pre_display,
+                            display=_display,
                             parent_task_id=task_id,
                             cancel_event=cancel_event,
                             **clean_args
@@ -865,14 +865,6 @@ async def _run_chat_with_tools(
                             "message": f"工具 {tool_name} 已连续失败 {max_tool_retries} 次，已暂时禁用。",
                             "timestamp": datetime.now(timezone.utc).isoformat()
                         }, websocket)
-
-                    # 获取展示文本
-                    async with AsyncSessionLocal() as disp_db:
-                        pres = await _build_tool_call_presentation(
-                            disp_db, novel_id, tool_name, clean_args,
-                            tool_result_payload,
-                            status="completed" if tool_result_payload.get("success") else "failed"
-                        )
 
                     # edit_chapter 成功后推送 edit_pending 和 edit_preview
                     if tool_name == "edit_chapter" and tool_result_payload.get("success"):
@@ -905,8 +897,6 @@ async def _run_chat_with_tools(
                         success=tool_result_payload.get("success", False),
                         result=tool_result_payload.get("data") or {},
                         error=tool_result_payload.get("error"),
-                        display_text=pres.get("display_text"),
-                        activity_kind=pres.get("activity_kind"),
                         inject=inject,
                         should_disable=should_disable,
                     )
@@ -940,7 +930,7 @@ async def _run_chat_with_tools(
                     parent_task_id=None,
                     cancel_event=cancel_event,
                     tool_call_handler=_handle_tool,
-                    pre_display_handler=_pre_display,
+                    display_handler=_display,
                     on_args_stream=_on_args,
                     on_message=_on_message,
                     model=session.model,
