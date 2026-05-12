@@ -63,7 +63,7 @@
 
 ### 统一压缩入口
 
-无论是自动触发还是用户手动点击，都走同一个后端端点 + 同一套前端 UI 状态。
+无论是自动触发还是用户手动点击，都走 WebSocket 消息流内压缩（追加 system 消息 → LLM 生成摘要 → 替换旧消息）。手动和自动使用同一逻辑，前端统一展示"正在压缩..."。
 
 ### 最终引入 LiteLLM
 
@@ -75,7 +75,7 @@
 
 ### Phase 1：流式 usage 提取
 
-**目标**：每个 turn 的 LLM 调用结束后拿到真实 token 用量。
+**目标**：每次 LLM 调用（一个 turn 内可能多次 tool call 循环）结束后拿到真实 token 用量。前端每次调用后更新指示器，而非等待整个 turn 结束。
 
 **后端 `core/llm_service.py`**：
 - `chat_stream_with_tools()` 流结束后从最后一帧提取 `usage`
@@ -94,37 +94,39 @@
 
 ---
 
-### Phase 2：前端上下文占用指示器（每条消息下方）
+### Phase 2：前端上下文占用指示器（输入框旁持久显示）
 
-**UI 设计**：每个 turn 完成后，在该 turn 消息流末尾插入一行上下文占用指示器。不放在输入框上方，而是作为消息流的一部分。
+**UI 设计**：输入框旁边放置一个环形百分比指示器，每次 LLM 调用完成后更新。鼠标悬停展开详情面板和压缩按钮。
 
 ```
-[User: "帮我写第三章"]
-[AI: 好的，我来写...]
-[Tool: edit_chapter]
-[AI: 第三章已完成...]
 ┌──────────────────────────────────────────────────┐
-│ ◉ 14.5%  ████░░░░░░  ·  [压缩]                 │
-│ system 5K  对话 120K  工具 20K  注入 5K  摘要 0  │
+│  [User input box...]                    [发送]   │
+│                                          ◉ 14.5% │  ← 环形指示器，始终可见
 └──────────────────────────────────────────────────┘
-[User: "继续写第四章"]
-[AI: ...]
-┌──────────────────────────────────────────────────┐
-│ ◉ 18.7%  ██████░░░░  ·  [压缩]                 │
-│ system 5K  对话 160K  工具 25K  注入 5K  摘要 0  │
-└──────────────────────────────────────────────────┘
+
+悬停时弹出 Popover：
+┌─────────────────────────────────────┐
+│ 上下文占用: 14.5% / 1M               │
+│ ████████░░░░░░░░░░░░░░░             │
+│                                     │
+│ 系统上下文   24,000 tokens    2.3%   │
+│ 用户输入      8,000 tokens    0.8%   │
+│ AI 输出      98,000 tokens    9.3%   │
+│ 工具结果     20,000 tokens    1.9%   │
+│                                     │
+│ [手动压缩]                           │
+└─────────────────────────────────────┘
 ```
 
-每次刷新替换上一行的指示器（保持消息流干净），始终只有最新一条占用指示器。
+**为什么放在输入框旁**：每次 LLM 调用都返回 `usage.prompt_tokens`，一个 turn 内可能更新多次（多次 tool call 循环），放在消息流中会频繁插入/替换节点。输入框旁的固定位置更稳定，用户随时可见。
 
 **组件细节**：
 - **环形指示器**：小型 SVG donut ring，中间显示百分比。绿色 < 80%，橙色 80-90%，红色 > 90%
-- **分类条**：水平色块条，各颜色代表不同类别
-- **类别 tooltip**：鼠标悬停时弹出各类别的 token 数和百分比
-- **压缩按钮**：消息 >= 20 条时可用。触发手动压缩
+- **Popover 详情**：鼠标悬停时弹出，含分类柱状条 + 各类别 token 数和占比 + 手动压缩按钮
+- **更新时机**：每次收到 `usage` WebSocket 事件时更新（即每次 LLM 调用完成后）
 
 **数据来源**：
-- 每轮结束后的 `usage` WebSocket 事件推送
+- 每次 LLM 调用完成后的 `usage` WebSocket 事件推送（更新频率高于 turn 级别）
 - 初始加载：`sessionApi.getStats(sessionId)` 返回最新状态
 - `get_session_stats()` 增加分类统计：
 
@@ -135,76 +137,110 @@
     "usage_ratio": 14.3,
     "should_compress": false,
     "breakdown": {
-        "system": 5000,
-        "conversation": 120000,
-        "tool": 20000,
-        "context_injection": 5000,
-        "summary": 0
+        "system": 24000,
+        "user": 8000,
+        "assistant": 98000,
+        "tool": 20000
     }
 }
 ```
 
-分类按消息 role 汇总 —— system 消息归系统，user/assistant 归对话，tool 归工具，novel_context/chapter_context 归注入，summary 字段归摘要。
+分类直接按消息 `role` 汇总：
+
+| 英文 key | 中文名 | 对应 |
+|----------|--------|------|
+| `system` | 系统上下文 | `role=system`（System1/2、工具定义、chapter 注入等） |
+| `user` | 用户输入 | `role=user`（用户指令和偏好，尽量保留） |
+| `assistant` | AI 输出 | `role=assistant`（LLM 回复，压缩主要目标） |
+| `tool` | 工具结果 | `role=tool`（工具调用的输入和输出） |
 
 ---
 
-### Phase 3：统一压缩逻辑 + 鎏金动画
+### Phase 3：统一压缩逻辑（消息流内压缩 + 断点续传）
 
-**3.1 后端：统一压缩端点**
+**核心设计**：压缩不走独立 HTTP 端点，不走独立 LLM 调用。在现有消息流上追加 system 消息让 LLM 基于完整历史生成摘要，捕获后替换旧消息。全程在对话流内完成，前端自然展示"正在压缩..."。
 
-实现 `POST /sessions/{session_id}/compress`（前端 `sessionService.ts` 已定义，后端 `sessions/router.py` 缺实现）：
+**为什么不用 HTTP 端点**：
+- 压缩本质是对话流的一部分，和发送消息体验一致
+- LLM 已有完整上下文，无需手动截断/拼接
+- 前端发送按钮变暂停、输入框禁用等状态 WebSocket 天然支持
 
-```python
-@router.post("/{session_id}/compress")
-async def compress_session(user, session_id):
-    session = await load_session(session_id)
-    old_count = len(session.messages)
-    old_tokens = session.last_prompt_tokens
-    session = await session_manager.compressor.compress_with_llm(session)
-    return ApiResponse.success({
-        "compressed": True,
-        "messages_before": old_count,
-        "messages_after": len(session.messages),
-        "tokens_before": old_tokens,
-        "tokens_after": session.last_prompt_tokens,
-        "summary_updated": True
-    })
-```
-
-**3.2 自动压缩触发**
+**3.1 压缩流程**
 
 ```
-last_prompt_tokens / context_window >= 90%:
-    → 当前 LLM 调用完成 → turn 内立刻调用 compress_with_llm()
-    → 前端显示"正在压缩..."
-    → 压缩完后继续后续工具调用/回复
-
-last_prompt_tokens / context_window 在 80-90%:
-    → turn 结束后异步调用 compress_with_llm()
-    → 前端显示"正在压缩..."
-    → 输入框禁用，阻止发消息
-
-last_prompt_tokens / context_window < 80%:
-    → 不触发
+1. 触发压缩（自动或用户点击）
+2. 在消息流末尾追加 system 消息：压缩提示词
+3. LLM 基于完整历史生成结构化摘要
+4. 后端捕获摘要文本，从消息流中移除压缩 system + LLM 回复
+5. 按保留规则替换旧消息，摘要作为 system 消息插入边界
+6. 前端收到 compression_started → 发送按钮变暂停、"正在压缩..."出现在对话流
+   前端收到 compression_done → 恢复正常，指示器更新
 ```
 
-**3.3 前端压缩状态**
+**3.2 断点续传（核心）**
 
-- 压缩中：输入框禁用、发送按钮 disabled
-- 消息流末尾的占用指示器变为鎏金动画 + 显示"正在压缩..."
-- 手动压缩也走同一 `POST /compress` 端点
-- 自动压缩：后端推送 `compression_started` / `compression_done` 事件
+压缩摘要必须包含精确断点信息，使 LLM 压缩后能无缝继续。压缩 system 提示词要求 LLM 输出：
 
-**3.4 前端阻止发消息**
+```
+## 已完成的任务
+（不再重复执行的事项）
 
-压缩期间：
-- `isCompressing` 状态为 true
-- 输入框 placeholder 显示 "正在压缩对话历史..."
-- 发送按钮置灰
+## 进行中（断点）
+（当前正在做什么、做到了哪一步、下一步是什么）
 
-**3.5 鎏金动画**
+## 用户偏好和要求
+（用户的核心偏好、写作风格要求、反复强调的事项）
 
-压缩进行时指示器的动画：
+## 关键决策和设定变更
+（已确认的情节决策、角色设定变更、世界观更新）
+
+## 待办事项
+（尚未开始但已计划的任务）
+```
+
+**Mid-turn 压缩（>90%，turn 内同步）**：
+1. tool call 返回后，下一次 LLM 调用前插入压缩 system
+2. LLM 生成摘要（不展示给用户，或仅展示"正在压缩..."）
+3. 移除压缩交换，用摘要替换旧消息
+4. 继续 agent loop → LLM 读摘要 + 最近消息，从断点继续
+5. 用户无感：压缩前后 LLM 行为一致，不会"失忆"或重复已完成任务
+
+**End-of-turn 压缩（80-90%，turn 后异步）**：
+1. turn 结束后触发，同样走消息流追加
+2. 前端显示"正在压缩..."，发送按钮变暂停，输入框禁用
+3. 压缩完成后恢复正常
+
+**3.3 手动压缩（WebSocket）**
+
+用户点击输入框旁的压缩按钮 → 发送 `{type: "compress"}` WebSocket 消息 → 走相同流程。
+手动和自动压缩统一处理。
+
+**3.4 消息保留规则**
+
+| 优先级 | 消息类型 | 处理方式 |
+|--------|---------|---------|
+| 必保留 | System1（agent base prompt） | 原样保留 |
+| 必保留 | System2（novel context） | 原样保留 |
+| 尽量保留 | User 消息 | 含用户偏好和要求，尽量不删 |
+| 可摘要 | 旧的 assistant 回复 | 内容进摘要后移除 |
+| 可摘要 | 旧的 tool 结果 | 关键结果进摘要后移除 |
+| 可摘要 | System1/2 之外的 system 消息 | 进摘要后移除 |
+| 保留 | 最近 N 条消息 | 原样保留，维持对话连续性 |
+
+**3.5 前端压缩状态**
+
+手动压缩（用户点击按钮）：
+- 对话流显示 "正在压缩对话历史..."
+- 发送按钮变为暂停图标，输入框禁用
+- 环形指示器播放鎏金动画
+
+自动压缩（mid-turn）：
+- 用户无感知，仅环形指示器短暂显示鎏金动画
+
+自动压缩（end-of-turn）：
+- 同手动压缩的外观，但不阻塞（后台异步）
+
+**3.6 鎏金动画**
 
 ```css
 @keyframes gildedFlow {
@@ -222,37 +258,77 @@ last_prompt_tokens / context_window < 80%:
 }
 ```
 
-环形边框、百分比文字、分类条从左到右依次鎏金流动。压缩完成后回退到绿/橙/红对应颜色。
-
 ---
 
-### Phase 4：压缩算法改进
+### Phase 4：压缩算法实现细节
 
-**4.1 LLM 摘要 prompt 优化**
+**4.1 压缩 system 提示词**
 
-当前 `_generate_llm_summary()` 只传最后 10 条 older messages，截取前 200 字符。改进为结构化提取：
+追加到消息流的 system 消息（完整版）：
 
-- 传入 older_messages 的完整内容（合理长度内）
-- 要求 LLM 输出结构化摘要：
-  ```
-  ## 用户意图和偏好
-  ## 已做决策
-  ## 角色状态变化
-  ## 伏笔/悬念
-  ## 待办事项
-  ```
+```
+[SYSTEM 压缩指令]
+请基于以上完整对话历史生成压缩摘要。你的回复将替换较早的消息，所以摘要必须包含足够信息来实现"断点续传"——后续的你能直接从摘要中了解所有关键上下文，无缝继续工作。
 
-**4.2 消息分层保留**
+## 摘要要求
 
-压缩时对 older messages 分层处理：
-- 保留：system 消息、含角色设定/情节转折的关键消息
-- 摘要：一般对话、查询结果
-- 丢弃：纯确认（"好的"、"继续"）、已被后续操作覆盖的中间结果
+### 已完成的任务
+列出已确认完成的事项（这些不会再重复执行）。
 
-**4.3 LLM 压缩的并发处理**
+### 进行中（断点）
+精确描述当前正在做什么、做到了哪一步、接下来要做什么。这是最重要的部分——后续的你将从此处恢复工作。
 
-- 压缩耗时 > 3 秒时前端显示进度
-- 压缩期间 session 锁定，防止并发修改
+### 用户偏好和要求
+用户反复强调的写作风格、格式偏好、命名规范等。特别是用户最近的指令。
+
+### 关键决策和设定变更
+已确认的情节走向、角色设定、世界观规则等决策。标注各项决策的确定程度。
+
+### 待办事项
+已计划但尚未开始的任务清单。
+
+## 输出格式
+请严格按照上述五个部分输出，每个部分用 ## 标题分隔。不要添加额外说明。
+```
+
+**4.2 摘要捕获和消息替换**
+
+```
+压缩前:
+  [System1: base prompt]        ← 保留
+  [System2: novel context]       ← 保留
+  [User: "我喜欢黑暗风格"]        ← 保留（用户偏好）
+  [Assistant: "好的..."]
+  [Tool: search_story_memory]
+  [User: "写第三章"]
+  [Assistant: "好的，我来写..."]
+  [Tool: edit_chapter]
+  ...（大量历史消息）
+  [User: "继续写第四章"]          ← 保留（最近消息）
+  [Assistant: "第四章开始..."]    ← 保留（最近消息）
+
+↓ 插入压缩 system + LLM 回复
+
+  ...（同上完整历史）
+  [System: 压缩指令]
+  [Assistant: "## 已完成\n- 第三章...\n## 进行中（断点）\n正在写第四章开头...\n..."]
+                                                                ↑ 捕获这段回复
+
+↓ 移除压缩交换 + 替换旧消息
+
+  [System1: base prompt]
+  [System2: novel context]
+  [User: "我喜欢黑暗风格"]        ← 保留的 user 消息
+  [System: ## 压缩摘要\n...]      ← 摘要替代旧的 assistant/tool 消息
+  [User: "继续写第四章"]
+  [Assistant: "第四章开始..."]
+```
+
+**4.3 防抖和并发控制**
+
+- 同一次压缩进行中直接返回跟正常途径一样的结果 幂等
+- 压缩前后各记录一次 stats，前端展示"压缩前 X tokens → 压缩后 Y tokens"
+- 压缩失败不回退消息，保留原消息流，前端提示错误
 
 ---
 
@@ -278,10 +354,10 @@ last_prompt_tokens / context_window < 80%:
 
 | 阶段 | 内容 | 优先级 | 预估 |
 |------|------|--------|------|
-| Phase 1 | 流式 usage 提取 | 高 | 小 |
-| Phase 2 | 前端消息流内占用指示器 | 高 | 中 |
-| Phase 3 | 统一压缩 + 鎏金动画 + 阻止发送 | 中 | 中 |
-| Phase 4 | 压缩算法改进 | 中 | 中 |
+| Phase 1 | 流式 usage 提取（每次 LLM 调用） | 高 | 小 |
+| Phase 2 | 前端输入框旁环形指示器 + Popover 详情 | 高 | 中 |
+| Phase 3 | 消息流内压缩 + 断点续传 + 鎏金动画 | 中 | 中 |
+| Phase 4 | 压缩提示词 + 消息替换规则细化 | 中 | 中 |
 | Phase 5 | LiteLLM 接入 | 低 | 大 |
 
 ## 涉及文件
@@ -290,9 +366,8 @@ last_prompt_tokens / context_window < 80%:
 |------|---------|---------|---------|---------|---------|
 | `backend/core/llm_service.py` | 改 | — | — | — | LiteLLM 替代 |
 | `backend/core/agent_loop.py` | 改 | — | 改 | — | — |
-| `backend/chat/session_manager.py` | 改 | 改 | — | 改 | — |
-| `backend/sessions/router.py` | — | 改 | 改 | — | — |
+| `backend/chat/session_manager.py` | 改 | — | — | 改 | — |
+| `backend/chat/ws_chat.py` | — | — | 改 | — | — |
 | `frontend/src/services/wsEditorService.ts` | 改 | — | 改 | — | — |
-| `frontend/src/services/sessionService.ts` | — | — | 改 | — | — |
 | `frontend/src/pages/editor/EditorPage.tsx` | — | 改 | 改 | — | — |
 | `frontend/src/pages/editor/EditorPage.module.css` | — | 改 | 改 | — | — |
