@@ -719,53 +719,53 @@ class LLMService:
                         except json.JSONDecodeError:
                             continue
 
-                    if "choices" in chunk and len(chunk["choices"]) > 0:
-                        delta = chunk["choices"][0].get("delta", {})
+                        if "choices" in chunk and len(chunk["choices"]) > 0:
+                            delta = chunk["choices"][0].get("delta", {})
 
-                        reasoning = delta.get("reasoning_content", "")
-                        if reasoning:
-                            yield {"type": "thinking", "content": reasoning}
+                            reasoning = delta.get("reasoning_content", "")
+                            if reasoning:
+                                yield {"type": "thinking", "content": reasoning}
 
-                        content = delta.get("content", "")
-                        if content:
-                            full_content += content
-                            yield {"type": "content", "content": content}
+                            content = delta.get("content", "")
+                            if content:
+                                full_content += content
+                                yield {"type": "content", "content": content}
 
-                        tool_calls_delta = delta.get("tool_calls", [])
-                        for tc in tool_calls_delta:
-                            idx = tc.get("index", 0)
+                            tool_calls_delta = delta.get("tool_calls", [])
+                            for tc in tool_calls_delta:
+                                idx = tc.get("index", 0)
 
-                            while len(current_tool_calls) <= idx:
-                                current_tool_calls.append({
-                                    "id": "",
-                                    "name": "",
-                                    "arguments": ""
-                                })
+                                while len(current_tool_calls) <= idx:
+                                    current_tool_calls.append({
+                                        "id": "",
+                                        "name": "",
+                                        "arguments": ""
+                                    })
 
-                            if tc.get("id"):
-                                current_tool_calls[idx]["id"] = tc["id"]
-                                yield {
-                                    "type": "tool_call_start",
-                                    "tool_name": "",
-                                    "tool_id": tc["id"]
-                                }
+                                if tc.get("id"):
+                                    current_tool_calls[idx]["id"] = tc["id"]
+                                    yield {
+                                        "type": "tool_call_start",
+                                        "tool_name": "",
+                                        "tool_id": tc["id"]
+                                    }
 
-                            if tc.get("function", {}).get("name"):
-                                current_tool_calls[idx]["name"] = tc["function"]["name"]
-                                yield {
-                                    "type": "tool_call_start",
-                                    "tool_name": tc["function"]["name"],
-                                    "tool_id": current_tool_calls[idx]["id"]
-                                }
+                                if tc.get("function", {}).get("name"):
+                                    current_tool_calls[idx]["name"] = tc["function"]["name"]
+                                    yield {
+                                        "type": "tool_call_start",
+                                        "tool_name": tc["function"]["name"],
+                                        "tool_id": current_tool_calls[idx]["id"]
+                                    }
 
-                            if tc.get("function", {}).get("arguments"):
-                                current_tool_calls[idx]["arguments"] += tc["function"]["arguments"]
-                                yield {
-                                    "type": "tool_call_arguments",
-                                    "tool_name": current_tool_calls[idx]["name"],
-                                    "tool_id": current_tool_calls[idx]["id"],
-                                    "arguments_text": current_tool_calls[idx]["arguments"]
-                                }
+                                if tc.get("function", {}).get("arguments"):
+                                    current_tool_calls[idx]["arguments"] += tc["function"]["arguments"]
+                                    yield {
+                                        "type": "tool_call_arguments",
+                                        "tool_name": current_tool_calls[idx]["name"],
+                                        "tool_id": current_tool_calls[idx]["id"],
+                                        "arguments_text": current_tool_calls[idx]["arguments"]
+                                    }
 
                         if "usage" in chunk and chunk["usage"] is not None:
                             usage_data = chunk["usage"]

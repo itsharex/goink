@@ -119,7 +119,7 @@ async def run_agent_loop(
     def _count_msg_tokens(msg: dict[str, Any]) -> int:
         """计算一条消息的 tiktoken 数（只算 API 实际计数的字段）"""
         n = 0
-        content = str(msg.get("content", ""))
+        content = msg.get("content") or ""
         if content:
             n += len(_tiktoken_enc.encode(content))
         tool_calls = msg.get("tool_calls")
@@ -383,7 +383,7 @@ async def run_agent_loop(
                         "completion_tokens": usage.get("completion_tokens", 0),
                         "total_tokens": usage.get("total_tokens", 0),
                         "context_window": context_window,
-                        "usage_ratio": round(prompt_tokens / context_window * 100, 2) if context_window else 0,
+                        "usage_ratio": round(usage.get("total_tokens", 0) / context_window * 100, 2) if context_window else 0,
                         "detail": detail,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }, websocket)

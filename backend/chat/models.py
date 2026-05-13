@@ -39,22 +39,6 @@ class ChatSession(Base):
         Index('idx_chat_session_user_updated', 'user_id', 'updated_at'),
     )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "session_id": self.session_id,
-            "user_id": self.user_id,
-            "novel_id": self.novel_id,
-            "title": self.title,
-            "model": self.model,
-            "summary": self.summary,
-            "novel_context": self.novel_context,
-            "chapter_context": self.chapter_context,
-            "pending_changes": self.pending_changes or [],
-            "metadata": self.extra_metadata,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
-        }
 
 
 class ChatMessage(Base):
@@ -79,14 +63,3 @@ class ChatMessage(Base):
         Index('idx_chat_message_session_created', 'session_id', 'created_at'),
     )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "session_id": self.session_id,
-            "role": self.role,
-            "content": self.content,
-            "token_count": self.token_count,
-            "importance": self.importance,
-            "metadata": self.extra_metadata,
-            "created_at": self.created_at.isoformat() if self.created_at else None
-        }

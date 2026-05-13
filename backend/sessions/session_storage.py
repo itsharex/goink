@@ -367,7 +367,7 @@ class SessionStorage:
             updated_at=db_session.updated_at,
             metadata=db_session.extra_metadata or {},
             model=db_session.model,
-            last_usage=db_session.usage
+            last_usage=db_session.usage if isinstance(db_session.usage, dict) else None
         )
 
 
