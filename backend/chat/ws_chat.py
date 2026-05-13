@@ -883,9 +883,9 @@ async def _run_chat_with_tools(
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }, websocket)
 
-                # --- 消息即时持久化回调 ---
-                async def _on_usage(usage: dict[str, Any]) -> None:
-                    session.last_usage = usage
+                # --- usage 持久化回调 ---
+                async def _on_usage(usage: dict[str, Any], detail: dict[str, int]) -> None:
+                    session.last_usage = {**usage, "detail": detail}
                     await session_storage.save(session)
 
                 # --- 执行 Agent 循环 ---

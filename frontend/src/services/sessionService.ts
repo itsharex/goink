@@ -1,5 +1,6 @@
 import apiClient from './apiClient'
 import type { ApiResponse, PaginatedResponse } from '@/types/api'
+import type { UsageData } from './wsEditorService'
 
 export type LLMModel = 'deepseek-v4-flash' | 'deepseek-v4-pro' | 'glm-4.7-flash'
 
@@ -13,7 +14,7 @@ export interface SessionMessage {
   importance?: number
 }
 
-export interface SessionStats {
+export interface SessionStats extends Partial<UsageData> {
   message_count: number
   token_count: number
   context_window: number
@@ -112,13 +113,7 @@ export interface UpdateChapterContextRequest {
   focus_characters?: string[]
 }
 
-export interface SessionStatsResponse {
-  message_count: number
-  token_count: number
-  context_window: number
-  usage_ratio: number
-  should_compress: boolean
-}
+export interface SessionStatsResponse extends SessionStats {}
 
 export interface ModelOption {
   id: string

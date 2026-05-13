@@ -582,7 +582,8 @@ class SessionManager:
     def get_session_stats(self, session: Session) -> dict[str, Any]:
         model_config = MODEL_CONFIGS.get(session.model, MODEL_CONFIGS["deepseek-v4-flash"])
         token_count = session.get_token_count()
-        return {
+        last_usage = session.last_usage or {}
+        stats: dict[str, Any] = {
             "session_id": session.session_id,
             "display_name": session.get_display_name(),
             "title": session.title,
@@ -591,11 +592,21 @@ class SessionManager:
             "message_count": session.get_message_count(),
             "token_count": token_count,
             "context_window": model_config.context_window,
-            "usage_ratio": round(token_count / model_config.context_window * 100, 2),
             "should_compress": self.compressor.should_compress(session),
             "pending_changes": len(session.pending_changes),
             "model": session.model
         }
+        if last_usage:
+            stats["prompt_tokens"] = last_usage.get("prompt_tokens")
+            stats["completion_tokens"] = last_usage.get("completion_tokens")
+            stats["total_tokens"] = last_usage.get("total_tokens")
+            stats["usage_ratio"] = round(last_usage.get("total_tokens", 0) / model_config.context_window * 100, 2) if model_config.context_window else 0
+            detail = last_usage.get("detail")
+            if detail:
+                stats["detail"] = detail
+        else:
+            stats["usage_ratio"] = round(token_count / model_config.context_window * 100, 2)
+        return stats
     
     def update_novel_context(
         self,

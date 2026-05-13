@@ -55,7 +55,8 @@ type OnMessageHandler = Callable[[dict[str, Any]], Awaitable[None]]
 """消息持久化回调：async (message) -> None
 循环每追加一条 assistant/tool/system 消息时调用，实现任意状态可恢复"""
 
-type OnUsageHandler = Callable[[dict[str, Any]], Awaitable[None]]
+type OnUsageHandler = Callable[[dict[str, Any], dict[str, int]], Awaitable[None]]
+"""用量回调：async (usage, detail) -> None。usage 是 API 返回的原始 usage 字典，detail 是 tiktoken 分角色计数"""
 """用量更新回调：async (usage_dict) -> None
 每次 LLM 调用完成后调用，用于更新 session.last_usage"""
 
@@ -332,6 +333,8 @@ async def run_agent_loop(
                         except Exception:
                             logger.warning("display_handler failed at completed", exc_info=True)
 
+                    # metadata: display_handler 产生的展示元数据（如 run_subagent 的 agent_type）
+                    # result_summary.metadata: 工具执行结果携带的元数据（如章节 ID、字数等）
                     await ws_manager.send_personal_message({
                         "type": "tool_call",
                         "task_id": task_id,
@@ -392,7 +395,7 @@ async def run_agent_loop(
 
                     if on_usage:
                         try:
-                            await on_usage(usage)
+                            await on_usage(usage, detail)
                         except Exception:
                             logger.warning("on_usage callback failed", exc_info=True)
 

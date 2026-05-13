@@ -35,8 +35,10 @@ import type {
   EditPendingMsg,
   ReasoningEffort,
   OutlineGeneratedMsg,
+  UsageMsg,
 } from '@/services/wsEditorService'
 import { Markdown } from '@/components/Markdown'
+import ContextRing from '@/components/common/ContextRing'
 import styles from './EditorPage.module.css'
 
 interface ChapterInfo {
@@ -226,6 +228,7 @@ export default function EditorPage() {
 
   const [turns, setTurns] = useState<ConversationTurn[]>([])
   const [inputValue, setInputValue] = useState('')
+  const [lastUsage, setLastUsage] = useState<UsageMsg | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [collapsedSubagents, setCollapsedSubagents] = useState<Set<string>>(new Set())
   const currentTurnIdRef = useRef<string | null>(null)
@@ -353,6 +356,23 @@ export default function EditorPage() {
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
   }, [])
+
+  useEffect(() => {
+    if (!currentSessionId) { setLastUsage(null); return }
+    sessionApi.getStats(currentSessionId).then(res => {
+      const s = res.data
+      if (!s) return
+      setLastUsage({
+        type: 'usage',
+        prompt_tokens: s.prompt_tokens || 0,
+        completion_tokens: s.completion_tokens || 0,
+        total_tokens: s.total_tokens || 0,
+        context_window: s.context_window || 0,
+        usage_ratio: s.usage_ratio || 0,
+        detail: s.detail,
+      })
+    }).catch(() => {})
+  }, [currentSessionId])
 
   useEffect(() => {
     const hasPending = turns.some(t =>
@@ -1041,6 +1061,10 @@ export default function EditorPage() {
           pendingInterruptMessageRef.current = null
           dispatchMessageRef.current?.(nextMessage)
         }
+        break
+      }
+      case 'usage': {
+        setLastUsage(msg as UsageMsg)
         break
       }
     }
@@ -1858,6 +1882,7 @@ export default function EditorPage() {
                   variant="borderless"
                 />
               )}
+              <ContextRing usage={lastUsage} />
             </div>
           </div>
         </div>

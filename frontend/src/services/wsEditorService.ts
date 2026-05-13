@@ -359,16 +359,19 @@ export interface SessionUsageDetail {
   tool: number
 }
 
-export interface UsageMsg {
-  type: 'usage'
-  task_id?: string
-  parent_task_id?: string
+export interface UsageData {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
   context_window: number
   usage_ratio: number
-  detail: SessionUsageDetail
+  detail?: SessionUsageDetail
+}
+
+export interface UsageMsg extends UsageData {
+  type: 'usage'
+  task_id?: string
+  parent_task_id?: string
   timestamp?: string
 }
 
