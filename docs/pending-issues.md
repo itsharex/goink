@@ -163,3 +163,11 @@ class SomeTool(BaseMCPTool):
 
 **优先级**：低（当次数据量尚未成为瓶颈，但数据量大后需要优化）
 
+## 12. sessions router 部分端点待清理
+
+**`POST /{session_id}/clear`**：与"全量历史只追加不删除"的存储设计冲突。用户要清空应新建 session。
+
+**`PUT /{session_id}/context/novel` / `PUT /{session_id}/context/chapter`**：前端从未使用过，后续确认是否需要后再决定删除或保留。
+
+**优先级**：低（存储重构时一并处理）
+
