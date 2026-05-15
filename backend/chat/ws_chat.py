@@ -620,13 +620,10 @@ async def _run_chat_with_tools(
             conditional_reminders = []
             
             try:
-                if session_manager.compressor.should_compress(session):
-                    if session_manager.config.enable_auto_summary:
-                        session = await session_manager.compressor.compress_with_llm(session)
-                    else:
-                        session = session_manager.compressor.compress(session)
-                    # 压缩后清除快照，下次重新生成
-                    session.extra_metadata.pop("novel_context_snapshot", None)
+                # TODO: 实现真正的上下文压缩（见 design doc）
+                # if session.get_context_usage_ratio() >= session_manager.config.min_compress_ratio:
+                #     ...
+                # session.extra_metadata.pop("novel_context_snapshot", None)
                 
                 context_builder = ContextBuilder(db, novel_id)
                 retrieved = await context_builder.search_relevant_context(query=user_message, top_k=5)
