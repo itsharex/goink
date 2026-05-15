@@ -2,6 +2,7 @@
 会话管理API路由 - AI IDE风格
 """
 import logging
+import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body
 
@@ -11,7 +12,7 @@ from core.auth import CurrentUserDep
 from sessions.manager import (
     session_manager
 )
-from sessions.schema import MessageRole
+from sessions.schema import MessageRole, Session
 from sessions.storage import session_storage
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -40,11 +41,15 @@ async def create_session(
     if novel.author_id != user.id:
         return ApiResponse.error(code="FORBIDDEN", message="无权访问此小说", status_code=403)
 
-    session = session_manager.create_session(
+    session_id = f"sess_{user.id}_{uuid.uuid4().hex[:8]}"
+    session = Session(
+        session_id=session_id,
         user_id=user.id,
         novel_id=novel_id,
         model=model,
+        extra_metadata={"created_from": "router"},
     )
+    logger.info(f"Created session: {session_id}")
 
     if title:
         session.title = title[:50]

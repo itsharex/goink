@@ -6,8 +6,6 @@
 2. TextChange - 文本变更记录，支持diff
 """
 import logging
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 from dataclasses import dataclass
 
@@ -78,48 +76,6 @@ class SessionManager:
     def __init__(self, config: SessionConfig | None = None):
         self.config = config or SessionConfig()
 
-    def create_session(
-        self,
-        user_id: int,
-        novel_id: int | None = None,
-        model: str = "deepseek-v4-flash",
-        metadata: dict[str, Any] | None = None,
-    ) -> Session:
-        session_id = f"sess_{user_id}_{uuid.uuid4().hex[:8]}"
-
-        session = Session(
-            session_id=session_id,
-            user_id=user_id,
-            novel_id=novel_id,
-            model=model,
-            extra_metadata={"created_from": "session_manager", **(metadata or {})}
-        )
-
-        logger.info(f"Created session: {session_id}")
-        return session
-    
-    def add_message(
-        self,
-        session: Session,
-        role: MessageRole,
-        content: str,
-        metadata: dict[str, Any] | None = None
-    ) -> Message:
-        message_metadata = metadata or {}
-        message = Message(
-            role=role,
-            content=content,
-            extra_metadata=message_metadata
-        )
-        session.messages.append(message)
-        session.updated_at = datetime.now(timezone.utc)
-        if role == MessageRole.USER:
-            normalized = content.strip().splitlines()[0] if content else ""
-            if normalized:
-                if not session.title or session.title in {"新对话"} or session.title.endswith(" 对话"):
-                    session.title = normalized[:30]
-        return message
-    
     def get_messages_for_api(self, session: Session) -> list[dict[str, str]]:
         history_messages = self._select_messages_for_api(session.messages)
         return [msg.to_api_format() for msg in history_messages]

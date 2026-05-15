@@ -55,7 +55,6 @@ class Session(BaseModel):
     user_id: int
     novel_id: int | None = None
     title: str = ""
-    messages: list[Message] = Field(default_factory=list)
     summary: str | None = None
     pending_changes: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -68,16 +67,6 @@ class Session(BaseModel):
     current_chapter_id: int | None = None
     active_version: int = 1
     usage: dict[str, Any] | None = None
-
-    def get_token_count(self) -> int:
-        return sum(m.token_count for m in self.messages)
-
-    def get_message_count(self) -> int:
-        return len(self.messages)
-
-    def get_context_usage_ratio(self) -> float:
-        model_config = MODEL_CONFIGS.get(self.model, MODEL_CONFIGS["deepseek-v4-flash"])
-        return self.get_token_count() / model_config.context_window
 
     def get_display_name(self) -> str:
         return self.title or "新对话"

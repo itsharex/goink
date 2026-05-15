@@ -4,6 +4,7 @@ WebSocket路由 - AI IDE风格统一入口
 """
 import logging
 import asyncio
+import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
@@ -156,10 +157,14 @@ async def websocket_chat(
                             if current_session and current_session.user_id != user_id:
                                 current_session = None
                         if not current_session:
-                            current_session = session_manager.create_session(
+                            session_id = f"sess_{user_id}_{uuid.uuid4().hex[:8]}"
+                            current_session = Session(
+                                session_id=session_id,
                                 user_id=user_id,
                                 novel_id=novel_id,
+                                extra_metadata={"created_from": "ws_chat"},
                             )
+                            logger.info(f"Created session: {session_id}")
                             await session_storage.save(current_session)
                     
                     task_id = f"chat_{current_session.session_id}_{datetime.now(timezone.utc).strftime('%H%M%S')}"
@@ -249,12 +254,18 @@ async def _handle_create_session(websocket, data, user_id, novel_id):
     edit_mode = "agent"
     reasoning_effort = data.get("reasoning_effort")
 
-    session = session_manager.create_session(
+    session_id = f"sess_{user_id}_{uuid.uuid4().hex[:8]}"
+    extra_meta = {"created_from": "ws_chat"}
+    if reasoning_effort:
+        extra_meta["reasoning_effort"] = reasoning_effort
+    session = Session(
+        session_id=session_id,
         user_id=user_id,
         novel_id=novel_id,
         model=model,
-        metadata={"reasoning_effort": reasoning_effort} if reasoning_effort else None,
+        extra_metadata=extra_meta,
     )
+    logger.info(f"Created session: {session_id}")
     if not session.title:
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Novel.title).where(Novel.id == novel_id))
