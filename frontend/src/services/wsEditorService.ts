@@ -160,6 +160,14 @@ export interface SessionLoadedMsg {
   }>
 }
 
+export interface TitleUpdatedMsg {
+  type: 'title_updated'
+  session_id: string
+  title: string
+  auto_generated: boolean
+  timestamp?: string
+}
+
 export interface SessionListMsg {
   type: 'sessions_list'
   sessions: Array<{
@@ -382,6 +390,7 @@ export type ServerMsg =
   | EditRejectedMsg
   | SessionCreatedMsg
   | SessionLoadedMsg
+  | TitleUpdatedMsg
   | SessionListMsg
   | ContentChunkMsg
   | ThinkingChunkMsg

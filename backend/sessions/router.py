@@ -26,7 +26,6 @@ async def create_session(
     novel_id: int = Body(..., description="小说ID"),
     model: str = Body("deepseek-v4-flash", description="LLM模型"),
     title: str | None = Body(None, description="会话标题"),
-    subtitle: str | None = Body(None, description="会话副标题"),
 ):
     """创建新会话"""
     from novels.models import Novel
@@ -53,21 +52,13 @@ async def create_session(
 
     if title:
         session.title = title[:50]
-    elif not session.title:
-        base_title = novel.title or ""
-        session.title = f"{base_title} 对话" if base_title else "新对话"
-    if subtitle:
-        session.subtitle = subtitle[:50]
-        session.extra_metadata["subtitle"] = session.subtitle
-
     await session_storage.save(session)
 
     return ApiResponse.success({
         "session_id": session.session_id,
         "display_name": session.get_display_name(),
         "title": session.title,
-        "subtitle": session.get_subtitle(),
-        "novel_id": novel_id,
+                "novel_id": novel_id,
         "model": model,
         "created_at": session.created_at.isoformat(),
         "message": "会话创建成功",
@@ -92,8 +83,7 @@ async def list_sessions(
                 "session_id": s.session_id,
                 "display_name": s.get_display_name(),
                 "title": s.title,
-                "subtitle": s.get_subtitle(),
-                "novel_id": s.novel_id,
+                                "novel_id": s.novel_id,
                 "message_count": s.get_message_count(),
                 "model": s.model,
                 "pending_changes": len(s.pending_changes),
@@ -128,7 +118,6 @@ async def get_session(
         "user_id": session.user_id,
         "display_name": session.get_display_name(),
         "title": session.title,
-        "subtitle": session.get_subtitle(),
         "novel_id": session.novel_id,
         "messages": [m.model_dump(mode="json") for m in session.messages],
         "summary": session.summary,
@@ -190,29 +179,24 @@ async def update_session_title(
     user: CurrentUserDep,
     session_id: str,
     title: str = Body(..., embed=True, description="会话标题"),
-    subtitle: str | None = Body(None, embed=True, description="会话副标题")
 ):
     """更新会话标题"""
     session = await session_storage.load(session_id)
-    
+
     if not session:
         return ApiResponse.error(code="SESSION_NOT_FOUND", message="会话不存在", status_code=404)
-    
+
     if session.user_id != user.id:
         return ApiResponse.error(code="FORBIDDEN", message="无权操作此会话", status_code=403)
-    
+
     session.title = title[:50]
-    if subtitle is not None:
-        session.subtitle = subtitle[:50]
-        session.extra_metadata["subtitle"] = session.subtitle
     session.updated_at = datetime.now(timezone.utc)
     await session_storage.save(session)
     
     return ApiResponse.success({
         "message": "标题已更新",
         "title": session.title,
-        "subtitle": session.get_subtitle(),
-        "display_name": session.get_display_name()
+                "display_name": session.get_display_name()
     })
 
 

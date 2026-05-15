@@ -123,7 +123,6 @@ class SessionManager:
             "session_id": session.session_id,
             "display_name": session.get_display_name(),
             "title": session.title,
-            "subtitle": session.get_subtitle(),
             "novel_id": session.novel_id,
             "message_count": session.get_message_count(),
             "token_count": token_count,

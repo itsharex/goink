@@ -473,6 +473,13 @@ export default function EditorPage() {
         setSessions(m.sessions)
         break
       }
+      case 'title_updated': {
+        const m = msg as { type: 'title_updated'; session_id: string; title: string; auto_generated: boolean }
+        setSessions(prev => prev.map(s =>
+          s.session_id === m.session_id ? { ...s, title: m.title, display_name: m.title || s.display_name } : s
+        ))
+        break
+      }
       case 'session_loaded': {
         const m = msg as SessionLoadedMsg
         console.log('[EditorPage] session_loaded:', m.session_id, 'messages:', m.recent_messages?.length)

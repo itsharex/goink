@@ -63,13 +63,9 @@ class Session(BaseModel):
     model: str = "deepseek-v4-flash"
     edit_mode: str = "agent"
     chapter_ids: list[int] = Field(default_factory=list)
-    subtitle: str = ""
     current_chapter_id: int | None = None
     active_version: int = 1
     usage: dict[str, Any] | None = None
 
     def get_display_name(self) -> str:
         return self.title or "新对话"
-
-    def get_subtitle(self) -> str:
-        return self.subtitle or ""

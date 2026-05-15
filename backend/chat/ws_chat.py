@@ -266,11 +266,6 @@ async def _handle_create_session(websocket, data, user_id, novel_id):
         extra_metadata=extra_meta,
     )
     logger.info(f"Created session: {session_id}")
-    if not session.title:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(select(Novel.title).where(Novel.id == novel_id))
-            novel_title = result.scalar_one_or_none()
-        session.title = f"{novel_title} 对话" if novel_title else "新对话"
     session.edit_mode = edit_mode
     await session_storage.save(session)
 
@@ -279,8 +274,7 @@ async def _handle_create_session(websocket, data, user_id, novel_id):
         "session_id": session.session_id,
         "display_name": session.get_display_name(),
         "title": session.title,
-        "subtitle": session.get_subtitle(),
-        "model": model,
+                "model": model,
         "reasoning_effort": reasoning_effort,
         "stats": session_manager.get_session_stats(session),
         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -314,8 +308,7 @@ async def _handle_load_session(websocket, data, user_id):
         "session_id": session.session_id,
         "display_name": session.get_display_name(),
         "title": session.title,
-        "subtitle": session.get_subtitle(),
-        "message_count": session.get_message_count(),
+                "message_count": session.get_message_count(),
         "stats": session_manager.get_session_stats(session),
         "recent_messages": [
             m.model_dump(mode="json")
@@ -617,7 +610,33 @@ async def _run_chat_with_tools(
         edit_mode = EditMode.AGENT
         
         session_manager.add_message(session, MessageRole.USER, user_message)
-        
+
+        if not session.title:
+            try:
+                from core.llm_service import llm_service
+                title_prompt = (
+                    "基于用户消息，生成一个不超过10个字的对话标题。"
+                    "只需输出标题文本，不要添加引号、标点或者额外解释。"
+                    f"\n\n用户消息：{user_message[:200]}"
+                )
+                generated = await llm_service.generate_text(
+                    prompt="",
+                    system_prompt=title_prompt,
+                    temperature=0.3,
+                    max_tokens=50,
+                )
+                session.title = generated.strip()[:30]
+                await session_storage.save(session)
+                await ws_manager.send_personal_message({
+                    "type": "title_updated",
+                    "session_id": session.session_id,
+                    "title": session.title,
+                    "auto_generated": True,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }, websocket)
+            except Exception:
+                pass
+
         async with AsyncSessionLocal() as db:
             registry = get_mcp_registry()
             

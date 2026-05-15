@@ -24,7 +24,7 @@ class SessionStorage:
     USER_SESSIONS_PREFIX = "user_sessions:"
 
     _SAVE_EXCLUDE = {
-        "messages", "edit_mode", "chapter_ids", "subtitle", "current_chapter_id",
+        "messages", "edit_mode", "chapter_ids", "current_chapter_id",
     }
 
     def __init__(self, config: SessionConfig | None = None):
