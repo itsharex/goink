@@ -21,7 +21,7 @@ from sessions.manager import (
     session_manager
 )
 from sessions.schema import MessageRole, Session
-from sessions.session_storage import session_storage
+from sessions.storage import session_storage
 from context.context_builder import (
     ContextBuilder,
     _format_creative_profile_for_prompt,

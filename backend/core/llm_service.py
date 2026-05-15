@@ -16,7 +16,7 @@ from collections import defaultdict
 
 from core.exceptions import SystemError
 from sessions.manager import session_manager
-from sessions.session_storage import session_storage
+from sessions.storage import session_storage
 
 logger = logging.getLogger(__name__)
 

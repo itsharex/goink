@@ -12,7 +12,7 @@ from sessions.manager import (
     session_manager
 )
 from sessions.schema import ChapterContext, MessageRole, NovelContext
-from sessions.session_storage import session_storage
+from sessions.storage import session_storage
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 logger = logging.getLogger(__name__)
