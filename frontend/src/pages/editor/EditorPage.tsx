@@ -51,8 +51,7 @@ interface ChapterInfo {
 
 interface SessionInfo {
   session_id: string
-  display_name: string
-  message_count: number
+  title?: string
   updated_at: string
 }
 
@@ -238,7 +237,6 @@ export default function EditorPage() {
   const [newChapterTitle, setNewChapterTitle] = useState('')
   const [newChapterNumber, setNewChapterNumber] = useState<number | null>(null)
   const [creatingChapter, setCreatingChapter] = useState(false)
-  const pendingMessageRef = useRef<string | null>(null)
   const pendingInterruptMessageRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const turnIdCounter = useRef(0)
@@ -462,10 +460,6 @@ export default function EditorPage() {
         if (m.reasoning_effort) setReasoningEffort(m.reasoning_effort)
         navigate(`/novels/${novelId}/editor/${m.session_id}`, { replace: true })
         wsEditorService.listSessions()
-        if (pendingMessageRef.current) {
-          wsEditorService.chat(m.session_id, pendingMessageRef.current, true)
-          pendingMessageRef.current = null
-        }
         break
       }
       case 'sessions_list': {
@@ -476,7 +470,7 @@ export default function EditorPage() {
       case 'title_updated': {
         const m = msg as { type: 'title_updated'; session_id: string; title: string; auto_generated: boolean }
         setSessions(prev => prev.map(s =>
-          s.session_id === m.session_id ? { ...s, title: m.title, display_name: m.title || s.display_name } : s
+          s.session_id === m.session_id ? { ...s, title: m.title } : s
         ))
         break
       }
@@ -1169,17 +1163,15 @@ export default function EditorPage() {
     }])
 
     if (!currentSessionId) {
-      pendingMessageRef.current = msg
-      const sent = wsEditorService.createSession(selectedModel, undefined, reasoningEffort)
+      const sent = wsEditorService.chat(null, msg, { model: selectedModel, reasoningEffort })
       if (!sent) {
         message.error('WebSocket 未连接')
         setTurns(prev => prev.filter(t => t.id !== turnId))
-        pendingMessageRef.current = null
       }
       return
     }
 
-    const sent = wsEditorService.chat(currentSessionId, msg, true)
+    const sent = wsEditorService.chat(currentSessionId, msg)
     if (!sent) {
       message.error('WebSocket 未连接')
       setTurns(prev => prev.filter(t => t.id !== turnId))
@@ -1412,10 +1404,7 @@ export default function EditorPage() {
                         currentTurnIdRef.current = null
                       }}
                     >
-                      <span>{s.display_name}</span>
-                      <span className={styles.sessionScope}>
-                        {s.message_count}条
-                      </span>
+                      <span>{s.title || '新对话'}</span>
                     </div>
                   ))}
                   {sessions.length === 0 && (

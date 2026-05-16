@@ -14,7 +14,6 @@ export interface SessionMessage {
 }
 
 export interface SessionStats extends Partial<UsageData> {
-  message_count: number
   token_count: number
   context_window: number
   usage_ratio: number
@@ -25,7 +24,6 @@ export interface Session {
   id: string
   session_id: string
   level: SessionLevel
-  display_name: string
   title?: string
   novel_id?: number
   chapter_number?: number
@@ -45,13 +43,6 @@ export interface AutoGenerateTitleResponse {
   title: string
   auto_generated: boolean
   message: string
-}
-
-export interface CreateSessionRequest {
-  novel_id?: number
-  chapter_number?: number
-  level: SessionLevel
-  model?: LLMModel
 }
 
 export interface ChatRequest {
@@ -84,10 +75,6 @@ export interface ModelOption {
 export const sessionApi = {
   getModels: async (): Promise<ApiResponse<{ models: ModelOption[] }>> => {
     return apiClient.get('/models')
-  },
-
-  create: async (data: CreateSessionRequest): Promise<ApiResponse<Session>> => {
-    return apiClient.post('/sessions/create', data)
   },
 
   get: async (sessionId: string): Promise<ApiResponse<Session>> => {
@@ -127,7 +114,7 @@ export const sessionApi = {
   },
 
   getStats: async (sessionId: string): Promise<ApiResponse<SessionStatsResponse>> => {
-    return apiClient.get(`/sessions/${sessionId}/stats`)
+    return apiClient.get(`/sessions/${sessionId}/usage`)
   },
 
   updateTitle: async (sessionId: string, data: UpdateTitleRequest): Promise<ApiResponse<Session>> => {

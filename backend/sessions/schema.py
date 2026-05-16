@@ -61,11 +61,9 @@ class Session(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     extra_metadata: dict[str, Any] = Field(default_factory=dict)
     model: str = "deepseek-v4-flash"
+    reasoning_effort: str | None = None
     edit_mode: str = "agent"
     chapter_ids: list[int] = Field(default_factory=list)
     current_chapter_id: int | None = None
     active_version: int = 1
     usage: dict[str, Any] | None = None
-
-    def get_display_name(self) -> str:
-        return self.title or "新对话"

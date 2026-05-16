@@ -136,12 +136,7 @@ async def websocket_chat(
 
             logger.debug(f"Received message type: {message_type}")
             try:
-                if message_type == "create_session":
-                    current_session = await _handle_create_session(
-                        websocket, data, user_id, novel_id
-                    )
-                
-                elif message_type == "load_session":
+                if message_type == "load_session":
                     current_session = await _handle_load_session(
                         websocket, data, user_id
                     )
@@ -162,10 +157,17 @@ async def websocket_chat(
                                 session_id=session_id,
                                 user_id=user_id,
                                 novel_id=novel_id,
+                                model=data.get("model", "deepseek-v4-flash"),
+                                reasoning_effort=data.get("reasoning_effort"),
                                 extra_metadata={"created_from": "ws_chat"},
                             )
                             logger.info(f"Created session: {session_id}")
                             await session_storage.save(current_session)
+                            await ws_manager.send_personal_message({
+                                "type": "session_created",
+                                **current_session.model_dump(mode="json", exclude={'extra_metadata', 'active_version'}),
+                                "timestamp": datetime.now(timezone.utc).isoformat()
+                            }, websocket)
                     
                     task_id = f"chat_{current_session.session_id}_{datetime.now(timezone.utc).strftime('%H%M%S')}"
                     task_flags[task_id] = True
@@ -249,40 +251,6 @@ async def websocket_chat(
         ws_manager.disconnect(websocket, user_id, novel_id)
 
 
-async def _handle_create_session(websocket, data, user_id, novel_id):
-    model = data.get("model", "deepseek-v4-flash")
-    edit_mode = "agent"
-    reasoning_effort = data.get("reasoning_effort")
-
-    session_id = f"sess_{user_id}_{uuid.uuid4().hex[:8]}"
-    extra_meta = {"created_from": "ws_chat"}
-    if reasoning_effort:
-        extra_meta["reasoning_effort"] = reasoning_effort
-    session = Session(
-        session_id=session_id,
-        user_id=user_id,
-        novel_id=novel_id,
-        model=model,
-        extra_metadata=extra_meta,
-    )
-    logger.info(f"Created session: {session_id}")
-    session.edit_mode = edit_mode
-    await session_storage.save(session)
-
-    await ws_manager.send_personal_message({
-        "type": "session_created",
-        "session_id": session.session_id,
-        "display_name": session.get_display_name(),
-        "title": session.title,
-                "model": model,
-        "reasoning_effort": reasoning_effort,
-        "stats": session_manager.get_session_stats(session),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }, websocket)
-
-    return session
-
-
 async def _handle_load_session(websocket, data, user_id):
     session_id = data.get("session_id")
     session = await session_storage.load(session_id)
@@ -305,11 +273,7 @@ async def _handle_load_session(websocket, data, user_id):
     
     await ws_manager.send_personal_message({
         "type": "session_loaded",
-        "session_id": session.session_id,
-        "display_name": session.get_display_name(),
-        "title": session.title,
-                "message_count": session.get_message_count(),
-        "stats": session_manager.get_session_stats(session),
+        **session.model_dump(mode="json", exclude={'extra_metadata', 'active_version'}),
         "recent_messages": [
             m.model_dump(mode="json")
             for m in session.messages
@@ -332,10 +296,7 @@ async def _handle_list_sessions(websocket, user_id, novel_id, data):
         "sessions": [
             {
                 "session_id": s.session_id,
-                "display_name": s.get_display_name(),
                 "title": s.title,
-                "subtitle": s.get_subtitle(),
-                "message_count": s.get_message_count(),
                 "updated_at": s.updated_at.isoformat()
             }
             for s in sessions
@@ -924,7 +885,7 @@ async def _run_chat_with_tools(
                     on_message=_on_message,
                     on_usage=_on_usage,
                     model=session.model,
-                    reasoning_effort=session.extra_metadata.get("reasoning_effort"),
+                    reasoning_effort=session.reasoning_effort,
                     max_turns=50,
                     max_context_tokens=session_manager.config.max_tokens,
                 )
@@ -947,7 +908,6 @@ async def _run_chat_with_tools(
                 "type": "chat_completed",
                 "task_id": task_id,
                 "session_id": session.session_id,
-                "message_count": session.get_message_count(),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }, websocket)
 

@@ -382,7 +382,9 @@ async def run_agent_loop(
                     from sessions.manager import SessionConfig
                     config = SessionConfig.for_model(model or "deepseek-v4-flash")
                     context_window = config.context_window
-
+                    
+                    usage["usage_ratio"] = round(usage.get("total_tokens", 0) / context_window * 100, 2) if context_window else 0
+                    usage["context_window"] = context_window
                     await ws_manager.send_personal_message({
                         "type": "usage",
                         "task_id": task_id,
@@ -391,7 +393,7 @@ async def run_agent_loop(
                         "completion_tokens": usage.get("completion_tokens", 0),
                         "total_tokens": usage.get("total_tokens", 0),
                         "context_window": context_window,
-                        "usage_ratio": round(usage.get("total_tokens", 0) / context_window * 100, 2) if context_window else 0,
+                        "usage_ratio": usage.get("usage_ratio",0),
                         "detail": detail,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }, websocket)

@@ -68,10 +68,6 @@ class SessionConfig:
             enable_auto_summary=True,
             min_compress_ratio=0.8
         )
-
-
-
-
 class SessionManager:
     def __init__(self, config: SessionConfig | None = None):
         self.config = config or SessionConfig()

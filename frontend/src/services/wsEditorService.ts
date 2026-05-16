@@ -31,12 +31,6 @@ export interface RejectEditMsg {
   chapter_id?: number
 }
 
-export interface CreateSessionMsg {
-  type: 'create_session'
-  model?: string
-  reasoning_effort?: ReasoningEffort
-}
-
 export interface LoadSessionMsg {
   type: 'load_session'
   session_id: string
@@ -48,9 +42,11 @@ export interface ListSessionsMsg {
 
 export interface ChatMsg {
   type: 'chat'
-  session_id: string
+  session_id?: string
   message: string
   tools_enabled?: boolean
+  model?: string
+  reasoning_effort?: string | null
 }
 
 export interface ReadChapterMsg {
@@ -73,7 +69,6 @@ export type ClientMsg =
   | ApplyEditMsg
   | AcceptEditMsg
   | RejectEditMsg
-  | CreateSessionMsg
   | LoadSessionMsg
   | ListSessionsMsg
   | ChatMsg
@@ -128,16 +123,15 @@ export interface EditRejectedMsg {
 export interface SessionCreatedMsg {
   type: 'session_created'
   session_id: string
-  display_name: string
   model: string
   reasoning_effort?: ReasoningEffort
+  title?: string
 }
 
 export interface SessionLoadedMsg {
   type: 'session_loaded'
   session_id: string
-  display_name: string
-  message_count: number
+  title?: string
   recent_messages: Array<{
     role: string
     content: string
@@ -172,9 +166,7 @@ export interface SessionListMsg {
   type: 'sessions_list'
   sessions: Array<{
     session_id: string
-    display_name: string
     title?: string
-    message_count: number
     updated_at: string
   }>
 }
@@ -241,7 +233,6 @@ export interface ChatCompletedMsg {
   type: 'chat_completed'
   session_id: string
   task_id?: string
-  message_count?: number
   timestamp?: string
 }
 
@@ -528,10 +519,6 @@ export class WsEditorService {
     })
   }
 
-  createSession(model?: string, _editMode?: EditMode, reasoningEffort?: ReasoningEffort): boolean {
-    return this.send({ type: 'create_session', model, reasoning_effort: reasoningEffort })
-  }
-
   loadSession(sessionId: string): boolean {
     return this.send({ type: 'load_session', session_id: sessionId })
   }
@@ -540,8 +527,12 @@ export class WsEditorService {
     return this.send({ type: 'list_sessions' })
   }
 
-  chat(sessionId: string, message: string, toolsEnabled = true): boolean {
-    return this.send({ type: 'chat', session_id: sessionId, message, tools_enabled: toolsEnabled })
+  chat(sessionId: string | null, message: string, options?: { toolsEnabled?: boolean; model?: string; reasoningEffort?: string | null }): boolean {
+    const msg: ChatMsg = { type: 'chat', message, tools_enabled: options?.toolsEnabled ?? true }
+    if (sessionId) msg.session_id = sessionId
+    if (options?.model) msg.model = options.model
+    if (options?.reasoningEffort) msg.reasoning_effort = options.reasoningEffort
+    return this.send(msg)
   }
 
   readChapter(chapterId: number): boolean {
