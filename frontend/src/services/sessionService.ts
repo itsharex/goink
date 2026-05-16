@@ -89,7 +89,7 @@ export const sessionApi = {
     novel_id?: number
     level?: SessionLevel
     page?: number
-    size?: number
+    page_size?: number
   }): Promise<ApiResponse<PaginatedResponse<Session>>> => {
     return apiClient.get('/sessions/list', { params })
   },

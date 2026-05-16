@@ -26,11 +26,9 @@ import { chapterApi } from '@/services/chapterService'
 import { sessionApi } from '@/services/sessionService'
 import type {
   ServerMsg, DiffData,
-  SessionCreatedMsg, SessionListMsg, ContentChunkMsg, ThinkingChunkMsg,
+  SessionCreatedMsg, ContentChunkMsg, ThinkingChunkMsg,
   ThinkingDoneMsg, ToolCallMsg,
-  EditStartedMsg, EditAppliedMsg, EditAcceptedMsg, EditRejectedMsg,
   ErrorMsg,
-  SessionLoadedMsg,
   EditPreviewMsg,
   EditPendingMsg,
   ReasoningEffort,
@@ -253,6 +251,70 @@ export default function EditorPage() {
   const nextTurnId = useCallback(() => `turn_${++turnIdCounter.current}`, [])
   const nextSegId = useCallback(() => `seg_${++segIdCounter.current}`, [])
 
+  const buildHistoryTurns = (recentMessages: Array<{
+    role: string; content: string; message_id?: string; created_at?: string
+    metadata?: { source?: string; parent_task_id?: string; agent_type?: string
+      tool_calls?: string | Array<{ id: string; function?: { name: string; arguments: string }; name?: string }>
+      thinking_content?: string }
+  }>): ConversationTurn[] => {
+    const historyTurns: ConversationTurn[] = []
+    let currentTaskId: string | null = null
+    const subagentCache = new Map<string, TurnSegmentSubagent>()
+    const localNextSegId = () => `seg_${++segIdCounter.current}`
+
+    recentMessages.forEach((msg, _i) => {
+      const msgTaskId = msg.message_id || `hist_${_i}`
+
+      if (msg.role === 'user') {
+        const turnId = `hist_turn_${historyTurns.length}`
+        historyTurns.push({ id: turnId, userMessage: msg.content || '', segments: [], status: 'done' })
+        currentTaskId = turnId
+      } else if (msg.role === 'assistant') {
+        if (!currentTaskId) {
+          const turnId = `hist_turn_${historyTurns.length}`
+          historyTurns.push({ id: turnId, segments: [], status: 'done' })
+          currentTaskId = turnId
+        }
+        const turn = historyTurns.find(t => t.id === currentTaskId)
+        if (!turn) return
+
+        if (msg.metadata?.source === 'subagent') {
+          const subTaskId = msg.metadata.parent_task_id || 'unknown'
+          let subSeg = subagentCache.get(subTaskId)
+          if (!subSeg) {
+            subSeg = { id: localNextSegId(), type: 'subagent', agentType: (msg.metadata?.agent_type || 'memory') as 'memory' | 'review', taskId: subTaskId, segments: [], status: 'done', finalText: '' }
+            turn.segments.push(subSeg)
+            subagentCache.set(subTaskId, subSeg)
+          }
+          if (msg.content) {
+            subSeg.finalText = (subSeg.finalText ? subSeg.finalText + '\n' : '') + msg.content
+            const lastSeg = subSeg.segments[subSeg.segments.length - 1]
+            if (lastSeg && lastSeg.type === 'text') {
+              lastSeg.content = (lastSeg.content ? lastSeg.content + '\n' : '') + msg.content
+            } else {
+              subSeg.segments.push({ id: localNextSegId(), type: 'text', content: msg.content, thinkingContent: '', thinkingDone: true, isStreaming: false })
+            }
+          }
+          if (msg.metadata?.tool_calls) {
+            const tcs = Array.isArray(msg.metadata.tool_calls) ? msg.metadata.tool_calls : JSON.parse(msg.metadata.tool_calls || '[]')
+            tcs.forEach((tc: any) => { subSeg.segments.push({ id: localNextSegId(), type: 'tool', call: { tool_name: tc.function?.name || tc.name || 'unknown', display_text: tc.display_text || '处理中...', activity_kind: tc.activity_kind, status: 'completed', task_id: msgTaskId } }) })
+          }
+          return
+        }
+
+        // 主 Agent 消息
+        if (msg.content || msg.metadata?.thinking_content) {
+          turn.segments.push({ id: localNextSegId(), type: 'text', content: msg.content || '', thinkingContent: msg.metadata?.thinking_content || '', thinkingDone: true, isStreaming: false })
+        }
+        if (msg.metadata?.tool_calls) {
+          const tcs = Array.isArray(msg.metadata.tool_calls) ? msg.metadata.tool_calls : JSON.parse(msg.metadata.tool_calls || '[]')
+          tcs.forEach((tc: any) => { turn.segments.push({ id: localNextSegId(), type: 'tool', call: { tool_name: tc.function?.name || tc.name || 'unknown', display_text: tc.display_text || '处理中...', activity_kind: tc.activity_kind, status: 'completed', task_id: msgTaskId } }) })
+        }
+      }
+    })
+    return historyTurns
+  }
+
   const applyToSubagent = useCallback((
     turnId: string,
     taskId: string,
@@ -313,7 +375,9 @@ export default function EditorPage() {
 
     wsEditorService.connect(nid).then(() => {
       setConnected(true)
-      wsEditorService.listSessions()
+      sessionApi.list({ page_size: 100 }).then(res => {
+        if (res.success) setSessions(res.data.items as SessionInfo[])
+      }).catch(() => {})
     }).catch(() => {
       setConnected(false)
     })
@@ -341,7 +405,15 @@ export default function EditorPage() {
     if (urlSessionId === currentSessionId) return
     setTurns([])
     currentTurnIdRef.current = null
-    wsEditorService.loadSession(urlSessionId)
+    sessionApi.get(urlSessionId).then(res => {
+      if (!res.success) return
+      const s = res.data
+      setCurrentSessionId(urlSessionId)
+      const msgs = (s as any).messages
+      if (msgs && msgs.length > 0) {
+        setTurns(buildHistoryTurns(msgs))
+      }
+    }).catch(() => {})
   }, [connected, urlSessionId])
 
   useEffect(() => {
@@ -459,12 +531,9 @@ export default function EditorPage() {
         if (m.model) setSelectedModel(m.model)
         if (m.reasoning_effort) setReasoningEffort(m.reasoning_effort)
         navigate(`/novels/${novelId}/editor/${m.session_id}`, { replace: true })
-        wsEditorService.listSessions()
-        break
-      }
-      case 'sessions_list': {
-        const m = msg as SessionListMsg
-        setSessions(m.sessions)
+        sessionApi.list({ page_size: 100 }).then(res => {
+          if (res.success) setSessions(res.data.items as SessionInfo[])
+        }).catch(() => {})
         break
       }
       case 'title_updated': {
@@ -472,141 +541,6 @@ export default function EditorPage() {
         setSessions(prev => prev.map(s =>
           s.session_id === m.session_id ? { ...s, title: m.title } : s
         ))
-        break
-      }
-      case 'session_loaded': {
-        const m = msg as SessionLoadedMsg
-        console.log('[EditorPage] session_loaded:', m.session_id, 'messages:', m.recent_messages?.length)
-        setCurrentSessionId(m.session_id)
-        currentTurnIdRef.current = null
-
-        if (m.recent_messages && m.recent_messages.length > 0) {
-          const historyTurns: ConversationTurn[] = []
-          let currentTaskId: string | null = null
-          // 历史重建时的子 Agent segment 索引
-          const subagentCache = new Map<string, TurnSegmentSubagent>()
-
-          m.recent_messages.forEach((msg, _i) => {
-            const msgTaskId = msg.message_id || `hist_${_i}`
-
-            if (msg.role === 'user') {
-              const turnId = `hist_turn_${historyTurns.length}`
-              historyTurns.push({
-                id: turnId,
-                userMessage: msg.content || '',
-                segments: [],
-                status: 'done',
-              })
-              currentTaskId = turnId
-            } else if (msg.role === 'assistant') {
-              if (!currentTaskId) {
-                const turnId = `hist_turn_${historyTurns.length}`
-                historyTurns.push({
-                  id: turnId,
-                  segments: [],
-                  status: 'done',
-                })
-                currentTaskId = turnId
-              }
-
-              const turn = historyTurns.find(t => t.id === currentTaskId)
-              if (!turn) return
-
-              // 子 Agent 消息 — 路由到嵌套 subagent segment
-              if (msg.metadata?.source === 'subagent') {
-                const subTaskId = msg.metadata.parent_task_id || 'unknown'
-                let subSeg = subagentCache.get(subTaskId)
-                if (!subSeg) {
-                  subSeg = {
-                    id: nextSegId(),
-                    type: 'subagent',
-                    agentType: (msg.metadata?.agent_type || 'memory') as 'memory' | 'review',
-                    taskId: subTaskId,
-                    segments: [],
-                    status: 'done',
-                    finalText: '',
-                  }
-                  turn.segments.push(subSeg)
-                  subagentCache.set(subTaskId, subSeg)
-                }
-
-                if (msg.content) {
-                  subSeg.finalText = (subSeg.finalText ? subSeg.finalText + '\n' : '') + msg.content
-                  const lastSeg = subSeg.segments[subSeg.segments.length - 1]
-                  if (lastSeg && lastSeg.type === 'text') {
-                    lastSeg.content = (lastSeg.content ? lastSeg.content + '\n' : '') + msg.content
-                  } else {
-                    subSeg.segments.push({
-                      id: nextSegId(),
-                      type: 'text',
-                      content: msg.content,
-                      thinkingContent: '',
-                      thinkingDone: true,
-                      isStreaming: false,
-                    })
-                  }
-                }
-
-                if (msg.metadata?.tool_calls) {
-                  const toolCalls = Array.isArray(msg.metadata.tool_calls)
-                    ? msg.metadata.tool_calls
-                    : JSON.parse(msg.metadata.tool_calls || '[]')
-                  toolCalls.forEach((tc: any) => {
-                    subSeg.segments.push({
-                      id: nextSegId(),
-                      type: 'tool',
-                      call: {
-                        tool_name: tc.function?.name || tc.name || 'unknown',
-                        display_text: tc.display_text || '处理中...',
-                        activity_kind: tc.activity_kind,
-                        status: 'completed',
-                        task_id: msgTaskId,
-                      },
-                    })
-                  })
-                }
-                return
-              }
-
-              // 主 Agent 消息 — 原有逻辑
-              // 恢复历史时保持和流式阶段一致的视觉顺序：
-              // 先展示 thinking / content，再展示本轮 assistant 触发的工具或 subagent 卡片。
-              if (msg.content || msg.metadata?.thinking_content) {
-                turn.segments.push({
-                  id: nextSegId(),
-                  type: 'text',
-                  content: msg.content || '',
-                  thinkingContent: msg.metadata?.thinking_content || '',
-                  thinkingDone: true,
-                  isStreaming: false,
-                })
-              }
-
-              if (msg.metadata?.tool_calls) {
-                const toolCalls = Array.isArray(msg.metadata.tool_calls)
-                  ? msg.metadata.tool_calls
-                  : JSON.parse(msg.metadata.tool_calls || '[]')
-                toolCalls.forEach((tc: any) => {
-                  turn.segments.push({
-                    id: nextSegId(),
-                    type: 'tool',
-                    call: {
-                      tool_name: tc.function?.name || tc.name || 'unknown',
-                      display_text: tc.display_text || '处理中...',
-                      activity_kind: tc.activity_kind,
-                      status: 'completed',
-                      task_id: msgTaskId,
-                    },
-                  })
-                })
-              }
-            }
-          })
-
-          setTurns(historyTurns)
-        } else {
-          setTurns([])
-        }
         break
       }
       case 'chat_started': {
@@ -903,6 +837,16 @@ export default function EditorPage() {
             void refreshSelectedChapter(selectedChapterId)
           }
         }
+
+        // 从 edit_chapter tool 结果中提取 edit_session_id
+        if (m.tool_name === 'edit_chapter' && m.status === 'completed' && m.result_summary?.metadata) {
+          const meta = m.result_summary.metadata as Record<string, any>
+          if (meta.edit_session_id) {
+            setEditSessionId(meta.edit_session_id)
+            setLatestPendingEditSessionId(meta.edit_session_id)
+            setHasActiveEdit(true)
+          }
+        }
         break
       }
 
@@ -936,20 +880,6 @@ export default function EditorPage() {
         setWorkingContent(m.working_content)
         break
       }
-      case 'edit_started': {
-        const m = msg as EditStartedMsg
-        if (m.chapter_id && selectedChapterId !== m.chapter_id) {
-          void revealChapterFromTool(m.chapter_id)
-        }
-        setEditSessionId(m.edit_session_id)
-        setLatestPendingEditSessionId(m.latest_pending_edit_session_id || m.edit_session_id)
-        setOriginalContent(m.original_content)
-        setWorkingContent(m.working_content)
-        setChangeCount(m.change_count)
-        setHasActiveEdit(true)
-        setShowDiff(false)
-        break
-      }
       case 'edit_preview': {
         const m = msg as EditPreviewMsg
         if (m.chapter_id && selectedChapterId !== m.chapter_id) {
@@ -975,55 +905,6 @@ export default function EditorPage() {
           setHasActiveEdit(true)
         }
         setEditNotice('当前章节存在待确认修改，稍后回来也可以再确认。')
-        break
-      }
-      case 'edit_applied': {
-        const m = msg as EditAppliedMsg
-        if (m.chapter_id && selectedChapterId !== m.chapter_id) {
-          void revealChapterFromTool(m.chapter_id)
-        }
-        setEditSessionId(m.edit_session_id)
-        setLatestPendingEditSessionId(m.latest_pending_edit_session_id || m.edit_session_id)
-        setWorkingContent(m.working_content)
-        setChangeCount(m.change_count)
-        setDiffData(m.diff as DiffData)
-        setHasActiveEdit(true)
-        setShowDiff(true)
-        setEditNotice('副本已更新，可以直接确认或拒绝。')
-        break
-      }
-      case 'edit_accepted': {
-        const m = msg as EditAcceptedMsg
-        message.success(m.message)
-        setIsApplyingEdit(false)
-        setHasActiveEdit(false)
-        setEditSessionId(null)
-        setLatestPendingEditSessionId(m.latest_pending_edit_session_id || null)
-        setShowDiff(false)
-        setDiffData(null)
-        setChangeCount(0)
-        setChapterWordCount(m.word_count)
-        setEditNotice(m.already_processed ? '这份修改之前已经接受过了。' : '修改已合并到正文。')
-        if (selectedChapterId) {
-          setChapters(prev => prev.map(c => c.id === selectedChapterId ? { ...c, word_count: m.word_count } : c))
-          void refreshSelectedChapter(selectedChapterId)
-        }
-        break
-      }
-      case 'edit_rejected': {
-        const m = msg as EditRejectedMsg
-        message.info(m.message)
-        setIsApplyingEdit(false)
-        setHasActiveEdit(false)
-        setEditSessionId(null)
-        setLatestPendingEditSessionId(m.latest_pending_edit_session_id || null)
-        setShowDiff(false)
-        setDiffData(null)
-        setChangeCount(0)
-        setEditNotice(m.already_processed ? '这份修改之前已经拒绝过了。' : '副本修改已撤销，正文保持原样。')
-        if (selectedChapterId) {
-          void refreshSelectedChapter(selectedChapterId)
-        }
         break
       }
       case 'error': {
@@ -1209,16 +1090,45 @@ export default function EditorPage() {
   }
 
   const acceptEdit = () => {
-    if (editSessionId || latestPendingEditSessionId || selectedChapterId) {
-      setIsApplyingEdit(true)
-      wsEditorService.acceptEdit(latestPendingEditSessionId || editSessionId, selectedChapterId)
-    }
+    const eid = latestPendingEditSessionId || editSessionId
+    if (!eid) return
+    setIsApplyingEdit(true)
+    editorApi.acceptEdit(eid).then(res => {
+      if (!res.success) return message.error(res.message || '操作失败')
+      const d = res.data
+      setEditSessionId(null)
+      setLatestPendingEditSessionId(null)
+      setHasActiveEdit(false)
+      if (d.chapter_id) {
+        setWordCount(d.word_count || 0)
+        editorApi.getChapterForEditor(d.chapter_id).then(chRes => {
+          if (chRes.success) {
+            setWorkingContent(chRes.data.working_content || chRes.data.content)
+            setOriginalContent(chRes.data.content)
+          }
+        }).catch(() => {})
+      }
+    }).catch(() => message.error('接受失败')).finally(() => setIsApplyingEdit(false))
   }
 
   const rejectEdit = () => {
-    if (editSessionId || latestPendingEditSessionId || selectedChapterId) {
-      wsEditorService.rejectEdit(latestPendingEditSessionId || editSessionId, selectedChapterId)
-    }
+    const eid = latestPendingEditSessionId || editSessionId
+    if (!eid) return
+    editorApi.rejectEdit(eid).then(res => {
+      if (!res.success) return message.error(res.message || '操作失败')
+      const d = res.data
+      setEditSessionId(null)
+      setLatestPendingEditSessionId(null)
+      setHasActiveEdit(false)
+      if (d.chapter_id) {
+        editorApi.getChapterForEditor(d.chapter_id).then(chRes => {
+          if (chRes.success) {
+            setWorkingContent(chRes.data.working_content || chRes.data.content)
+            setOriginalContent(chRes.data.content)
+          }
+        }).catch(() => {})
+      }
+    }).catch(() => message.error('拒绝失败'))
   }
 
   const handleApproveOutline = (turnId: string, segId: string) => {
@@ -1399,9 +1309,15 @@ export default function EditorPage() {
                       onClick={() => {
                         navigate(`/novels/${novelId}/editor/${s.session_id}`)
                         setCurrentSessionId(s.session_id)
-                        wsEditorService.loadSession(s.session_id)
                         setTurns([])
                         currentTurnIdRef.current = null
+                        sessionApi.get(s.session_id).then(res => {
+                          if (!res.success) return
+                          const msgs = (res.data as any).messages
+                          if (msgs && msgs.length > 0) {
+                            setTurns(buildHistoryTurns(msgs))
+                          }
+                        }).catch(() => {})
                       }}
                     >
                       <span>{s.title || '新对话'}</span>
