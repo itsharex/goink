@@ -23,10 +23,11 @@ class ChatSession(Base):
     model: Mapped[str] = mapped_column(String(32), default="deepseek-v4-flash")
 
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    novel_context: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    chapter_context: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     pending_changes: Mapped[list | None] = mapped_column(JSON, default=list)
     extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    active_version: Mapped[int] = mapped_column(default=1)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
@@ -38,22 +39,6 @@ class ChatSession(Base):
         Index('idx_chat_session_user_updated', 'user_id', 'updated_at'),
     )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "session_id": self.session_id,
-            "user_id": self.user_id,
-            "novel_id": self.novel_id,
-            "title": self.title,
-            "model": self.model,
-            "summary": self.summary,
-            "novel_context": self.novel_context,
-            "chapter_context": self.chapter_context,
-            "pending_changes": self.pending_changes or [],
-            "metadata": self.extra_metadata,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
-        }
 
 
 class ChatMessage(Base):
@@ -67,8 +52,12 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text().with_variant(mysql.MEDIUMTEXT(), 'mysql'), nullable=False)
 
     token_count: Mapped[int] = mapped_column(default=0)
-    importance: Mapped[int] = mapped_column(default=50)
     extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    version: Mapped[int] = mapped_column(default=1, index=True)
+    to_api: Mapped[bool] = mapped_column(default=True)
+    to_frontend: Mapped[bool] = mapped_column(default=True)
+    event_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
@@ -76,16 +65,7 @@ class ChatMessage(Base):
 
     __table_args__ = (
         Index('idx_chat_message_session_created', 'session_id', 'created_at'),
+        Index('idx_chat_message_api', 'session_id', 'to_api', 'version', 'created_at'),
+        Index('idx_chat_message_frontend', 'session_id', 'to_frontend', 'created_at'),
     )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "session_id": self.session_id,
-            "role": self.role,
-            "content": self.content,
-            "token_count": self.token_count,
-            "importance": self.importance,
-            "metadata": self.extra_metadata,
-            "created_at": self.created_at.isoformat() if self.created_at else None
-        }

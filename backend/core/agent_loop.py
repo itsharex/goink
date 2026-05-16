@@ -14,10 +14,13 @@ from datetime import datetime, timezone
 from collections.abc import Callable, Awaitable
 from typing import Any, TYPE_CHECKING
 
+import tiktoken
 from fastapi import WebSocket
 
 from core.websocket import ws_manager
 from core.llm_service import llm_service
+
+_tiktoken_enc = tiktoken.get_encoding("o200k_base")
 
 if TYPE_CHECKING:
     from mcp_tools.base import MCPToolResult
@@ -40,8 +43,8 @@ class AgentLoopResult:
 type ToolCallHandler = Callable[[str, str, dict[str, Any]], Awaitable[MCPToolResult]]
 """工具执行回调：async (tool_name, tool_id, arguments) -> MCPToolResult"""
 
-type DisplayHandler = Callable[[str, dict[str, Any], str], Awaitable[tuple[str | None, str | None]]]
-"""展示文本回调：async (tool_name, arguments, status) -> (display_text, activity_kind)
+type DisplayHandler = Callable[[str, dict[str, Any], str], Awaitable[tuple[str | None, str | None, dict[str, Any] | None]]]
+"""展示文本回调：async (tool_name, arguments, status) -> (display_text, activity_kind, metadata)
 循环在 selected / executing / completed 三个阶段统一调用，status 为 "executing" / "completed" / "failed" """
 
 type OnArgsStreamHandler = Callable[[str, str, str], Awaitable[None]]
@@ -51,6 +54,11 @@ type OnArgsStreamHandler = Callable[[str, str, str], Awaitable[None]]
 type OnMessageHandler = Callable[[dict[str, Any]], Awaitable[None]]
 """消息持久化回调：async (message) -> None
 循环每追加一条 assistant/tool/system 消息时调用，实现任意状态可恢复"""
+
+type OnUsageHandler = Callable[[dict[str, Any], dict[str, int]], Awaitable[None]]
+"""用量回调：async (usage, detail) -> None。usage 是 API 返回的原始 usage 字典，detail 是 tiktoken 分角色计数"""
+"""用量更新回调：async (usage_dict) -> None
+每次 LLM 调用完成后调用，用于更新 session.usage"""
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +88,7 @@ async def run_agent_loop(
     display_handler: DisplayHandler | None = None,
     on_args_stream: OnArgsStreamHandler | None = None,
     on_message: OnMessageHandler | None = None,
+    on_usage: OnUsageHandler | None = None,
     model: str | None = None,
     reasoning_effort: str | None = None,
     max_turns: int = 50,
@@ -106,14 +115,42 @@ async def run_agent_loop(
     recent_tool_patterns: list[str] = []
     tool_failed_cnt: dict[str, int] = {}
 
+    _running_tokens: dict[str, int] = {"system": 0, "user": 0, "assistant": 0, "tool": 0}
+
+    def _count_msg_tokens(msg: dict[str, Any]) -> int:
+        """计算一条消息的 tiktoken 数（只算 API 实际计数的字段）"""
+        n = 0
+        content = msg.get("content") or ""
+        if content:
+            n += len(_tiktoken_enc.encode(content))
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            n += len(_tiktoken_enc.encode(json.dumps(tool_calls, ensure_ascii=False)))
+        tool_call_id = msg.get("tool_call_id", "")
+        if tool_call_id:
+            n += len(_tiktoken_enc.encode(tool_call_id))
+        reasoning = msg.get("reasoning_content", "")
+        if reasoning:
+            n += len(_tiktoken_enc.encode(reasoning))
+        return n
+
     async def _append_msg(msg: dict[str, Any]) -> None:
-        """追加消息到列表，同时回调持久化"""
+        """追加消息到列表，同时回调持久化、更新运行 token 计数"""
+        role = msg.get("role", "")
+        if role in _running_tokens:
+            _running_tokens[role] += _count_msg_tokens(msg)
         messages.append(msg)
         if on_message:
             try:
                 await on_message(msg)
             except Exception:
                 logger.warning("on_message callback failed", exc_info=True)
+
+    # 初始化计数：已有消息（system prompt、历史等）一次性 tokenize
+    for _m in messages:
+        _role = _m.get("role", "")
+        if _role in _running_tokens:
+            _running_tokens[_role] += _count_msg_tokens(_m)
 
     while loop_count < max_turns:
         tool_outputs: list[dict[str, Any]] = []
@@ -192,7 +229,7 @@ async def run_agent_loop(
                     activity_kind_selected: str | None = None
                     if display_handler and tool_name_start:
                         try:
-                            display_text_selected, activity_kind_selected = await display_handler(tool_name_start, {}, "executing")
+                            display_text_selected, activity_kind_selected, _ = await display_handler(tool_name_start, {}, "executing")
                         except Exception:
                             logger.warning("display_handler failed at tool_call_start", exc_info=True)
                     if tool_name_start:
@@ -233,9 +270,10 @@ async def run_agent_loop(
                     # -- pre-display（"executing" 展示文本）--
                     display_text: str | None = None
                     activity_kind: str | None = None
+                    metadata: dict[str, Any] | None = None
                     if display_handler:
                         try:
-                            display_text, activity_kind = await display_handler(tool_name, arguments, "executing")
+                            display_text, activity_kind, metadata = await display_handler(tool_name, arguments, "executing")
                         except Exception:
                             logger.warning("display_handler failed", exc_info=True)
 
@@ -247,7 +285,7 @@ async def run_agent_loop(
                         "tool_id": tool_id,
                         "status": "executing",
                         "phase": "executing",
-                        "arguments": arguments,
+                        "metadata": metadata,
                         "display_text": display_text,
                         "activity_kind": activity_kind,
                         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -286,14 +324,17 @@ async def run_agent_loop(
                     status_result = "completed" if tool_result.success else "failed"
                     display_text_result = None
                     activity_kind_result = None
+                    metadata_result: dict[str, Any] | None = None
                     if display_handler:
                         try:
-                            display_text_result, activity_kind_result = await display_handler(
+                            display_text_result, activity_kind_result, metadata_result = await display_handler(
                                 tool_name, arguments, status_result
                             )
                         except Exception:
                             logger.warning("display_handler failed at completed", exc_info=True)
 
+                    # metadata: display_handler 产生的展示元数据（如 run_subagent 的 agent_type）
+                    # result_summary.metadata: 工具执行结果携带的元数据（如章节 ID、字数等）
                     await ws_manager.send_personal_message({
                         "type": "tool_call",
                         "task_id": task_id,
@@ -302,7 +343,7 @@ async def run_agent_loop(
                         "status": status_result,
                         "tool_id": tool_id,
                         "phase": status_result,
-                        "arguments": arguments,
+                        "metadata": metadata_result,
                         "result_summary": {
                             "success": tool_result.success,
                             "error": tool_result.error,
@@ -323,6 +364,46 @@ async def run_agent_loop(
                         "display_text": display_text_result,
                         "activity_kind": activity_kind_result,
                     })
+
+                # ======== usage ========
+                elif event_type == "usage":
+                    usage = event.get("usage", {})
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+
+                    # 用 tiktoken 算各角色占比，套到 API total_tokens 上作为锚
+                    local_total = sum(_running_tokens.values())
+                    api_total = usage.get("total_tokens", 0)
+                    if local_total > 0 and api_total > 0:
+                        scale = api_total / local_total
+                        detail = {role: int(tokens * scale) for role, tokens in _running_tokens.items()}
+                    else:
+                        detail = dict(_running_tokens)
+
+                    from sessions.manager import SessionConfig
+                    config = SessionConfig.for_model(model or "deepseek-v4-flash")
+                    context_window = config.context_window
+                    
+                    usage["usage_ratio"] = round(usage.get("total_tokens", 0) / context_window * 100, 2) if context_window else 0
+                    usage["context_window"] = context_window
+                    await ws_manager.send_personal_message({
+                        "type": "usage",
+                        "task_id": task_id,
+                        "parent_task_id": parent_task_id,
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": usage.get("completion_tokens", 0),
+                        "total_tokens": usage.get("total_tokens", 0),
+                        "context_window": context_window,
+                        "usage_ratio": usage.get("usage_ratio",0),
+                        "detail": detail,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }, websocket)
+
+                    if on_usage:
+                        try:
+                            await on_usage(usage, detail)
+                        except Exception:
+                            logger.warning("on_usage callback failed", exc_info=True)
+
         except (asyncio.CancelledError, Exception):
             partial = response_buffer.strip() or full_response.strip()
             if partial or thinking_buffer:
@@ -393,11 +474,7 @@ async def run_agent_loop(
                     )
 
             # -- token 预算检查 --
-            estimated_tokens = sum(
-                len(str(m.get("content", ""))) // 2
-                for m in messages
-                if m.get("content")
-            )
+            estimated_tokens = sum(_running_tokens.values())
             logger.info(
                 f"Loop {loop_count + 1}: {len(messages)} messages, ~{estimated_tokens} tokens"
             )

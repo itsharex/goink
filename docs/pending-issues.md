@@ -154,3 +154,20 @@ class SomeTool(BaseMCPTool):
 - 如果 diff 仅需行级（绿色加行、红色删行）：正文用 Markdown 组件渲染，diff 状态时在渲染层标注新增/删除段落，放弃 Monaco 的 inline diff
 
 **优先级**：低（当前可用，体验优化）
+
+## 11. Session 存储写入优化
+
+**问题**：`_save_to_db` 每次 LLM 调用都执行 `DELETE 全部消息 + INSERT 全部消息 + UPDATE 会话行`，一个多工具调用 turn 中可能写入 3-5 次，每次都是全量重写。
+
+**方案**：Redis 即时写入 + DB turn 结束时一次性 flush。`on_message` 和 `on_usage` 只写 Redis（当前已是），`chat_completed` 时一次性落 DB。一个 turn 本质是原子操作，中途崩溃丢半个 turn 不影响（流式输出已在 UI 展示，用户重发即可），Redis TTL 提供短时兜底。 或者说考虑增量更新的策略 
+
+**优先级**：低（当次数据量尚未成为瓶颈，但数据量大后需要优化）
+
+## 12. sessions router 部分端点待清理
+
+**`POST /{session_id}/clear`**：与"全量历史只追加不删除"的存储设计冲突。用户要清空应新建 session。
+
+**`PUT /{session_id}/context/novel` / `PUT /{session_id}/context/chapter`**：前端从未使用过，后续确认是否需要后再决定删除或保留。
+
+**优先级**：低（存储重构时一并处理）
+

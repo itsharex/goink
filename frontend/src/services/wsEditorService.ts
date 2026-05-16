@@ -4,58 +4,13 @@ import { useAuthStore } from '@/stores/authStore'
 export type EditMode = 'agent'
 export type ReasoningEffort = 'high' | 'max'
 
-export interface StartEditMsg {
-  type: 'start_edit'
-  chapter_id: number
-}
-
-export interface ApplyEditMsg {
-  type: 'apply_edit'
-  edit_session_id: string
-  change_type: 'full_replace' | 'partial_edit' | 'insert' | 'delete'
-  new_content: string
-  start_line?: number
-  end_line?: number
-  reason?: string
-}
-
-export interface AcceptEditMsg {
-  type: 'accept_edit'
-  edit_session_id?: string
-  chapter_id?: number
-}
-
-export interface RejectEditMsg {
-  type: 'reject_edit'
-  edit_session_id?: string
-  chapter_id?: number
-}
-
-export interface CreateSessionMsg {
-  type: 'create_session'
-  model?: string
-  reasoning_effort?: ReasoningEffort
-}
-
-export interface LoadSessionMsg {
-  type: 'load_session'
-  session_id: string
-}
-
-export interface ListSessionsMsg {
-  type: 'list_sessions'
-}
-
 export interface ChatMsg {
   type: 'chat'
-  session_id: string
+  session_id?: string
   message: string
   tools_enabled?: boolean
-}
-
-export interface ReadChapterMsg {
-  type: 'read_chapter'
-  chapter_id: number
+  model?: string
+  reasoning_effort?: string | null
 }
 
 export interface CancelMsg {
@@ -69,106 +24,24 @@ export interface OutlineApprovalMsg {
 }
 
 export type ClientMsg =
-  | StartEditMsg
-  | ApplyEditMsg
-  | AcceptEditMsg
-  | RejectEditMsg
-  | CreateSessionMsg
-  | LoadSessionMsg
-  | ListSessionsMsg
   | ChatMsg
-  | ReadChapterMsg
   | CancelMsg
   | OutlineApprovalMsg
-
-export interface EditStartedMsg {
-  type: 'edit_started'
-  edit_session_id: string
-  latest_pending_edit_session_id?: string | null
-  chapter_id: number
-  original_content: string
-  working_content: string
-  change_count: number
-  timestamp?: string
-}
-
-export interface EditAppliedMsg {
-  type: 'edit_applied'
-  edit_session_id: string
-  latest_pending_edit_session_id?: string | null
-  chapter_id?: number
-  change_count: number
-  working_content: string
-  diff: DiffData
-  timestamp?: string
-}
-
-export interface EditAcceptedMsg {
-  type: 'edit_accepted'
-  edit_session_id: string
-  chapter_id: number
-  latest_pending_edit_session_id?: string | null
-  change_count: number
-  word_count: number
-  already_processed?: boolean
-  message: string
-  timestamp?: string
-}
-
-export interface EditRejectedMsg {
-  type: 'edit_rejected'
-  edit_session_id: string
-  chapter_id: number
-  latest_pending_edit_session_id?: string | null
-  already_processed?: boolean
-  message: string
-  timestamp?: string
-}
 
 export interface SessionCreatedMsg {
   type: 'session_created'
   session_id: string
-  display_name: string
   model: string
   reasoning_effort?: ReasoningEffort
+  title?: string
 }
 
-export interface SessionLoadedMsg {
-  type: 'session_loaded'
+export interface TitleUpdatedMsg {
+  type: 'title_updated'
   session_id: string
-  display_name: string
-  message_count: number
-  recent_messages: Array<{
-    role: string
-    content: string
-    message_id?: string
-    created_at?: string
-    metadata?: {
-      source?: string
-      parent_task_id?: string
-      agent_type?: string
-      tool_calls?: string | Array<{
-        id: string
-        function?: {
-          name: string
-          arguments: string
-        }
-        name?: string
-      }>
-      thinking_content?: string
-    }
-  }>
-}
-
-export interface SessionListMsg {
-  type: 'sessions_list'
-  sessions: Array<{
-    session_id: string
-    display_name: string
-    title?: string
-    message_count: number
-    updated_at: string
-  }>
+  title: string
+  auto_generated: boolean
+  timestamp?: string
 }
 
 export interface ContentChunkMsg {
@@ -211,7 +84,7 @@ export interface ToolCallMsg {
   chapter_id?: number
   chapter_number?: number
   chapter_title?: string
-  arguments?: Record<string, unknown>
+  metadata?: Record<string, unknown>
   result_summary?: {
     success?: boolean
     error?: string | null
@@ -233,7 +106,6 @@ export interface ChatCompletedMsg {
   type: 'chat_completed'
   session_id: string
   task_id?: string
-  message_count?: number
   timestamp?: string
 }
 
@@ -244,13 +116,6 @@ export interface ChatFailedMsg {
   timestamp?: string
 }
 
-export interface ChapterContentMsg {
-  type: 'chapter_content'
-  chapter_id: number
-  content: string
-  word_count: number
-}
-
 export interface ErrorMsg {
   type: 'error'
   error: string
@@ -258,12 +123,6 @@ export interface ErrorMsg {
   chapter_id?: number
   latest_pending_edit_session_id?: string | null
   timestamp?: string
-}
-
-export interface SessionEndedMsg {
-  type: 'session_ended'
-  session_id: string
-  message: string
 }
 
 export interface TaskCancelledMsg {
@@ -352,14 +211,32 @@ export interface OutlineGeneratedMsg {
   outlines: Array<Record<string, unknown>>
 }
 
+export interface SessionUsageDetail {
+  system: number
+  user: number
+  assistant: number
+  tool: number
+}
+
+export interface UsageData {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  context_window: number
+  usage_ratio: number
+  detail?: SessionUsageDetail
+}
+
+export interface UsageMsg extends UsageData {
+  type: 'usage'
+  task_id?: string
+  parent_task_id?: string
+  timestamp?: string
+}
+
 export type ServerMsg =
-  | EditStartedMsg
-  | EditAppliedMsg
-  | EditAcceptedMsg
-  | EditRejectedMsg
   | SessionCreatedMsg
-  | SessionLoadedMsg
-  | SessionListMsg
+  | TitleUpdatedMsg
   | ContentChunkMsg
   | ThinkingChunkMsg
   | ThinkingDoneMsg
@@ -367,14 +244,13 @@ export type ServerMsg =
   | ChatStartedMsg
   | ChatCompletedMsg
   | ChatFailedMsg
-  | ChapterContentMsg
   | ErrorMsg
-  | SessionEndedMsg
   | TaskCancelledMsg
   | EditPreviewMsg
   | EditPendingMsg
   | EditStreamMsg
   | OutlineGeneratedMsg
+  | UsageMsg
 
 export type MsgHandler = (msg: ServerMsg) => void
 
@@ -463,56 +339,12 @@ export class WsEditorService {
     return true
   }
 
-  startEdit(_chapterId: number): boolean {
-    return this.send({ type: 'start_edit', chapter_id: _chapterId })
-  }
-
-  applyEdit(editSessionId: string, changeType: 'full_replace' | 'partial_edit' | 'insert' | 'delete', newContent: string, startLine?: number, endLine?: number, reason?: string): boolean {
-    return this.send({
-      type: 'apply_edit',
-      edit_session_id: editSessionId,
-      change_type: changeType,
-      new_content: newContent,
-      start_line: startLine,
-      end_line: endLine,
-      reason,
-    })
-  }
-
-  acceptEdit(editSessionId?: string | null, chapterId?: number | null): boolean {
-    return this.send({
-      type: 'accept_edit',
-      edit_session_id: editSessionId || undefined,
-      chapter_id: chapterId || undefined,
-    })
-  }
-
-  rejectEdit(editSessionId?: string | null, chapterId?: number | null): boolean {
-    return this.send({
-      type: 'reject_edit',
-      edit_session_id: editSessionId || undefined,
-      chapter_id: chapterId || undefined,
-    })
-  }
-
-  createSession(model?: string, _editMode?: EditMode, reasoningEffort?: ReasoningEffort): boolean {
-    return this.send({ type: 'create_session', model, reasoning_effort: reasoningEffort })
-  }
-
-  loadSession(sessionId: string): boolean {
-    return this.send({ type: 'load_session', session_id: sessionId })
-  }
-
-  listSessions(): boolean {
-    return this.send({ type: 'list_sessions' })
-  }
-
-  chat(sessionId: string, message: string, toolsEnabled = true): boolean {
-    return this.send({ type: 'chat', session_id: sessionId, message, tools_enabled: toolsEnabled })
-  }
-
-  readChapter(chapterId: number): boolean {
-    return this.send({ type: 'read_chapter', chapter_id: chapterId })
+  chat(sessionId: string | null, message: string, options?: { toolsEnabled?: boolean; model?: string; reasoningEffort?: string | null }): boolean {
+    const msg: ChatMsg = { type: 'chat', message, tools_enabled: options?.toolsEnabled ?? true }
+    if (sessionId) msg.session_id = sessionId
+    if (options?.model) msg.model = options.model
+    if (options?.reasoningEffort) msg.reasoning_effort = options.reasoningEffort
+    return this.send(msg)
   }
 
   cancelTask(taskId: string): boolean {

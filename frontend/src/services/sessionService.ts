@@ -1,5 +1,6 @@
 import apiClient from './apiClient'
 import type { ApiResponse, PaginatedResponse } from '@/types/api'
+import type { UsageData } from './wsEditorService'
 
 export type LLMModel = 'deepseek-v4-flash' | 'deepseek-v4-pro' | 'glm-4.7-flash'
 
@@ -10,49 +11,25 @@ export interface SessionMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
   created_at: string
-  importance?: number
 }
 
-export interface SessionStats {
-  message_count: number
+export interface SessionStats extends Partial<UsageData> {
   token_count: number
   context_window: number
   usage_ratio: number
   should_compress: boolean
 }
 
-export interface NovelContext {
-  title?: string
-  description?: string
-  genre?: string
-  outline?: string
-  world_setting?: string
-  characters_summary?: string
-  main_plot?: string
-}
-
-export interface ChapterContext {
-  chapter_number: number
-  chapter_title?: string
-  previous_summary?: string
-  current_outline?: string
-  key_events?: string[]
-  focus_characters?: string[]
-}
-
 export interface Session {
   id: string
   session_id: string
   level: SessionLevel
-  display_name: string
   title?: string
   novel_id?: number
   chapter_number?: number
   chapter_number_end?: number
   model: LLMModel
   stats: SessionStats
-  novel_context?: NovelContext
-  chapter_context?: ChapterContext
   created_at: string
   updated_at: string
   expires_at: string
@@ -66,13 +43,6 @@ export interface AutoGenerateTitleResponse {
   title: string
   auto_generated: boolean
   message: string
-}
-
-export interface CreateSessionRequest {
-  novel_id?: number
-  chapter_number?: number
-  level: SessionLevel
-  model?: LLMModel
 }
 
 export interface ChatRequest {
@@ -93,32 +63,7 @@ export interface ClearResponse {
   messages_removed: number
 }
 
-export interface UpdateNovelContextRequest {
-  title?: string
-  description?: string
-  genre?: string
-  outline?: string
-  world_setting?: string
-  characters_summary?: string
-  main_plot?: string
-}
-
-export interface UpdateChapterContextRequest {
-  chapter_number: number
-  chapter_title?: string
-  previous_summary?: string
-  current_outline?: string
-  key_events?: string[]
-  focus_characters?: string[]
-}
-
-export interface SessionStatsResponse {
-  message_count: number
-  token_count: number
-  context_window: number
-  usage_ratio: number
-  should_compress: boolean
-}
+export interface SessionStatsResponse extends SessionStats {}
 
 export interface ModelOption {
   id: string
@@ -130,10 +75,6 @@ export interface ModelOption {
 export const sessionApi = {
   getModels: async (): Promise<ApiResponse<{ models: ModelOption[] }>> => {
     return apiClient.get('/models')
-  },
-
-  create: async (data: CreateSessionRequest): Promise<ApiResponse<Session>> => {
-    return apiClient.post('/sessions/create', data)
   },
 
   get: async (sessionId: string): Promise<ApiResponse<Session>> => {
@@ -172,16 +113,8 @@ export const sessionApi = {
     return apiClient.post(`/sessions/${sessionId}/compress`)
   },
 
-  updateNovelContext: async (sessionId: string, data: UpdateNovelContextRequest): Promise<ApiResponse<void>> => {
-    return apiClient.put(`/sessions/${sessionId}/context/novel`, data)
-  },
-
-  updateChapterContext: async (sessionId: string, data: UpdateChapterContextRequest): Promise<ApiResponse<void>> => {
-    return apiClient.put(`/sessions/${sessionId}/context/chapter`, data)
-  },
-
   getStats: async (sessionId: string): Promise<ApiResponse<SessionStatsResponse>> => {
-    return apiClient.get(`/sessions/${sessionId}/stats`)
+    return apiClient.get(`/sessions/${sessionId}/usage`)
   },
 
   updateTitle: async (sessionId: string, data: UpdateTitleRequest): Promise<ApiResponse<Session>> => {
