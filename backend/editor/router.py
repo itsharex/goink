@@ -1,7 +1,7 @@
 """
 文本编辑API路由 - 副本编辑机制
 """
-from fastapi import APIRouter, Body
+from fastapi import APIRouter
 
 from core.response import ApiResponse
 from core.database import DBSession
@@ -12,128 +12,6 @@ from novels.models import Novel
 from sqlalchemy import select
 
 router = APIRouter(prefix="/editor", tags=["editor"])
-
-
-@router.post("/session/start")
-async def start_edit_session(
-    user: CurrentUserDep,
-    db: DBSession,
-    chapter_id: int = Body(..., description="章节ID"),
-    ws_session_id: str = Body(..., description="WebSocket会话ID")
-):
-    """
-    开始编辑会话（创建副本）
-    
-    - 创建一个副本用于AI和用户编辑
-    - 原内容保持不变，直到接受或拒绝
-    """
-    result = await db.execute(
-        select(Chapter).where(Chapter.id == chapter_id)
-    )
-    chapter = result.scalar_one_or_none()
-    
-    if not chapter:
-        return ApiResponse.error(code="CHAPTER_NOT_FOUND", message="章节不存在", status_code=404)
-    
-    result = await db.execute(
-        select(Novel).where(Novel.id == chapter.novel_id)
-    )
-    novel = result.scalar_one_or_none()
-    
-    if not novel or novel.author_id != user.id:
-        return ApiResponse.error(code="FORBIDDEN", message="无权编辑此章节", status_code=403)
-    
-    manager = get_edit_session_manager(db)
-    existing_session = await manager.get_edit_session(chapter_id)
-    
-    if existing_session:
-        return ApiResponse.success({
-            "edit_session_id": existing_session.edit_session_id,
-            "chapter_id": chapter_id,
-            "original_content": existing_session.original_content,
-            "working_content": existing_session.working_content,
-            "change_count": existing_session.change_count,
-            "status": existing_session.status,
-            "reused_existing": True,
-            "message": "已有活动的编辑会话"
-        })
-    
-    edit_session = await manager.create_edit_session(chapter_id, ws_session_id)
-    
-    return ApiResponse.success({
-        "edit_session_id": edit_session.edit_session_id,
-        "chapter_id": chapter_id,
-        "original_content": edit_session.original_content,
-        "working_content": edit_session.working_content,
-        "change_count": 0,
-        "status": "pending",
-        "reused_existing": False,
-        "message": "编辑会话已创建"
-    })
-
-
-@router.post("/session/{edit_session_id}/apply")
-async def apply_edit(
-    user: CurrentUserDep,
-    db: DBSession,
-    edit_session_id: str,
-    change_type: str = Body(..., description="变更类型: full_replace/partial_edit/insert/delete"),
-    new_content: str = Body(..., description="新内容"),
-    start_line: int | None = Body(None, description="起始行号"),
-    end_line: int | None = Body(None, description="结束行号"),
-    reason: str | None = Body(None, description="修改原因"),
-    source: str = Body("ai", description="来源: ai/user")
-):
-    """
-    应用变更到副本
-    
-    - 支持全量替换、部分编辑、插入、删除
-    - 变更计数为改动的位置数量（diff hunks）
-    """
-    manager = get_edit_session_manager(db)
-    edit_session = await manager.get_edit_session_by_id(edit_session_id)
-    
-    if not edit_session:
-        return ApiResponse.error(code="SESSION_NOT_FOUND", message="编辑会话不存在", status_code=404)
-    
-    result = await db.execute(
-        select(Chapter).where(Chapter.id == edit_session.chapter_id)
-    )
-    chapter = result.scalar_one_or_none()
-    
-    if not chapter:
-        return ApiResponse.error(code="CHAPTER_NOT_FOUND", message="章节不存在", status_code=404)
-    
-    result = await db.execute(
-        select(Novel).where(Novel.id == chapter.novel_id)
-    )
-    novel = result.scalar_one_or_none()
-    
-    if not novel or novel.author_id != user.id:
-        return ApiResponse.error(code="FORBIDDEN", message="无权编辑此章节", status_code=403)
-    
-    try:
-        change = await manager.apply_change(
-            edit_session=edit_session,
-            change_type=change_type,
-            new_content=new_content,
-            start_line=start_line,
-            end_line=end_line,
-            source=source,
-            reason=reason
-        )
-    except ValueError as e:
-        return ApiResponse.error(code="EDIT_INVALID", message=str(e), status_code=400)
-    
-    diff_data = await manager.get_diff(edit_session_id)
-    
-    return ApiResponse.success({
-        "edit_session_id": edit_session_id,
-        "change_count": edit_session.change_count,
-        "working_content": edit_session.working_content,
-        "diff": diff_data.get("diff", {}),
-        "message": f"变更已应用，共 {edit_session.change_count} 处改动"
-    })
 
 
 @router.post("/session/{edit_session_id}/accept")

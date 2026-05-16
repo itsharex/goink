@@ -207,12 +207,6 @@ async def websocket_chat(
                 elif message_type == "read_chapter":
                     await _handle_read_chapter(websocket, data.get("chapter_id"), novel_id)
                 
-                elif message_type == "start_edit":
-                    await _handle_start_edit(websocket, data, novel_id, current_session)
-                
-                elif message_type == "apply_edit":
-                    await _handle_apply_edit(websocket, data, novel_id)
-                
                 elif message_type == "accept_edit":
                     await _handle_accept_edit(websocket, data, novel_id)
                 
@@ -343,90 +337,6 @@ async def _handle_read_chapter(websocket, chapter_id, novel_id):
             "edit_session_id": edit_session.edit_session_id if edit_session else None,
             "working_content": edit_session.working_content if edit_session else None,
             "change_count": edit_session.change_count if edit_session else 0,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }, websocket)
-
-
-async def _handle_start_edit(websocket, data, novel_id, session):
-    chapter_id = data.get("chapter_id")
-    ws_session_id = session.session_id if session else "unknown"
-    
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Chapter).where(Chapter.id == chapter_id)
-        )
-        chapter = result.scalar_one_or_none()
-        
-        if not chapter:
-            await ws_manager.send_personal_message({
-                "type": "error",
-                "error": "章节不存在",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }, websocket)
-            return
-        
-        if chapter.novel_id != novel_id:
-            await ws_manager.send_personal_message({
-                "type": "error",
-                "error": "无权编辑此章节",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }, websocket)
-            return
-        
-        manager = get_edit_session_manager(db)
-        edit_session = await manager.create_edit_session(chapter_id, ws_session_id)
-        
-        await ws_manager.send_personal_message({
-            "type": "edit_started",
-            "edit_session_id": edit_session.edit_session_id,
-            "latest_pending_edit_session_id": edit_session.edit_session_id,
-            "chapter_id": chapter_id,
-            "original_content": edit_session.original_content,
-            "working_content": edit_session.working_content,
-            "change_count": 0,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }, websocket)
-
-
-async def _handle_apply_edit(websocket, data, novel_id):
-    edit_session_id = data.get("edit_session_id")
-    change_type = data.get("change_type", "full_replace")
-    new_content = data.get("new_content", "")
-    start_line = data.get("start_line")
-    end_line = data.get("end_line")
-    reason = data.get("reason")
-    
-    async with AsyncSessionLocal() as db:
-        manager = get_edit_session_manager(db)
-        edit_session = await manager.get_edit_session_by_id(edit_session_id)
-        
-        if not edit_session:
-            await ws_manager.send_personal_message({
-                "type": "error",
-                "error": "编辑会话不存在",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }, websocket)
-            return
-        
-        await manager.apply_change(
-            edit_session=edit_session,
-            change_type=change_type,
-            new_content=new_content,
-            start_line=start_line,
-            end_line=end_line,
-            reason=reason
-        )
-        
-        diff_data = await manager.get_diff(edit_session_id)
-        
-        await ws_manager.send_personal_message({
-            "type": "edit_applied",
-            "edit_session_id": edit_session_id,
-            "latest_pending_edit_session_id": edit_session.edit_session_id,
-            "chapter_id": edit_session.chapter_id,
-            "change_count": edit_session.change_count,
-            "working_content": edit_session.working_content,
-            "diff": diff_data.get("diff", {}),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }, websocket)
 

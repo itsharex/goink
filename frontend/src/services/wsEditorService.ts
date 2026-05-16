@@ -4,21 +4,6 @@ import { useAuthStore } from '@/stores/authStore'
 export type EditMode = 'agent'
 export type ReasoningEffort = 'high' | 'max'
 
-export interface StartEditMsg {
-  type: 'start_edit'
-  chapter_id: number
-}
-
-export interface ApplyEditMsg {
-  type: 'apply_edit'
-  edit_session_id: string
-  change_type: 'full_replace' | 'partial_edit' | 'insert' | 'delete'
-  new_content: string
-  start_line?: number
-  end_line?: number
-  reason?: string
-}
-
 export interface AcceptEditMsg {
   type: 'accept_edit'
   edit_session_id?: string
@@ -65,8 +50,6 @@ export interface OutlineApprovalMsg {
 }
 
 export type ClientMsg =
-  | StartEditMsg
-  | ApplyEditMsg
   | AcceptEditMsg
   | RejectEditMsg
   | LoadSessionMsg
@@ -485,22 +468,6 @@ export class WsEditorService {
     }
     this.ws.send(JSON.stringify(msg))
     return true
-  }
-
-  startEdit(_chapterId: number): boolean {
-    return this.send({ type: 'start_edit', chapter_id: _chapterId })
-  }
-
-  applyEdit(editSessionId: string, changeType: 'full_replace' | 'partial_edit' | 'insert' | 'delete', newContent: string, startLine?: number, endLine?: number, reason?: string): boolean {
-    return this.send({
-      type: 'apply_edit',
-      edit_session_id: editSessionId,
-      change_type: changeType,
-      new_content: newContent,
-      start_line: startLine,
-      end_line: endLine,
-      reason,
-    })
   }
 
   acceptEdit(editSessionId?: string | null, chapterId?: number | null): boolean {
