@@ -44,13 +44,10 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
-// Exists 检查指针文件是否已存在（是否已完成初始化配置）。
-func Exists() bool {
-	path, err := configPath()
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(path)
+// IsInitialized 检查应用是否已完成初始化。
+// 仅在指针文件存在、JSON 合法且 data_dir 可用时返回 true。
+func IsInitialized() bool {
+	_, err := Load()
 	return err == nil
 }
 
