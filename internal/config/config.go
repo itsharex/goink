@@ -2,10 +2,14 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+// ErrNotInitialized 表示指针文件不存在，应用尚未完成首次初始化。没初始化弹出来初始化界面，如果初始化了但是还是出错就谈配置错误恢复
+var ErrNotInitialized = errors.New("指针文件不存在，应用未初始化")
 
 // AppConfig 是启动指针文件 ~/.novel_agent/config.json 的内容。
 // 仅记录用户选择的数据目录，其他运行时配置走 SQLite app_config 表。
@@ -44,13 +48,6 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
-// IsInitialized 检查应用是否已完成初始化。
-// 仅在指针文件存在、JSON 合法且 data_dir 可用时返回 true。
-func IsInitialized() bool {
-	_, err := Load()
-	return err == nil
-}
-
 // Load 读取启动指针文件，返回 AppConfig。
 // 文件不存在时返回错误，调用方应引导用户完成初始化。
 func Load() (*AppConfig, error) {
@@ -62,7 +59,7 @@ func Load() (*AppConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("应用未初始化：请先完成初始化设置")
+			return nil, fmt.Errorf("%w: %s", ErrNotInitialized, path)
 		}
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
