@@ -84,8 +84,8 @@ func (Location) TableName() string { return "locations" }
 type LocationRelation struct {
 	ID               int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	NovelID          int64     `gorm:"column:novel_id;not null;index"              json:"novel_id"`
-	SourceLocationID int64     `gorm:"column:source_location_id;not null;index"   json:"source_location_id"` // 关系起点，与 target_location_id 组成联合唯一约束
-	TargetLocationID int64     `gorm:"column:target_location_id;not null;index"   json:"target_location_id"` // 关系终点
+	SourceLocationID int64     `gorm:"column:source_location_id;uniqueIndex:uk_location_pair;not null" json:"source_location_id"`
+	TargetLocationID int64     `gorm:"column:target_location_id;uniqueIndex:uk_location_pair;not null" json:"target_location_id"`
 	RelationType     string    `gorm:"column:relation_type;not null"              json:"relation_type"`     // 自由文本："相邻""由山路连通""可望见""骑马半天路程"，LLM 自行描述
 	Description      string    `gorm:"column:description"                          json:"description"`       // 补充细节，如"途经一片沼泽""需穿越迷雾森林"
 	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime"            json:"created_at"`
