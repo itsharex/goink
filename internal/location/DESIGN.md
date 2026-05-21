@@ -102,3 +102,62 @@ Go 新增 LocationRelation 表，形成完整的空间图。与 CharacterRelatio
 | Chapter | 无直接引用（地点不绑定章节，通过时间线/伏笔间接关联） |
 | Character | 无 FK（角色和地点的关联通过 TimelineEntry 表达"某角色在某地点做了什么"） |
 | TimelineEntry | 地点可出现在伏笔的 content/detail_json 中，通过名称或 ID 引用 |
+
+## LLM 数据返回格式
+
+### 邻接列表（detail 模式）
+
+采用邻接列表格式，每个地点自带完整空间上下文。名称给 LLM 直觉理解，ID 给 LLM 精确后续查询：
+
+```json
+{
+  "id": 5,
+  "name": "迷雾森林",
+  "location_type": "森林",
+  "description": "...",
+  "detail_json": {...},
+  "tags": ["危险", "神秘"],
+  "parent_id": 1,
+  "parent_name": "大陆西部",
+  "sub_locations": [
+    {"id": 7, "name": "密林深处"},
+    {"id": 8, "name": "沼泽入口"}
+  ],
+  "connections": [
+    {"to_id": 12, "to_name": "黑铁城堡", "via": "由山路连通，途经一片沼泽"},
+    {"to_id": 15, "to_name": "精灵村", "via": "沿河而下约半日路程"}
+  ]
+}
+```
+
+设计要点：
+- **名称 + ID 并存**：名称满足直觉理解，ID 用于精确后续查询（`get_locations(mode="detail", location_id=12)`）
+- **每个节点自包含**：LLM 读一个对象就理解该地点的全部空间关系，无需跨节点拼图
+- **方向语义**：`connections` 的 `to_id`/`to_name` 明确表示从当前节点出发到达目标
+
+### 网络全图（network 模式）
+
+额外提供自然语言摘要，帮助 LLM 快速建立空间心智模型：
+
+```json
+{
+  "summary": "本小说共有 15 个地点。3 个根节点：大陆西部（含 6 个子地点）、东海群岛（含 4 个子地点）、北方荒原（含 2 个子地点）。主要空间连通：迷雾森林↔黑铁城堡（山路）、王都↔港口（官道）...",
+  "locations": [...],
+  "relations": [...]
+}
+```
+
+`summary` 给 LLM 全局感知，`locations` + `relations` 提供精确数据。工具层负责生成 summary，store 层只管原始数据。
+
+## Store 方法
+
+简单 CRUD 走 `store.DB`（GetByID、Create、Update、Delete）。
+
+| 实体 | 方法 | 用途 |
+|------|------|------|
+| Location | `ListByNovel(ctx, novelID, opts)` | 分页 + type 过滤 + name 搜索 |
+| Location | `GetChildren(ctx, parentID)` | 子地点列表 |
+| Location | `GetByIDs(ctx, ids)` | 批量查，图查询解析名称用 |
+| LocationRelation | `ListByNovel(ctx, novelID)` | 全图空间边（前端渲染/network 模式） |
+| LocationRelation | `ListBySource(ctx, locID)` | 某地点的所有出边 |
+| LocationRelation | `Upsert(ctx, rel)` | INSERT ON CONFLICT (source, target) DO UPDATE |
