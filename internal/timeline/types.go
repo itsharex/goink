@@ -24,7 +24,7 @@ import "time"
 //   - update_timeline_entry：按 (novel_id, scope) 定位并更新 content
 type ChapterPlan struct {
 	NovelID   int64     `gorm:"column:novel_id;uniqueIndex:uk_novel_scope;not null" json:"novel_id"`
-	Scope     string    `gorm:"column:scope;uniqueIndex:uk_novel_scope;not null"    json:"scope"`   // "next" | "near" | "far"
+	Scope     string    `gorm:"column:scope;uniqueIndex:uk_novel_scope;not null"    json:"scope"`    // "next" | "near" | "far"
 	Content   string    `gorm:"column:content;not null"                              json:"content"` // 计划内容，自然语言，LLM 填写
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"                     json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"                     json:"updated_at"`
@@ -85,11 +85,11 @@ type TimelineEntry struct {
 	ID                int64     `gorm:"column:id;primaryKey;autoIncrement"      json:"id"`
 	NovelID           int64     `gorm:"column:novel_id;not null;index"          json:"novel_id"`
 	Category          string    `gorm:"column:category;not null;index"          json:"category"`            // "foreshadowing" | "user_directive"，约束枚举
-	Status            string    `gorm:"column:status;not null;index"            json:"status"`              // "pending" | "active" | "resolved" | "abandoned"
+	Status            string    `gorm:"column:status;not null;index"            json:"status"`              // "pending" | "resolved" | "abandoned"
 	Title             string    `gorm:"column:title;not null"                   json:"title"`               // 简短标题
 	Content           string    `gorm:"column:content"                          json:"content"`             // 详细描述
 	DetailJSON        string    `gorm:"column:detail_json"                      json:"detail_json"`         // JSON，category 相关结构化数据（伏笔类型、提示文本等）
-	TargetChapter     int       `gorm:"column:target_chapter;not null"          json:"target_chapter"`      // 预计回收章节号，主排序键，必填。不用于过滤，不准确不影响可见性
+	TargetChapter     int       `gorm:"column:target_chapter;not null"          json:"target_chapter"`      // 预计回收章节号，主排序键，必填。不用于过滤，不准确不影响可见性，这个需要提醒llm完成的时候留下准确的id
 	Importance        int       `gorm:"column:importance;default:3"             json:"importance"`          // 重要度 1-5，默认 3。同 target_chapter 内的次排序键
 	SourceChapterID   int64     `gorm:"column:source_chapter_id"                json:"source_chapter_id"`   // 在哪章创建/埋下的，创建后不可变
 	Source            string    `gorm:"column:source"                           json:"source"`              // "ai" | "user"，谁创建的

@@ -1,0 +1,131 @@
+package timeline
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	"novel/internal/storage"
+)
+
+// Store 管理 ChapterPlan 和 TimelineEntry 持久化。DB 导出供调用方做简单 CRUD。
+type Store struct {
+	DB     *gorm.DB
+	logger *slog.Logger
+}
+
+// NewStore 创建 timeline 存储。
+func NewStore(db *gorm.DB, logger *slog.Logger) *Store {
+	return &Store{DB: db, logger: logger}
+}
+
+// ── ChapterPlan ──────────────────────────────────────
+
+// GetPlans 返回某小说的全部章节计划（next/near/far 三个槽位）。
+func (s *Store) GetPlans(ctx context.Context, novelID int64) ([]ChapterPlan, error) {
+	var plans []ChapterPlan
+	if err := s.DB.WithContext(ctx).
+		Where("novel_id = ?", novelID).
+		Order("CASE scope WHEN 'next' THEN 1 WHEN 'near' THEN 2 ELSE 3 END").
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("timeline store: get plans: %w", err)
+	}
+	return plans, nil
+}
+
+// UpsertPlan 插入或更新章节计划。(novel_id, scope) 唯一约束下 ON CONFLICT DO UPDATE。
+func (s *Store) UpsertPlan(ctx context.Context, plan *ChapterPlan) error {
+	if err := s.DB.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "novel_id"}, {Name: "scope"}},
+			DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
+		}).
+		Create(plan).Error; err != nil {
+		return fmt.Errorf("timeline store: upsert plan: %w", err)
+	}
+	return nil
+}
+
+// ── TimelineEntry ────────────────────────────────────
+
+// ListByNovelOptions 是 ListByNovel 的可选参数。
+type ListByNovelOptions struct {
+	PageParams storage.PageParams
+	Category   string // 空字符串=不过滤，"foreshadowing"/"user_directive"
+	Status     string // 空字符串=不过滤，"pending"/"resolved"/"abandoned"
+}
+
+// ListByNovel 分页列出某小说的伏笔/用户指令，支持分类和状态过滤。前端管理页用。
+func (s *Store) ListByNovel(ctx context.Context, novelID int64, opts ListByNovelOptions) (*storage.PageResult[TimelineEntry], error) {
+	pp := opts.PageParams
+	pp.Normalize()
+
+	q := s.DB.WithContext(ctx).Model(&TimelineEntry{}).Where("novel_id = ?", novelID)
+
+	if opts.Category != "" {
+		q = q.Where("category = ?", opts.Category)
+	}
+	if opts.Status != "" {
+		q = q.Where("status = ?", opts.Status)
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("timeline store: count: %w", err)
+	}
+
+	var entries []TimelineEntry
+	offset := (pp.Page - 1) * pp.Size
+	if err := q.Order("target_chapter ASC, importance DESC").Offset(offset).Limit(pp.Size).Find(&entries).Error; err != nil {
+		return nil, fmt.Errorf("timeline store: list: %w", err)
+	}
+
+	s.logger.Debug("timeline store: listed", "novel_id", novelID, "total", total, "page", pp.Page)
+	return storage.NewPageResult(entries, total, pp.Page, pp.Size), nil
+}
+
+// ListBefore 取 target_chapter < beforeChapter 的最近 limit 条，不论状态。
+func (s *Store) ListBefore(ctx context.Context, novelID int64, ChapterID int, limit int) ([]TimelineEntry, error) {
+	var entries []TimelineEntry
+	if err := s.DB.WithContext(ctx).
+		Where("novel_id = ? AND target_chapter < ?", novelID, ChapterID).
+		Order("target_chapter DESC").
+		Limit(limit).
+		Find(&entries).Error; err != nil {
+		return nil, fmt.Errorf("timeline store: list before: %w", err)
+	}
+	return entries, nil
+}
+
+// ListActiveBefore 取 target_chapter < ChapterID 且未解决（pending）的全部条目，兜底截断 100。
+func (s *Store) ListActiveBefore(ctx context.Context, novelID int64, ChapterID int) ([]TimelineEntry, error) {
+	var entries []TimelineEntry
+	if err := s.DB.WithContext(ctx).
+		Where("novel_id = ? AND target_chapter < ? AND status = ?", novelID, ChapterID, "pending").
+		Order("target_chapter ASC").
+		Limit(100).
+		Find(&entries).Error; err != nil {
+		return nil, fmt.Errorf("timeline store: list active before: %w", err)
+	}
+	return entries, nil
+}
+
+// ListAfter 取 target_chapter >= fromChapter 的全部条目，不论状态，兜底截断 100。
+func (s *Store) ListAfter(ctx context.Context, novelID int64, ChapterID int) ([]TimelineEntry, error) {
+	var entries []TimelineEntry
+	if err := s.DB.WithContext(ctx).
+		Where("novel_id = ? AND target_chapter >= ?", novelID, ChapterID).
+		Order("target_chapter ASC").
+		Limit(100).
+		Find(&entries).Error; err != nil {
+		return nil, fmt.Errorf("timeline store: list after: %w", err)
+	}
+	return entries, nil
+}
+
+//具体来说 构造上下文的时候拿到前10条历史+未来100条，以及前边的所有pending的（状态异常了，也可以不给，等review的时候再传递），未来如果有显示已经完成的，也算作状态异常，状态异常的
+//需要提醒llm进行修正，确保之前的全部结束，之后的全部pending，targetchapter是用来作为一个大概的锚点的，llm根据章节进度，实时维护，后续提供reviewagent一个专属
+//工具。专门用来查询各种异常状态的，用以提醒
