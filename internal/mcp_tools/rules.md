@@ -32,14 +32,25 @@ func (t *XxxTool) Execute(ctx context.Context, args map[string]any, tc ToolConte
 }
 ```
 
-Args 结构体用 `jsonschema` tag 定义 JSON Schema：
+Args 结构体用 `jsonschema` tag 定义 JSON Schema，**与 Pydantic Field 等价**：
 
 ```go
 type XxxArgs struct {
     Name string `json:"name" jsonschema:"required,description=名称"`
-    Type string `json:"type" jsonschema:"description=类型"`
+    Type string `json:"type" jsonschema:"description=类型,enum=a,enum=b,enum=c"`
+    Size int    `json:"size" jsonschema:"description=每页数量,default=20,minimum=1,maximum=100"`
 }
 ```
+
+**必须使用 tag 表达约束**，禁止在 Execute 里裸写校验逻辑。支持的 tag：
+
+| tag | 用途 | 示例 |
+|-----|------|------|
+| `required` | 必填字段 | `jsonschema:"required,description=..."` |
+| `description=xxx` | 参数描述 | 同上 |
+| `enum=a,enum=b` | 枚举值 | `jsonschema:"enum=known,enum=suspense"` |
+| `default=xxx` | 默认值 | `jsonschema:"default=20"` |
+| `minimum=N` / `maximum=N` | 数值范围 | `jsonschema:"minimum=1,maximum=100"` |
 
 ## 3. 错误处理
 

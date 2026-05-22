@@ -141,7 +141,7 @@ func formatReaderPerspective(known, suspenses, misconceptions []reader.ReaderPer
 
 // CreateReaderPerspectiveEntryArgs 是 create_reader_perspective_entry 的参数。
 type CreateReaderPerspectiveEntryArgs struct {
-	Type               string `json:"type" jsonschema:"required,description=条目类型：known|suspense|misconception"`
+	Type               string `json:"type" jsonschema:"required,description=条目类型,enum=known,enum=suspense,enum=misconception"`
 	Content            string `json:"content" jsonschema:"required,description=内容描述"`
 	PlantedChapter     int    `json:"planted_chapter" jsonschema:"required,description=种下的章节号"`
 	RelatedTruth       string `json:"related_truth" jsonschema:"description=仅 misconception：真实情况是什么"`
