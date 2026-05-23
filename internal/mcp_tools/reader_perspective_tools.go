@@ -46,13 +46,13 @@ func (t *GetReaderPerspectiveTool) Execute(ctx context.Context, args any, tc Too
 		Type:       reader.TypeKnown,
 	})
 	if err != nil {
-		return &ToolResult{Success: false, Error: "查询已知信息失败"}, nil
+		return nil, fmt.Errorf("query known perspectives: %w", err)
 	}
 
 	// suspense + misconception：只取未回收的
 	active, err := rs.ListActive(ctx, tc.NovelID)
 	if err != nil {
-		return &ToolResult{Success: false, Error: "查询悬念/误知失败"}, nil
+		return nil, fmt.Errorf("query active perspectives: %w", err)
 	}
 
 	var suspenses []reader.ReaderPerspective
@@ -184,7 +184,7 @@ func (t *CreateReaderPerspectiveEntryTool) Execute(ctx context.Context, args any
 	}
 
 	if err := tc.DB.WithContext(ctx).Create(&entry).Error; err != nil {
-		return &ToolResult{Success: false, Error: "创建读者认知条目失败"}, nil
+		return nil, fmt.Errorf("create perspective entry: %w", err)
 	}
 
 	return &ToolResult{
@@ -235,7 +235,7 @@ func (t *UpdateReaderPerspectiveEntryTool) Execute(ctx context.Context, args any
 		if err == gorm.ErrRecordNotFound {
 			return &ToolResult{Success: false, Error: fmt.Sprintf("条目 %d 不存在", a.EntryID)}, nil
 		}
-		return &ToolResult{Success: false, Error: "查询条目失败"}, nil
+		return nil, fmt.Errorf("query perspective entry: %w", err)
 	}
 
 	if a.LastMentionedChapter > 0 {
@@ -246,7 +246,7 @@ func (t *UpdateReaderPerspectiveEntryTool) Execute(ctx context.Context, args any
 	}
 
 	if err := tc.DB.WithContext(ctx).Save(&entry).Error; err != nil {
-		return &ToolResult{Success: false, Error: "更新条目失败"}, nil
+		return nil, fmt.Errorf("save perspective entry: %w", err)
 	}
 
 	return &ToolResult{

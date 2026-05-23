@@ -56,13 +56,14 @@ type XxxArgs struct {
 
 ## 3. 错误处理
 
-| 类型 | 做法 |
-|------|------|
-| 业务错误（参数不合法、资源不存在） | `return &ToolResult{Success: false, Error: "中文消息"}, nil` |
-| 意外异常（DB、网络） | 不 catch，让 `Registry.Execute()` 兜底，设 `ErrKind: "system"` |
-| 参数校验 | 不手写。Registry 统一用 `validate.Struct()` 执行，工具拿到时已是合法值 |
+| 类型 | 做法 | 返回值 |
+|------|------|--------|
+| 业务错误（参数不合法、资源不存在） | 工具返回中文错误消息 | `return &ToolResult{Success: false, Error: "..."}, nil` |
+| 意外异常（DB、网络） | 不 catch，让 `Registry.Execute()` 兜底 | `return nil, fmt.Errorf("context: %w", err)` |
+| 参数校验 | 不手写。Registry 统一用 `validate.Struct()` 执行，工具拿到时已是合法值 | — |
 
-工具不要用 `recover()` 包裹 `Execute()` 方法体。
+`Registry.Execute()` 收到 `err != nil` 后记日志，返回 `ErrKind: "system"` 给 LLM。
+工具不要 `recover()` 包裹 `Execute()` 方法体。唯一需要在工具内 catch 的是 `gorm.ErrRecordNotFound` 转业务错误。
 
 ## 4. 工具白名单
 

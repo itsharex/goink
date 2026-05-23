@@ -186,7 +186,7 @@ func (r *Registry) OpenAI(allowed map[string]bool) []map[string]any {
 	return list
 }
 
-// Execute 查表 → 白名单校验 → 反序列化 + validate → 调 Tool.Execute → 兜底 panic + 计时。
+// Execute 查表 → 白名单校验 → 反序列化 + validate → 调 Tool.Execute → 兜底 panic + 错误。
 // allowed=nil 表示不限制；非 nil 只放行白名单内的工具。
 func (r *Registry) Execute(ctx context.Context, name string, rawArgs json.RawMessage, tc ToolContext, allowed map[string]bool) (*ToolResult, error) {
 	t, ok := r.Get(name)
@@ -208,21 +208,27 @@ func (r *Registry) Execute(ctx context.Context, name string, rawArgs json.RawMes
 
 	t0 := time.Now()
 	var result *ToolResult
-	var err error
+	var execErr error
 	func() {
 		defer func() {
 			if p := recover(); p != nil {
+				r.logger.Error("tool panicked", "tool", name, "panic", p)
 				result = &ToolResult{Success: false, Error: "服务器内部错误，请稍后重试", ErrKind: "system"}
-				err = nil
+				execErr = nil
 			}
 		}()
-		result, err = t.Execute(ctx, args, tc)
+		result, execErr = t.Execute(ctx, args, tc)
 	}()
+
+	if execErr != nil {
+		r.logger.Error("tool execution failed", "tool", name, "error", execErr, "elapsed_ms", time.Since(t0).Milliseconds())
+		return &ToolResult{Success: false, Error: "服务器内部错误，请稍后重试", ErrKind: "system"}, nil
+	}
 
 	if result != nil {
 		r.logger.Info("mcp tool executed", "tool", name, "elapsed_ms", time.Since(t0).Milliseconds(), "success", result.Success)
 	}
-	return result, err
+	return result, nil
 }
 
 // AllowSet 将 []string 白名单转为 map[string]bool，供 Registry 方法使用。nil → nil。

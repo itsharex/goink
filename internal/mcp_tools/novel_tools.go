@@ -3,6 +3,7 @@ package mcp_tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"novel/internal/chapter"
@@ -47,7 +48,7 @@ func (t *GetChapterListTool) Execute(ctx context.Context, args any, tc ToolConte
 		Order:      "desc",
 	})
 	if err != nil {
-		return &ToolResult{Success: false, Error: "查询章节列表失败"}, nil
+		return nil, fmt.Errorf("list chapters: %w", err)
 	}
 
 	items := make([]map[string]any, len(result.Items))
