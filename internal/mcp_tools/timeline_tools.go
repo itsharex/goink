@@ -17,7 +17,7 @@ import (
 
 // GetTimelineArgs 是 get_timeline 的参数。
 type GetTimelineArgs struct {
-	CurrentChapter int    `json:"current_chapter" jsonschema:"description=当前章节号。传入时自动收集附近条目并检测异常，此时忽略分页参数。写新章时必填"`
+	CurrentChapter int    `json:"current_chapter" jsonschema:"description=当前章节号。传入时自动收集附近条目并检测异常。写新章时必填"`
 	Category       string `json:"category" jsonschema:"description=按分类筛选,enum=foreshadowing,enum=user_directive"`
 	Status         string `json:"status" jsonschema:"description=按状态筛选,enum=pending,enum=resolved,enum=abandoned"`
 	PageArgs              // 嵌入分页参数（仅不传 current_chapter 时生效）
@@ -29,8 +29,8 @@ type GetTimelineTool struct{}
 func (t *GetTimelineTool) Name() string { return "get_timeline" }
 func (t *GetTimelineTool) Description() string {
 	return "获取故事时间线总览：章节计划（next/near/far）+ 伏笔和用户指令。两种用法：\n" +
-		"- 传入 current_chapter：自动收集附近条目（近期历史+未来+异常标记），无需分页参数\n" +
-		"- 不传 current_chapter：分页浏览条目（不含计划），可用 category/status 过滤"
+		"- 传入 current_chapter：自动收集附近条目（近期历史+未来+异常标记），不要传分页参数\n" +
+		"- 不传 current_chapter：分页浏览条目（不含计划），可用 category/status 过滤，需要传分页/过滤 参数"
 }
 func (t *GetTimelineTool) Category() ToolCategory { return CategoryMemoryRetrieval }
 
