@@ -133,14 +133,30 @@ func formatRelationEdges(rels []character.CharacterRelation, nameMap map[int64]s
 	if len(rels) == 0 {
 		return "暂无关系数据。"
 	}
-	lines := []string{"### 关系边"}
+
+	// 按源角色分组为邻接表
+	groups := make(map[int64][]character.CharacterRelation)
+	var order []int64
 	for _, rel := range rels {
-		line := fmt.Sprintf("- %s → %s [relation_id:%d]：%s",
-			nameMap[rel.SourceCharacterID], nameMap[rel.TargetCharacterID], rel.ID, rel.RelationDescribe)
-		if rel.Description != "" {
-			line += fmt.Sprintf("（%s）", rel.Description)
+		if _, ok := groups[rel.SourceCharacterID]; !ok {
+			order = append(order, rel.SourceCharacterID)
 		}
-		lines = append(lines, line)
+		groups[rel.SourceCharacterID] = append(groups[rel.SourceCharacterID], rel)
+	}
+
+	lines := []string{"### 角色关系"}
+	for _, srcID := range order {
+		srcName := nameMap[srcID]
+		var edges []string
+		for _, rel := range groups[srcID] {
+			edge := fmt.Sprintf("→ %s：%s [relation_id:%d]",
+				nameMap[rel.TargetCharacterID], rel.RelationDescribe, rel.ID)
+			if rel.Description != "" {
+				edge += fmt.Sprintf("（%s）", rel.Description)
+			}
+			edges = append(edges, edge)
+		}
+		lines = append(lines, fmt.Sprintf("- %s %s", srcName, strings.Join(edges, "、")))
 	}
 	return strings.Join(lines, "\n")
 }
