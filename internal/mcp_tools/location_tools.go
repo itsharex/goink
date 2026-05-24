@@ -21,8 +21,7 @@ type GetLocationsArgs struct {
 	LocationID   int64  `json:"location_id" jsonschema:"description=地点ID（detail模式必填）"                                                                    validate:"omitempty,min=1"`
 	LocationType string `json:"location_type" jsonschema:"description=按类型筛选（list模式可选）"`
 	Search       string `json:"search" jsonschema:"description=按名称搜索（list模式可选）"`
-	Page         int    `json:"page" jsonschema:"description=页码,default=1,minimum=1"                validate:"min=1,omitempty"`
-	Size         int    `json:"size" jsonschema:"description=每页数量,default=50,minimum=1,maximum=100"  validate:"min=1,max=100,omitempty"`
+	PageArgs             // 嵌入分页参数
 }
 
 // GetLocationsTool 获取地点信息，支持三种模式。
@@ -43,13 +42,7 @@ func (t *GetLocationsTool) NewArgs() any                { return &GetLocationsAr
 
 func (t *GetLocationsTool) Execute(ctx context.Context, args any, tc ToolContext) (*ToolResult, error) {
 	a := args.(*GetLocationsArgs)
-
-	if a.Page < 1 {
-		a.Page = 1
-	}
-	if a.Size < 1 || a.Size > 100 {
-		a.Size = 50
-	}
+	a.NormalizePage()
 
 	store := location.NewStore(tc.DB, slog.Default())
 
@@ -88,16 +81,10 @@ func (t *GetLocationsTool) executeList(ctx context.Context, a *GetLocationsArgs,
 		}
 	}
 
-	return &ToolResult{
-		Success: true,
-		Data: map[string]any{
-			"locations":   items,
-			"total":       result.Total,
-			"page":        result.Page,
-			"size":        result.Size,
-			"total_pages": result.TotalPages,
-		},
-	}, nil
+	data := PageMeta(result)
+	data["locations"] = items
+
+	return &ToolResult{Success: true, Data: data}, nil
 }
 
 func (t *GetLocationsTool) executeDetail(ctx context.Context, a *GetLocationsArgs, tc ToolContext, store *location.Store) (*ToolResult, error) {

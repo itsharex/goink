@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"novel/internal/session"
+	"novel/internal/storage"
 )
 
 // ── 接口 ──────────────────────────────────────────────
@@ -249,6 +250,34 @@ func AllowSet(allowed []string) map[string]bool {
 // allow 校验工具名是否在白名单中。nil set = 不限制。
 func allow(set map[string]bool, name string) bool {
 	return set == nil || set[name]
+}
+
+// ── 分页 ──────────────────────────────────────────────
+
+// PageArgs 是分页查询的公共参数，嵌入 Args 结构体即可。
+type PageArgs struct {
+	Page int `json:"page" jsonschema:"description=页码,default=1,minimum=1"                validate:"min=1,omitempty"`
+	Size int `json:"size" jsonschema:"description=每页数量,default=50,minimum=1,maximum=100"  validate:"min=1,max=100,omitempty"`
+}
+
+// NormalizePage 给 Page/Size 设默认值。
+func (p *PageArgs) NormalizePage() {
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.Size < 1 || p.Size > 100 {
+		p.Size = 50
+	}
+}
+
+// PageMeta 从 PageResult 提取分页元信息，供 ToolResult.Data 使用。
+func PageMeta[T any](r *storage.PageResult[T]) map[string]any {
+	return map[string]any{
+		"page":        r.Page,
+		"size":        r.Size,
+		"total":       r.Total,
+		"total_pages": r.TotalPages,
+	}
 }
 
 // ── JSON Schema 生成 ──────────────────────────────────

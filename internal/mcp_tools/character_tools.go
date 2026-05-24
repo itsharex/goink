@@ -17,9 +17,8 @@ import (
 
 // GetCharactersArgs 是 get_characters 的参数。
 type GetCharactersArgs struct {
-	Search string `json:"search" jsonschema:"description=角色名模糊搜索"`
-	Page   int    `json:"page"   jsonschema:"description=页码,default=1,minimum=1"    validate:"min=1,omitempty"`
-	Size   int    `json:"size"   jsonschema:"description=每页数量,default=50,minimum=1,maximum=100" validate:"min=1,max=100,omitempty"`
+	Search   string `json:"search" jsonschema:"description=角色名模糊搜索"`
+	PageArgs        // 嵌入分页参数
 }
 
 // GetCharactersTool 获取角色列表，截断 50 条，冷角色靠搜索。
@@ -39,13 +38,7 @@ func (t *GetCharactersTool) NewArgs() any                { return &GetCharacters
 
 func (t *GetCharactersTool) Execute(ctx context.Context, args any, tc ToolContext) (*ToolResult, error) {
 	a := args.(*GetCharactersArgs)
-
-	if a.Page < 1 {
-		a.Page = 1
-	}
-	if a.Size < 1 || a.Size > 100 {
-		a.Size = 50
-	}
+	a.NormalizePage()
 
 	store := character.NewStore(tc.DB, slog.Default())
 	result, err := store.ListByNovel(ctx, tc.NovelID, character.ListByNovelOptions{
@@ -66,16 +59,10 @@ func (t *GetCharactersTool) Execute(ctx context.Context, args any, tc ToolContex
 		}
 	}
 
-	return &ToolResult{
-		Success: true,
-		Data: map[string]any{
-			"characters":  items,
-			"total":       result.Total,
-			"page":        result.Page,
-			"size":        result.Size,
-			"total_pages": result.TotalPages,
-		},
-	}, nil
+	data := PageMeta(result)
+	data["characters"] = items
+
+	return &ToolResult{Success: true, Data: data}, nil
 }
 
 // ── get_character_relations ───────────────────────────

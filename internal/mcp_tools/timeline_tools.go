@@ -20,8 +20,7 @@ type GetTimelineArgs struct {
 	CurrentChapter int    `json:"current_chapter" jsonschema:"description=当前章节号。传入时自动收集附近条目并检测异常，此时忽略分页参数。写新章时必填"`
 	Category       string `json:"category" jsonschema:"description=按分类筛选,enum=foreshadowing,enum=user_directive"`
 	Status         string `json:"status" jsonschema:"description=按状态筛选,enum=pending,enum=resolved,enum=abandoned"`
-	Page           int    `json:"page" jsonschema:"description=页码,default=1,minimum=1"                validate:"min=1,omitempty"`
-	Size           int    `json:"size" jsonschema:"description=每页数量,default=50,minimum=1,maximum=100"  validate:"min=1,max=100,omitempty"`
+	PageArgs              // 嵌入分页参数（仅不传 current_chapter 时生效）
 }
 
 // GetTimelineTool 获取章节计划 + 伏笔/用户指令总览。
@@ -41,13 +40,7 @@ func (t *GetTimelineTool) NewArgs() any                { return &GetTimelineArgs
 
 func (t *GetTimelineTool) Execute(ctx context.Context, args any, tc ToolContext) (*ToolResult, error) {
 	a := args.(*GetTimelineArgs)
-
-	if a.Page < 1 {
-		a.Page = 1
-	}
-	if a.Size < 1 || a.Size > 100 {
-		a.Size = 50
-	}
+	a.NormalizePage()
 
 	store := timeline.NewStore(tc.DB, slog.Default())
 
@@ -108,10 +101,10 @@ func (t *GetTimelineTool) executeFull(ctx context.Context, a *GetTimelineArgs, t
 
 	formatted := formatTimelineFull(result.Items)
 
-	return &ToolResult{
-		Success: true,
-		Data:    map[string]any{"content": formatted},
-	}, nil
+	data := PageMeta(result)
+	data["content"] = formatted
+
+	return &ToolResult{Success: true, Data: data}, nil
 }
 
 // ── create_timeline_entry ───────────────────────────────
