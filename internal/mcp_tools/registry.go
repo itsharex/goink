@@ -8,4 +8,5 @@ func RegisterAllTools(r *Registry) {
 	RegisterReaderPerspectiveTools(r)
 	RegisterLocationTools(r)
 	RegisterTimelineTools(r)
+	RegisterStoryArcTools(r)
 }
