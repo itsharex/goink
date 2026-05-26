@@ -2,7 +2,7 @@
 
 ## 概述
 
-每部小说一个 Git 仓库，章节正文以 Markdown 文件存储在 `chapters/` 目录下，故事状态文档 `golink.md` 放在小说根目录。调用系统 Git CLI 执行所有版本控制操作，文件 I/O 走标准库 `os` 包。
+每部小说一个 Git 仓库，章节正文以 Markdown 文件存储在 `chapters/` 目录下，故事状态文档 `goink.md` 放在小说根目录。调用系统 Git CLI 执行所有版本控制操作，文件 I/O 走标准库 `os` 包。
 
 正文的版本历史、差异对比、回退走标准 Git 操作。章节元数据（标题、编号、字数等）存 SQLite，不在此包职责范围。
 
@@ -22,7 +22,7 @@
 
 ```
 {config.DataDir}/novels/{novel_id}/
-    golink.md              ← 故事状态文档（自由文本）
+    goink.md              ← 故事状态文档（自由文本）
     chapters/
         001.md
         002.md
@@ -94,7 +94,7 @@ git revert <turn-commit-hash>
 - 多 session 交错时只回退指定 session 的指定 turn，其他 session 不受影响
 - 有冲突时交给用户手动处理——这正是正确的行为
 - `Commit` 返回 commit hash，agent loop 在 session 元数据中记录 `turn → hash` 映射，回退时直接按 hash 定位，不依赖 commit 消息解析
-- `Revert` 调用 `git revert --no-edit`，合并冲突时仓库可能处于冲突状态，暂无自动恢复（TODO）
+- `Revert` 使用 `--no-commit` 逐个暂存，全部成功后统一 commit，保证原子性。任何一步冲突则 `--abort` 回滚所有暂存的 revert
 
 ## API
 
@@ -111,9 +111,9 @@ func (r *Repo) ChapterPath(num int) string                 // "chapters/001.md"
 func (r *Repo) ReadChapter(num int) (string, error)        // 读全文
 func (r *Repo) WriteChapter(num int, content string) error // 全量覆写，章节内容天然小（几千字），无需增量写入
 
-func (r *Repo) GolinkPath() string
-func (r *Repo) ReadGolink() (string, error)
-func (r *Repo) WriteGolink(content string) error
+func (r *Repo) GoinkPath() string
+func (r *Repo) ReadGoink() (string, error)
+func (r *Repo) WriteGoink(content string) error
 
 // ── Diff ──
 
@@ -125,7 +125,7 @@ func (r *Repo) DiffContent(path string, proposed string) (string, error)
 
 func (r *Repo) StageAll() error                            // git add -A
 func (r *Repo) Commit(msg string) (string, error)           // git commit，返回 commit hash
-func (r *Repo) HasUncommitted() bool                       // working tree 是否有未提交变更
+func (r *Repo) HasUncommitted() (bool, error)              // working tree 是否有未提交变更
 func (r *Repo) Revert(hashes []string) error               // git revert，逆序回退
 func (r *Repo) Log(path string, n int) ([]CommitInfo, error)
 
@@ -159,7 +159,7 @@ Git 包不实现 search/replace 逻辑，不感知审批流。
 | agent loop（turn 管理） | HasUncommitted, StageAll, Commit, Revert |
 | MCP edit_chapter 工具 | ReadChapter, WriteChapter, DiffContent |
 | MCP get_chapter_content 工具 | ReadChapter |
-| MCP 故事状态工具 | ReadGolink, WriteGolink, DiffContent |
+| MCP 故事状态工具 | ReadGoink, WriteGoink, DiffContent |
 | 审批流 | DiffContent |
 | 前端（用户手动编辑） | 编辑器 autosave 到文件（不经过此包），turn 开始时由 agent loop 检测并 commit |
 

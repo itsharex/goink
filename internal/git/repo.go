@@ -41,8 +41,8 @@ func New(novelDir, gitBin string) (*Repo, error) {
 		if err := os.MkdirAll(novelDir, 0755); err != nil {
 			return nil, fmt.Errorf("git: create novel dir: %w", err)
 		}
-		if out, err := r.run("init", novelDir); err != nil {
-			return nil, fmt.Errorf("git: init: %s: %w", out, err)
+		if _, stderr, err := r.runInDir("init", novelDir); err != nil {
+			return nil, fmt.Errorf("git: init: %s: %w", stderr, err)
 		}
 		gitkeep := filepath.Join(novelDir, "chapters", ".gitkeep")
 		if err := os.MkdirAll(filepath.Dir(gitkeep), 0755); err != nil {
@@ -51,10 +51,10 @@ func New(novelDir, gitBin string) (*Repo, error) {
 		if err := os.WriteFile(gitkeep, nil, 0644); err != nil {
 			return nil, fmt.Errorf("git: write .gitkeep: %w", err)
 		}
-		if _, err := r.runInDir("add", "chapters/.gitkeep"); err != nil {
+		if _, _, err := r.runInDir("add", "chapters/.gitkeep"); err != nil {
 			return nil, fmt.Errorf("git: stage .gitkeep: %w", err)
 		}
-		if _, err := r.runInDir("commit", "-m", "initial commit"); err != nil {
+		if _, _, err := r.runInDir("commit", "-m", "initial commit"); err != nil {
 			return nil, fmt.Errorf("git: initial commit: %w", err)
 		}
 	}
@@ -68,11 +68,12 @@ func (r *Repo) ChapterPath(num int) string {
 	return fmt.Sprintf("chapters/%03d.md", num)
 }
 
-func (r *Repo) GolinkPath() string {
-	return "golink.md"
+func (r *Repo) GoinkPath() string {
+	return "goink.md"
 }
 
 // ── 文件读写 ──────────────────────────────────────────────
+// 文件不存在的时候返回错误，调用方可以针对文件不存在返回空内容，底层工具保持通用，不直接返回空
 
 func (r *Repo) ReadChapter(num int) (string, error) {
 	return r.readFile(r.ChapterPath(num))
@@ -82,12 +83,12 @@ func (r *Repo) WriteChapter(num int, content string) error {
 	return r.writeFile(r.ChapterPath(num), content)
 }
 
-func (r *Repo) ReadGolink() (string, error) {
-	return r.readFile(r.GolinkPath())
+func (r *Repo) ReadGoink() (string, error) {
+	return r.readFile(r.GoinkPath())
 }
 
-func (r *Repo) WriteGolink(content string) error {
-	return r.writeFile(r.GolinkPath(), content)
+func (r *Repo) WriteGoink(content string) error {
+	return r.writeFile(r.GoinkPath(), content)
 }
 
 func (r *Repo) readFile(relPath string) (string, error) {
@@ -142,57 +143,62 @@ func (r *Repo) DiffContent(relPath, proposed string) (string, error) {
 	}
 	tmp.Close()
 
-	out, err := r.runInDir("diff", "--no-index", "--", fromPath, tmp.Name())
-	if err != nil && out == "" {
-		return "", fmt.Errorf("git: diff: %w", err)
+	stdout, stderr, err := r.runInDir("diff", "--no-index", "--", fromPath, tmp.Name())
+	// git diff 有差异时 exit 1，stdout 有内容；exit >1 才是真正的错误
+	if err != nil && stdout == "" {
+		return "", fmt.Errorf("git: diff: %s: %w", stderr, err)
 	}
-	out = strings.ReplaceAll(out, filepath.ToSlash(tmp.Name()), "/"+relPath)
+	stdout = strings.ReplaceAll(stdout, filepath.ToSlash(tmp.Name()), "/"+relPath)
 	if fromPath != relPath {
-		out = strings.ReplaceAll(out, filepath.ToSlash(fromPath), "/dev/null")
+		stdout = strings.ReplaceAll(stdout, filepath.ToSlash(fromPath), "/dev/null")
 	}
-	return out, nil
+	return stdout, nil
 }
 
 // ── Git 操作 ──────────────────────────────────────────────
 
 func (r *Repo) StageAll() error {
-	out, err := r.runInDir("add", "-A")
+	_, stderr, err := r.runInDir("add", "-A")
 	if err != nil {
-		return fmt.Errorf("git: stage all: %s: %w", out, err)
+		return fmt.Errorf("git: stage all: %s: %w", stderr, err)
 	}
 	return nil
 }
 
 func (r *Repo) Commit(msg string) (string, error) {
-	out, err := r.runInDir("commit", "-m", msg)
+	_, stderr, err := r.runInDir("commit", "-m", msg)
 	if err != nil {
-		return "", fmt.Errorf("git: commit: %s: %w", out, err)
+		return "", fmt.Errorf("git: commit: %s: %w", stderr, err)
 	}
-	hash, err := r.runInDir("rev-parse", "HEAD")
+	hash, _, err := r.runInDir("rev-parse", "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("git: rev-parse after commit: %s: %w", hash, err)
+		return "", fmt.Errorf("git: rev-parse after commit: %s: %w", stderr, err)
 	}
 	return strings.TrimSpace(hash), nil
 }
 
-func (r *Repo) HasUncommitted() bool {
-	out, err := r.runInDir("status", "--porcelain")
+func (r *Repo) HasUncommitted() (bool, error) {
+	out, _, err := r.runInDir("status", "--porcelain")
 	if err != nil {
-		return false
+		return false, fmt.Errorf("git: status: %w", err)
 	}
-	return strings.TrimSpace(out) != ""
+	return strings.TrimSpace(out) != "", nil
 }
 
 func (r *Repo) Revert(hashes []string) error {
-	// TODO: revert 过程中合并冲突会导致仓库处于冲突状态，暂无恢复机制。
-	// 未来需支持 --abort 或交互式冲突解决。
-	//
-	// 逆序处理：从最新到最旧
+	// 逆序使用 --no-commit，全部成功后再统一 commit，保证原子性。
+	// 某步冲突则 --abort 丢弃所有暂存的 revert。
+	//未来可实现冲突处理
 	for i := len(hashes) - 1; i >= 0; i-- {
-		out, err := r.runInDir("revert", "--no-edit", hashes[i])
+		_, stderr, err := r.runInDir("revert", "--no-commit", hashes[i])
 		if err != nil {
-			return fmt.Errorf("git: revert %s: %s: %w", hashes[i], out, err)
+			r.runInDir("revert", "--abort")
+			return fmt.Errorf("git: revert %s: %s: %w", hashes[i], stderr, err)
 		}
+	}
+	_, stderr, err := r.runInDir("commit", "-m", "revert turns")
+	if err != nil {
+		return fmt.Errorf("git: commit revert: %s: %w", stderr, err)
 	}
 	return nil
 }
@@ -206,11 +212,11 @@ func (r *Repo) Log(relPath string, n int) ([]CommitInfo, error) {
 		args = append(args, "--", relPath)
 	}
 
-	out, err := r.runInDir(args...)
+	stdout, stderr, err := r.runInDir(args...)
 	if err != nil {
-		return nil, fmt.Errorf("git: log: %s: %w", out, err)
+		return nil, fmt.Errorf("git: log: %s: %w", stderr, err)
 	}
-	return parseLog(out), nil
+	return parseLog(stdout), nil
 }
 
 func parseLog(out string) []CommitInfo {
@@ -224,7 +230,10 @@ func parseLog(out string) []CommitInfo {
 		if len(parts) < 3 {
 			continue
 		}
-		ts, _ := strconv.ParseInt(parts[2], 10, 64)
+		ts, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			continue
+		}
 		commits = append(commits, CommitInfo{
 			Hash:    parts[0],
 			Message: strings.SplitN(parts[1], "\n", 2)[0],
@@ -239,27 +248,16 @@ func parseLog(out string) []CommitInfo {
 
 // ── CLI ───────────────────────────────────────────────────
 
-func (r *Repo) run(args ...string) (string, error) {
-	return runCmd(r.gitBin, "", args...)
-}
-
-func (r *Repo) runInDir(args ...string) (string, error) {
+func (r *Repo) runInDir(args ...string) (stdout, stderr string, err error) {
 	return runCmd(r.gitBin, r.dir, args...)
 }
 
-func runCmd(gitBin, dir string, args ...string) (string, error) {
+func runCmd(gitBin, dir string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.Command(gitBin, args...)
 	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	// 优先返回 stdout（git diff 退出码 1 表示有差异，并非错误）
-	if stdout.Len() > 0 {
-		return stdout.String(), nil
-	}
-	if err != nil {
-		return stderr.String(), err
-	}
-	return "", nil
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err = cmd.Run()
+	return outBuf.String(), errBuf.String(), err
 }
