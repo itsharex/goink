@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
+import { useApp } from '@/hooks/useApp'
+import InitView from '@/views/InitView'
+import NovelListView from '@/views/NovelListView'
 
 type View = 'loading' | 'init' | 'novel-list'
 
 export default function App() {
   const [view, setView] = useState<View>('loading')
+  const app = useApp()
 
   useEffect(() => {
-    // TODO: 替换为真实的 Wails IPC 调用
-    // App.IsInitialized().then(ok => setView(ok ? 'novel-list' : 'init'))
-    const timer = setTimeout(() => setView('novel-list'), 500)
-    return () => clearTimeout(timer)
+    app.IsInitialized().then((ok) => setView(ok ? 'novel-list' : 'init'))
   }, [])
 
   if (view === 'loading') {
@@ -22,16 +23,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {view === 'init' && (
-        <div className="flex items-center justify-center min-h-screen">
-          <p>初始化页面（待实现）</p>
-        </div>
-      )}
-      {view === 'novel-list' && (
-        <div className="flex items-center justify-center min-h-screen">
-          <p>小说列表（待实现）</p>
-        </div>
-      )}
+      {view === 'init' && <InitView onInitialized={() => setView('novel-list')} />}
+      {view === 'novel-list' && <NovelListView />}
     </div>
   )
 }

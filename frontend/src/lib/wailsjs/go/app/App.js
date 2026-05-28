@@ -22,6 +22,10 @@ export function GetNovels() {
   return window['go']['app']['App']['GetNovels']();
 }
 
+export function GetPlatform() {
+  return window['go']['app']['App']['GetPlatform']();
+}
+
 export function GetSettings() {
   return window['go']['app']['App']['GetSettings']();
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrNotInitialized 表示指针文件不存在，应用尚未完成首次初始化。没初始化弹出来初始化界面，如果初始化了但是还是出错就谈配置错误恢复
@@ -84,9 +85,24 @@ func Load() (*AppConfig, error) {
 	return cfg, nil
 }
 
-// Save 将数据目录路径写入指针文件。
+// expandTilde 将路径开头的 ~ 替换为当前用户主目录。
+func expandTilde(path string) string {
+	if path == "" || path == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+// Save 将数据目录路径写入指针文件。自动展开开头 ~ 符号。
 // 如果 ~/.goink/ 目录不存在则自动创建。
 func Save(dataDir string) error {
+	dataDir = expandTilde(dataDir)
+
 	dir, err := configDir()
 	if err != nil {
 		return err

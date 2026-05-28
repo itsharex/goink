@@ -13,6 +13,7 @@ models/
 # Build output
 /bin/
 /dist/
+/build/
 
 # Go
 *.mod.cache

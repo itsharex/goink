@@ -14,6 +14,8 @@ export function GetChapters(arg1:number):Promise<Array<chapter.Chapter>>;
 
 export function GetNovels():Promise<Array<novel.Novel>>;
 
+export function GetPlatform():Promise<Record<string, any>>;
+
 export function GetSettings():Promise<config.AppSettings>;
 
 export function Initialize(arg1:string):Promise<void>;
