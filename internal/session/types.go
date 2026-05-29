@@ -43,6 +43,8 @@ type Message struct {
 	ToAPI         bool      `gorm:"column:to_api;not null;default:1;index"                       json:"to_api"`                    // LLM context 是否需要此消息
 	ToFrontend    bool      `gorm:"column:to_frontend;not null;default:1;index"                  json:"to_frontend"`               // 前端是否需要渲染此消息
 	EventType     string    `gorm:"column:event_type"                                             json:"event_type,omitempty"`      // "compression" | "interrupt" | "error" | ""
+	AgentType     string    `gorm:"column:agent_type;not null;default:'main';index"              json:"agent_type"`                // "main" | "review" | "memory"
+	ParentTurnID  *int      `gorm:"column:parent_turn_id;index"                                  json:"parent_turn_id,omitempty"`  // 子 agent 消息指向触发它的主 turn，主 agent 为 NULL
 	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime;index"                       json:"created_at"`
 }
 

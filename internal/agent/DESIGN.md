@@ -4,67 +4,87 @@
 
 Agent Loop 是对话系统的编排核心——接收消息列表，调用 LLM 流式接口，解析 tool_calls 并执行工具，将结果追加回消息列表，循环直到 LLM 不再调用工具或达到上限。
 
-与 Python `core/agent_loop.py` 逻辑等价，但取消了 WebSocket 推送和 asyncio 回调模型，改用 channel 事件流 + function 字段。
+与 Python `core/agent_loop.py` 逻辑等价。Go 版无需 Python 的 5 个回调——async SQLAlchemy session 管理、消息打标、display 生成等 Python 必须的外部依赖，在 Go 中或不需要或由 loop 内置。唯一差异是事件推送直接 import Wails runtime，不注入。
 
 ## 整体流程
 
 ```
-app handler:
+app chat handler:
 
-  1. sess := store.DB.First(&Session{}, "session_id = ?", id)
-  2. apiMsgs := store.GetMessagesForAPI(sessionID, sess.ActiveVersion)
-  3. toolDefs := registry.BuildOpenAIFunctions()     // 运行时拼接
-  4. messages := append(toolDefs, apiMsgs...)          // toolDefs 在最前面
+  1. sess := sessionStore.DB.First(&Session{}, "session_id = ?", id)
+  2. apiMsgs := sessionStore.GetMessagesForAPI(sessionID, sess.ActiveVersion)
+  3. toolDefs := registry.OpenAI(toolAllowlist)
+  4. system2 := agentcfg.System2(db, novelID)
+  5. messages := append([system1, system2], apiMsgs...)
 
-  5. agent.Run(ctx, RunOptions{
-       SessionID:     sess.SessionID,
-       NovelID:       sess.NovelID,
-       Messages:      messages,
-       Tools:         toolDefs,
-       ActiveVersion: sess.ActiveVersion,
-       Model:         sess.Model,
+  6. turnID := sessionStore.NextTurn(ctx, sessionID)
+  7. agent := &Agent{llm: llmClient, registry: registry, db: db, logger: log}
+  8. result := agent.Run(ctx, RunOptions{
+        TurnID: turnID, SessionID: sessionID, NovelID: novelID,
+        Messages: messages, AllowedTools: mainAgentAllowlist, AgentType: "main", ...
      })
-
-  6. for event := range eventCh {
-       wails.EventsEmit("agent:"+taskID, event)
-       if event.Type == EventUsage {
-         store.UpdateSessionUsage(sessionID, event.UsageJSON)
-       }
-     }
+  9. sessionStore.UpdateSessionUsage(sessionID, ...)
 ```
 
 ## Agent 结构
 
-使用 function 字段而非单方法 interface——Go 标准库风格（参考 `http.HandlerFunc`、`context.CancelFunc`）：
-
 ```go
 type Agent struct {
-    llm          *llm.Client
-    executeTool  func(ctx context.Context, name string, rawArgs json.RawMessage, tc ToolContext) *ToolResult
-    buildDisplay func(ctx context.Context, name string, args map[string]any, phase DisplayPhase) *DisplayInfo
-    persistMsg   func(ctx context.Context, msg *session.Message) error
-    logger       *slog.Logger
+    llm      *llm.Client
+    registry *mcp_tools.Registry
+    db       *gorm.DB
+    logger   *slog.Logger
 }
 
 type RunOptions struct {
-    SessionID     string
-    NovelID       int64
-    Messages      []map[string]any
-    Tools         []map[string]any
-    ActiveVersion int
-    Model         string
-    MaxTurns      int               // 默认 50
-    MaxContextTokens int            // 默认 800000
+    TurnID           int             // 当前 turn 编号，调用方 NextTurn() 后传入
+    SessionID        string
+    NovelID          int64
+    Messages         []map[string]any
+    AllowedTools     map[string]bool // 工具白名单，Tools 在 Run() 内部通过 registry.OpenAI() 生成
+    ActiveVersion    int
+    Model            *llm.ModelInfo   // 模型完整信息（ID + ContextWindow 等），调用方从 Provider 查
+    AgentType        string          // "main" | "review" | "memory"
+    ParentTurnID     *int            // 子 agent 指向触发它的主 turn，主 agent 为 nil
+    MaxTurns         int             // 默认 50
+    MaxContextTokens int             // 默认 800000
+}
+
+type AgentLoopResult struct {
+    FinalText string
+    TurnCount int
 }
 ```
 
-三个 function 字段的职责：
+Python 的 5 个回调在 Go 中消解为直接调用：
 
-| 字段 | 职责 | 调用时机 |
-|------|------|---------|
-| `executeTool` | 执行 MCP 工具，返回结果 | tool_call_end 事件到达时 |
-| `buildDisplay` | 生成展示文本（selected/executing/completed/failed） | 工具生命周期各阶段 |
-| `persistMsg` | 消息即时持久化到 DB | 每拼一条消息立刻调用 |
+| Python 回调 | Go 等价 | 原因 |
+|---|---|---|
+| `tool_call_handler` | `a.registry.Execute(ctx, name, rawArgs, tc, opts.AllowedTools)` | Registry 是 Agent 字段，白名单通过 RunOptions 注入 |
+| `display_handler` | `a.buildDisplay(name, args, phase)` | 主和子逻辑完全相同，内置为 Agent 方法 |
+| `on_message` | `a.db.Create(&msg)` + 内存追加 | 持久化就一行，不需要注入不同实现 |
+| `on_usage` | 调用方从 `EventUsage` 自行 `UpdateSessionUsage` | 与循环逻辑无关，事后处理 |
+| `ws_manager.send_personal_message` | 直接 `wails.EventsEmit("agent:"+turnID, event)` | internal/ 可以 import Wails，无需回调 |
+
+### 事件推送
+
+Agent 直接调用 `wails.EventsEmit("agent:"+strconv.Itoa(turnID), event)`，无回调。子 agent 时事件名用 `parentTurnID`，前端在对应的主 turn 分组下渲染子 agent 行为。
+
+### turn_id 替代 task_id
+
+Python 用 `task_id`（随机 UUID）关联事件到前端。Go 中所有消息和事件已天然绑定 `turn_id`（session 自增计数器），因此 `RunOptions.TurnID` 直接作为事件关联标识。
+
+### 主 Agent / 子 Agent 复用
+
+同一个 `Agent.Run()` 被主和子共用。差异在 `RunOptions` 字段值，不在代码路径：
+
+| | 主 Agent | 子 Agent（review/memory） |
+|---|---|---|
+| `AgentType` | `"main"` | `"review"` / `"memory"` |
+| `ParentTurnID` | `nil` | `&parentTurnID` |
+| `AllowedTools` | mainAgentAllowlist | reviewAllowlist / memoryAllowlist |
+| 事件推送 | `wails.EventsEmit("agent:"+turnID, ...)` | `wails.EventsEmit("agent:"+parentTurnID, ...)` |
+| Messages | session 历史 | 独立的 `[system, user]` |
 
 ## ToolContext 和 ToolResult
 
@@ -85,23 +105,24 @@ type ToolResult struct {
 }
 
 type InjectMessage struct {
-    Role    string             // "user" | "system"
-    Content string
+    Role    string // 始终为 "user"（中间插入 system 不符合 API 规范）
+    Content string // 追加时以 <system-reminder> 包裹，LLM 区分系统注入与用户输入
 }
 ```
 
 ## DisplayPhase
 
-展示文本分三阶段（Python 同样）：
+展示文本分五阶段（Python 同样，Go 增加了 `PhaseCancelled`）：
 
 ```go
 type DisplayPhase int
 
 const (
-    PhaseSelected  DisplayPhase = iota  // tool_call_start，工具被选中
-    PhaseExecuting                      // 参数解析完毕，开始执行
-    PhaseCompleted                      // 执行成功
-    PhaseFailed                         // 执行失败
+    PhaseSelected  DisplayPhase = iota // tool_call_start，工具被选中
+    PhaseExecuting                     // 参数解析完毕，开始执行
+    PhaseCompleted                     // 执行成功
+    PhaseFailed                        // 执行失败
+    PhaseCancelled                     // 用户取消
 )
 
 type DisplayInfo struct {
@@ -111,143 +132,211 @@ type DisplayInfo struct {
 }
 ```
 
+`buildDisplay` 是 Agent 的私有方法，主和子逻辑完全相同，loop 内置。需要查 DB 获取名称时直接使用 `a.db`。
+
 ## AgentEvent — 实时推送前端
+
+前端需要感知 6 类实时事件。Go 版用 `emitEvent(AgentEvent)` 回调替代 Python 的 WebSocket push：
 
 ```go
 type AgentEventType int
 
 const (
-    EventThinking      AgentEventType = iota  // DeepSeek reasoning_content
-    EventThinkingDone                          // 思考结束
-    EventContent                               // 文本 chunk
-    EventToolCall                              // 工具调用状态变化
-    EventToolCallArgs                          // 工具参数流式（edit_chapter 实时预览）
-    EventUsage                                 // token 用量
-    EventDone                                  // 循环结束
-    EventError                                 // 错误
+    EventThinking     AgentEventType = iota // reasoning_content 流式文本
+    EventThinkingDone                       // 思考阶段结束
+    EventContent                            // 正文流式文本
+    EventToolCall                           // 工具调用状态变化（selected/executing/completed/failed/loop_detected）
+    EventUsage                              // 每次 LLM 调用的 token 用量
+    EventError                              // 不可恢复错误
 )
 
 type AgentEvent struct {
+    TurnID    int               // 当前 turn 编号
     Type      AgentEventType
-    Data      string         // thinking/content 文本
-    Phase     string         // selected/executing/completed/failed/loop_detected
-    ToolName  string
-    ToolID    string
-    ToolArgs  map[string]any
-    Result    *ToolResult
-    Display   *DisplayInfo
-    Usage     map[string]any
-    FinalText string
-    TurnCount int
-    Error     error
+    Data      string            // thinking / content 文本 chunk
+    ToolName  string            // EventToolCall 时
+    ToolID    string            // EventToolCall 时  
+    Phase     string            // "selected" | "executing" | "completed" | "failed" | "cancelled" | "loop_detected"
+    ToolArgs  map[string]any    // 工具参数快照
+    Result    *ToolResult       // 执行完毕后携带
+    Display   *DisplayInfo      // buildDisplay 产出
+    Usage     map[string]any    // EventUsage 时，含 usage_ratio / detail 分角色计数
+    FinalText string            // EventDone / 中断时
+    Error     error             // EventError 时
 }
 ```
+
+与 Python 事件的对应关系：
+
+| Python WebSocket `type` | Go AgentEvent |
+|---|---|
+| `thinking_chunk` | `EventThinking`（Data = chunk） |
+| `thinking_done` | `EventThinkingDone` |
+| `content_chunk` | `EventContent`（Data = chunk） |
+| `tool_call` (phase=selected/executing/completed/failed) | `EventToolCall`（Phase 区分） |
+| `system_warning` | 不单独发事件，注入 system 消息后由 `persistMsg` 持久化，前端从消息列表获取 |
+| `usage` | `EventUsage`（Usage = API raw + usage_ratio + detail） |
 
 ## 核心循环
 
 ```
-while turn < maxTurns:
-    toolOutputs := []
+func (a *Agent) Run(ctx, opts RunOptions) (AgentLoopResult, error):
+    loopCount := 0
+    fullResponse := ""
     responseBuffer := ""
     thinkingBuffer := ""
     isThinking := false
+    recentPatterns := []string{}
+    failCnt := map[string]int{}
+    runningTokens := initRunningTokens(opts.Messages)
 
-    for event := range llm.ChatStream(messages, tools, model):
+    while loopCount < opts.MaxTurns:
+        toolOutputs := []toolOutput{}
+        pendingInjects := map[string][]InjectMessage{}
 
-        // ---- 取消检查 ----
-        select case <-ctx.Done():
-            return partial response
+        tools := a.registry.OpenAI(opts.AllowedTools)
+        for event := range a.llm.ChatStream(ctx, opts.Messages, tools, opts.Model.ID, nil):
+            select case <-ctx.Done():
+                // 中断时保存 partial
+                if responseBuffer != "" || thinkingBuffer != "":
+                    a.appendMsg("assistant", responseBuffer,
+                        {thinking_content: thinkingBuffer}, opts)
+                return AgentLoopResult{fullResponse, loopCount}, ctx.Err()
 
-        case = "thinking":
-            isThinking = true
-            thinkingBuffer += event.Data
-            eventCh <- EventThinking
+            switch event.Type:
+            case EventThinking:
+                isThinking = true
+                thinkingBuffer += event.Data
+                wails.EventsEmit("agent:"+turnID, AgentEvent{Type: EventThinking, Data: event.Data})
 
-        case = "content":
-            if isThinking: eventCh <- EventThinkingDone; isThinking = false
-            responseBuffer += event.Data
-            eventCh <- EventContent
+            case EventContent:
+                if isThinking { wails.EventsEmit(...EventThinkingDone); isThinking = false }
+                responseBuffer += event.Data
+                fullResponse += event.Data
+                wails.EventsEmit("agent:"+turnID, AgentEvent{Type: EventContent, Data: event.Data})
 
-        case = "tool_call_start":
-            eventCh <- EventThinkingDone
-            info := buildDisplay(name, {}, PhaseSelected)
-            eventCh <- EventToolCall{Phase: "selected", Display: info}
+            case EventToolCallStart:
+                if isThinking { wails.EventsEmit(...EventThinkingDone); isThinking = false }
+                display := a.buildDisplay(name, nil, PhaseSelected)
+                wails.EventsEmit("agent:"+turnID, AgentEvent{
+                    Type: EventToolCall, ToolName: name, ToolID: id,
+                    Phase: "selected", Display: display})
 
-        case = "tool_call_arguments":
-            eventCh <- EventToolCallArgs{name, argsText}
+            case EventToolCallEnd:
+                display := a.buildDisplay(name, args, PhaseExecuting)
+                wails.EventsEmit("agent:"+turnID, AgentEvent{
+                    Type: EventToolCall, ToolName: name, ToolID: id,
+                    Phase: "executing", Display: display})
 
-        case = "tool_call_end":
-            // Phase executing
-            buildDisplay(name, args, PhaseExecuting)
-            eventCh <- EventToolCall{Phase: "executing"}
+                tc := mcp_tools.ToolContext{DB: a.db, NovelID: opts.NovelID, ToolID: id}
+                result := a.registry.Execute(ctx, name, rawArgs, tc, opts.AllowedTools)
 
-            // 执行工具
-            result := executeTool(name, rawArgs, ToolContext{DB, NovelID, toolID})
+                phase := "completed"
+                if !result.Success { phase = "failed" }
+                display = a.buildDisplay(name, args, phase)
+                wails.EventsEmit("agent:"+turnID, AgentEvent{
+                    Type: EventToolCall, ToolName: name, ToolID: id,
+                    Phase: phase, Result: result, Display: display})
 
-            // Phase completed/failed
-            phase := "completed" / "failed"
-            buildDisplay(name, args, phase)
-            eventCh <- EventToolCall{Phase: phase, Result: result}
+                // 失败计数
+                if !result.Success && result.ErrKind == "system":
+                    failCnt[name]++
+                else:
+                    failCnt[name] = 0
+                if failCnt[name] >= 3:
+                    a.appendMsg("system", "工具 "+name+" 已连续失败 3 次，已被禁用", nil, opts)
 
-            // 失败计数：仅系统异常 (ErrKind="system") 计入，业务错误不计数
-            if !result.Success && result.ErrKind == "system":
-                failCnt[toolName]++
-            else:
-                failCnt[toolName] = 0
-            if failCnt[toolName] >= 3:
-                // 注入 system 警告，提醒 LLM 停用该工具
-            // Inject 暂存
+                if result.Inject != nil:
+                    pendingInjects[id] = result.Inject
 
-            toolOutputs += {name, toolID, args, result}
+                toolOutputs = append(toolOutputs, {name, id, rawArgs, result})
 
-        case = "usage":
-            eventCh <- EventUsage
+            case EventUsage:
+                a.updateUsage(event.Usage, runningTokens, opts)
 
-    // ---- 流结束 ----
+        // ---- 流结束 ----
+        if len(toolOutputs) == 0:
+            if isThinking { wails.EventsEmit(...EventThinkingDone) }
+            break
 
-    if len(toolOutputs) > 0:
-        // 1. 拼 assistant+tool_calls 消息 → persist + append messages
-        // 2. 拼 tool 结果消息 ×N → persist + append messages
-        // 3. 拼 inject 消息 ×N → persist + append messages
-        // 4. 死循环检测 → 触发时注入 system 警告
-        // 5. Token 预算检查 → 超限时注入 system 警告
-        // 6. agentEventCh <- EventToolCall{Phase: "loop_detected"}（如果触发）
-        turn++
-    else:
-        break
+        // 1. assistant + tool_calls
+        a.appendMsg("assistant", responseBuffer,
+            {tool_calls: buildToolCalls(toolOutputs), thinking_content: thinkingBuffer}, opts)
 
-eventCh <- EventDone{FinalText, TurnCount}
+        // 2. tool 结果
+        for _, to := range toolOutputs:
+            a.appendMsg("tool", to.resultJSON(),
+                {tool_call_id: to.id, tool_name: to.name}, opts)
+
+        // 3. inject（role=user，<system-reminder> 包裹；to_frontend 由 appendMsg 的 role=="assistant" 规则排除）
+        for _, to := range toolOutputs:
+            for _, inj := range pendingInjects[to.id]:
+                a.appendMsg("user", "<system-reminder>\n"+inj.Content+"\n</system-reminder>", nil, opts)
+
+        // 4. 死循环检测
+        if isStuckLoop(recentPatterns, toolOutputs, loopCount):
+            a.appendMsg("system", "检测到重复调用模式，请基于已有信息直接输出", nil, opts)
+            wails.EventsEmit("agent:"+turnID,
+                AgentEvent{Type: EventToolCall, Phase: "loop_detected"})
+
+        // 5. token 预算 → 超限时触发压缩（暂占位）
+        if sumRunningTokens(runningTokens) > opts.MaxContextTokens:
+            a.compress(opts)  // TODO: 上下文压缩，暂时占位
+
+        thinkingBuffer = ""
+        responseBuffer = ""
+        loopCount++
+
+    return AgentLoopResult{fullResponse, loopCount}, nil
 ```
 
-## 消息持久化（agent 内部）
+## appendMsg — 消息构造与持久化
 
-每 turn 工具调用完成后，逐条拼消息并立即 persist + 追加到内存 messages：
+Loop 内部统一的追加入口，覆盖 loop 产生的所有消息（assistant / tool / system）。两个 bool 完全由 `RunOptions` 和 `role` 推导：
 
+```go
+func (a *Agent) appendMsg(role, content string, extra map[string]any, opts RunOptions) {
+    msg := &session.Message{
+        SessionID:    opts.SessionID,
+        TurnID:       opts.TurnID,
+        AgentType:    opts.AgentType,
+        ParentTurnID: opts.ParentTurnID,
+        Role:         role,
+        Content:      content,
+        ExtraMetadata: extra,
+        Version:      opts.ActiveVersion,
+        ToAPI:        opts.AgentType == "main",  // 主全 true，子全 false
+        ToFrontend:   role == "assistant",        // 只有 assistant 展示
+    }
+    a.db.Create(&msg)
+    opts.Messages = append(opts.Messages, msg.ToAPIFormat())
+    runningTokens[role] += llm.CountMessageTokens(apiFormat)
+}
 ```
-1. assistant 消息（带 tool_calls + reasoning_content）
-   msg := session.Message{
-       Role: "assistant", Content: responseBuffer,
-       ExtraMetadata: {tool_calls, thinking_content},
-       Version: activeVersion, ToAPI: true, ToFrontend: true,
-   }
-   persistMsg(msg)
-   messages = append(messages, msg.ToAPIFormat())
 
-2. tool 结果消息 ×N
-   persistMsg(role="tool", content=resultJSON,
-              extra_metadata={tool_call_id}, version=activeVersion)
-   messages = append(...)
+| role | ToAPI | ToFrontend | 说明 |
+|------|-------|------------|------|
+| assistant | AgentType=="main" | **true**（永远） | loop 产生的正常响应文本 |
+| tool | AgentType=="main" | **false**（永远） | 工具执行结果，前端不渲染 |
+| system | AgentType=="main" | **false**（永远） | 安全警告、预算警告 |
+| user (inject) | AgentType=="main" | **false**（永远） | 隐式排除——loop 不产生普通 user 消息，唯一 user 是 inject |
 
-3. inject 消息 ×N（紧随对应 tool 后）
-   persistMsg(role=inject.Role, content=inject.Content,
-              version=activeVersion, to_frontend=false)
-   messages = append(...)
+`role == "assistant"` 规则天然覆盖所有情况：assistant 给前端展示，tool/system/inject-user 均不展示。普通用户输入在 loop 外由调用方自行构造，不走 appendMsg。
 
-4. 安全警告（如果触发）
-   persistMsg(role="system", content=warning,
-              version=activeVersion, to_frontend=false)
-   messages = append(...)
-```
+主 agent 全部 `ToAPI = true`，子 agent 全部 `ToAPI = false`。`ToFrontend` 只有 assistant 为 true，tool 和 system 前端不需要显示。
+
+## 辅助函数（抽离到独立文件）
+
+循环体涉及较多细节，以下抽为独立方法避免 Run 方法膨胀：
+
+| 方法 | 职责 |
+|------|------|
+| `buildDisplay(name, args, phase) *DisplayInfo` | 展示文本生成，内置默认实现 |
+| `updateUsage(apiUsage, runningTokens, opts)` | 计算 usage_ratio + 分角色计数 → 持久化 + 推送前端 |
+| `initRunningTokens(msgs)` | 逐消息 token 计数初始化 |
+| `isStuckLoop(patterns, outputs, loopCount)` | 死循环检测 |
+| `buildToolCalls(outputs)` | tool_calls JSON 数组构造 |
+| `compress(opts)` | 上下文压缩，超预算时调用（暂占位） |
 
 ## 安全机制
 
@@ -255,7 +344,7 @@ eventCh <- EventDone{FinalText, TurnCount}
 |------|------|-----------|
 | 工具失败降级 | 同工具连续系统异常（ErrKind="system"）3 次 | persist system 警告（to_api=true, to_frontend=false）。业务错误（ErrKind=""）不计数——LLM 换个参数就能成功 |
 | 死循环检测 | 最近 4 轮 ≤2 种模式 + 全是只读工具 + turn≥4 | persist system 警告 + push loop_detected 事件 |
-| Token 预算 | tiktoken 逐消息计数 > maxContextTokens | persist system 警告 |
+| Token 预算 | runningTokens > maxContextTokens | 触发 `compress()` 压缩上下文（暂占位，后续接 session 压缩逻辑） |
 | 取消 | ctx.Done() 在每收到 SSE event 时检查 | 返回当前 partial 文本 |
 
 只读工具集合：`search_story_memory`、`get_timeline`、`get_chapter_content`、`get_chapter_list`、`get_characters`、`get_locations`、`get_novel_info`、`get_creative_profile`、`get_story_arcs`、`get_story_state`、`get_reader_perspective`
@@ -264,54 +353,80 @@ eventCh <- EventDone{FinalText, TurnCount}
 
 | | Python | Go |
 |---|---|---|
-| 通信 | `ws_manager.send_personal_message` | `eventCh <- AgentEvent` |
-| 工具执行 | `tool_call_handler` 闭包 | `executeTool` function 字段 |
-| 展示文本 | `display_handler` 闭包 | `buildDisplay` function 字段 |
-| 消息持久化 | `on_message` 闭包 | `persistMsg` function 字段 |
-| 用量持久化 | `on_usage` 闭包 | 调用方从 EventUsage 自行持久化 |
+| 回调数量 | 5 个（tool_call / display / on_args / on_message / on_usage） | 0 个 |
+| 工具执行 | `tool_call_handler` 闭包（注入 session、allowed 等） | `a.registry.Execute()`，Agent 持有 registry + allowedTools |
+| 消息持久化 | `on_message` 闭包 → session_manager | `a.db.Create(&msg)`，Agent 持有 db |
+| 展示文本 | `display_handler` 闭包 | `a.buildDisplay()` 内置方法 |
+| 事件推送 | `ws_manager.send_personal_message` import 后直接调 | `wails.EventsEmit` import 后直接调 |
+| 消息打标 | `on_message` 包装函数给 dict 塞 `source`/`agent_type` | `Message.AgentType` / `ParentTurnID` 构造时直接赋值 |
+| 事件关联 | 随机 `task_id` UUID | 自增 `turn_id` |
 | 取消 | `asyncio.Event` | `context.Context` |
-| 回调模型 | 5 个闭包参数 | 3 个 function 字段 + event channel |
-
-### function 字段 vs interface
-
-Python 的设计模式是闭包回调——在 `ws_chat.py` 中定义 `_handle_tool`、`_display`、`_on_message` 等闭包捕获 `registry`、`session`、`websocket`、`novel_id` 等上下文，然后传给 `run_agent_loop`。
-
-Go 采用 function 字段而非单方法 interface：
-
-- **相同的灵活性**：调用方同样用闭包捕获 DB、registry、session 等
-- **零样本代码**：不需要声明 `type XxxExecutor interface { Execute(...) }` 再写 `type impl struct{}` 再 `func (i impl) Execute(...)`
-- **Go 标准库先例**：`http.HandlerFunc`、`context.CancelFunc`、`io.ReaderFunc`（提案中）
-
-当 function 字段需要多方法时（如 ToolRegistry 既有 List 又有 Execute），再抽 interface。单方法优先用 func。
+| 子 agent 消息可见性 | `to_api = true`（污染上下文） | `to_api = false`（隔离） |
 
 ## 与子 Agent 的关系
 
-Python 中 `run_subagent` 工具复用了 `run_agent_loop`，传不同的 system prompt + 工具白名单 + max_turns：
+Python 中 `run_subagent` 工具复用了 `run_agent_loop`，传不同的 system prompt + 工具白名单 + max_turns。Go 同样复用——创建 Agent 实例时设不同的 `allowedTools` + `AgentType` + `ParentTurnID`，`Run` 方法完全相同。
 
-```python
-run_agent_loop(
-    messages=sub_messages,
-    tools=sub_tools,           # 白名单工具
-    tool_call_handler=sub_handler,  # 白名单门控
-    max_turns=20,
-    # ...其他回调复用
-)
+## Message Schema 调整
+
+### agent_type 升级为顶层字段
+
+Python 把 `source: "subagent"` 和 `agent_type` 塞在 `extra_metadata` JSON 里——无法查询、无法索引、每次要 Unmarshal。Go 版在 `session.Message` 上新增列：
+
+```go
+type Message struct {
+    // ... 原有字段 ...
+    AgentType    string `gorm:"column:agent_type;not null;default:'main';index" json:"agent_type"`
+    // "main" | "review" | "memory"
+}
 ```
 
-Go 同样复用——创建 Agent 实例时注入不同的 `executeTool`（带白名单校验）、`buildDisplay`、`persistMsg`，其他逻辑完全相同。
+### parent_turn_id
 
-## 排序规则
+子 agent 的消息记录其触发来源，用于审计和前端按 turn 分组渲染：
 
-- **消息追加**：`created_at ASC`（时序不可逆）
-- **工具执行结果**：按 LLM 返回顺序，不做重排
-- **并发限制**：工具串行执行（跟随 LLM 的 tool_calls 顺序）
+```go
+    ParentTurnID *int  `gorm:"column:parent_turn_id;index" json:"parent_turn_id,omitempty"`
+    // 主 agent 消息为 NULL，子 agent 消息指向触发它的主 turn
+```
+
+### 子 agent 消息 to_api = false
+
+Python 把子 agent 的全部内部 tool call 历史不加区分地喂回主 agent 的下一轮上下文，浪费大量 token。Go 版子 agent 消息的可见性：
+
+| 消息 | to_api | to_frontend | 说明 |
+|------|--------|-------------|------|
+| 子 agent 内部消息（system/user/tool_call/tool_result） | false | true | 前端嵌套渲染子 agent 行为，但不污染主 LLM 上下文 |
+| 子 agent final_text 消息 | false | true | `persistMsg` 单独持久化一条 role="assistant"、agent_type="review" 的消息，前端渲染报告内容 |
+| run_subagent 工具结果 | true | false | 主 LLM 看到 report 文本，前端不需要看原始 JSON |
+
+两条路径各一条消息：主 LLM 通过工具结果看到子 agent 报告，前端通过 `to_frontend = true` 的消息渲染完整嵌套视图。不重复。
 
 ## 与其他模块的关系
 
 | 模块 | 关系 |
 |------|------|
 | `llm` | Agent 持有 `*llm.Client`，调 `ChatStream` |
-| `session` | 每消息即时 `persistMsg`，turn 结束 update usage |
-| `mcp` | 工具定义从 registry 生成，执行通过 `executeTool` function |
-| `context` | 调用方在进 loop 前组装好 messages，agent 不管 |
-| `app` | app handler 创建 Agent 实例，注入 function 字段，消费 event channel |
+| `mcp_tools` | Agent 持有 `*Registry` + `allowedTools`，调 `Execute` 和 `OpenAI` |
+| `session` | Agent 直接 `db.Create(&msg)`，调用方负责 `GetMessagesForAPI` / `NextTurn` / `UpdateSessionUsage` |
+| `agentcfg` | 调用方从 `system1.go` 取 system prompt + 工具白名单，从 `system2.go` 取上下文快照 |
+| `app` | `chat.go` 创建 Agent 实例，组装 `RunOptions`，调 `Run` |
+
+## 实现路线
+
+### 前置：Message Schema
+
+1. `session.Message` 新增 `AgentType string` + `ParentTurnID *int` 列
+2. `migrate` 中 AutoMigrate 更新
+
+### Agent Loop 主文件
+
+3. `internal/agent/events.go` — `AgentEventType` + `AgentEvent` + `AgentLoopResult` 类型定义
+4. `internal/agent/agent.go` — `Agent` struct + `RunOptions` + `New()` + `Run()` 核心循环
+5. `internal/agent/display.go` — `buildDisplay(name, args, phase) *DisplayInfo`
+6. `internal/agent/safety.go` — `isStuckLoop()` + `toolPattern()` + `allReadOnly()`
+7. `internal/agent/tokens.go` — `initRunningTokens()` + `enrichUsage()` + `sumRunningTokens()`
+
+### 对接 app 层
+
+8. `app/chat.go` — 实现 `Chat()` Wails 绑定：组装 messages → 创建 Agent → 调 `Run`
