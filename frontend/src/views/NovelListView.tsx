@@ -5,7 +5,11 @@ import NovelCard from '@/components/novel/NovelCard'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 
-export default function NovelListView() {
+interface Props {
+  onNovelClick: (novel: novel.Novel) => void
+}
+
+export default function NovelListView({ onNovelClick }: Props) {
   const app = useApp()
   const [novels, setNovels] = useState<novel.Novel[]>([])
   const [showCreate, setShowCreate] = useState(false)
@@ -57,9 +61,7 @@ export default function NovelListView() {
                 <NovelCard
                   key={n.id}
                   novel={n}
-                  onClick={() => {
-                    // TODO: 翻书动画 → NovelHubView
-                  }}
+                  onClick={() => onNovelClick(n)}
                 />
               ))}
               {/* 创建按钮 */}
