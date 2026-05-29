@@ -52,6 +52,13 @@ func New(novelID int64) (*Repo, error) {
 		if _, stderr, err := r.runInDir("init", dir); err != nil {
 			return nil, fmt.Errorf("git: init: %s: %w", stderr, err)
 		}
+		// 仓库级 git config，避免用户未全局配置时 commit 失败
+		if _, stderr, err := r.runInDir("config", "user.name", "Goink"); err != nil {
+			return nil, fmt.Errorf("git: config user.name: %s: %w", stderr, err)
+		}
+		if _, stderr, err := r.runInDir("config", "user.email", "goink@local"); err != nil {
+			return nil, fmt.Errorf("git: config user.email: %s: %w", stderr, err)
+		}
 		gitkeep := filepath.Join(dir, "chapters", ".gitkeep")
 		if err := os.MkdirAll(filepath.Dir(gitkeep), 0755); err != nil {
 			return nil, fmt.Errorf("git: create chapters dir: %w", err)
