@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '@/hooks/useApp'
 import InitView from '@/views/InitView'
-import EditorView from '@/views/EditorView'
+import WorkspaceView from '@/views/WorkspaceView'
 
-type View = 'loading' | 'init' | 'editor'
+type View = 'loading' | 'init' | 'workspace'
 
 export default function App() {
   const [view, setView] = useState<View>('loading')
@@ -15,7 +15,7 @@ export default function App() {
       if (ok) {
         const settings = await app.GetSettings()
         setInitialNovelId(settings?.last_novel_id ?? 0)
-        setView('editor')
+        setView('workspace')
       } else {
         setView('init')
       }
@@ -36,11 +36,11 @@ export default function App() {
         <InitView onInitialized={async () => {
           const settings = await app.GetSettings()
           setInitialNovelId(settings?.last_novel_id ?? 0)
-          setView('editor')
+          setView('workspace')
         }} />
       )}
-      {view === 'editor' && (
-        <EditorView initialNovelId={initialNovelId} />
+      {view === 'workspace' && (
+        <WorkspaceView initialNovelId={initialNovelId} />
       )}
     </div>
   )

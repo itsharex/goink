@@ -63,6 +63,14 @@ go build ./...
 
 `CGO_CFLAGS` 指向 `mattn/go-sqlite3` 模块目录（含 `sqlite3-binding.h`），系统 `sqlite3.h` 已安装则可不设。
 
+## Monaco Editor
+
+`@monaco-editor/react` 默认从 jsDelivr CDN 加载 Monaco 核心代码。桌面应用离线时编辑器不可用。
+
+后续方案：配置 loader 指向本地打包的 Monaco，或切换到 `monaco-editor` 直接 import 由 Vite 打包（bundle +~5MB）。
+
+参考：https://github.com/suren-atoyan/monaco-react#use-monaco-editor-as-an-npm-package
+
 ## 验证
 
 ```bash
