@@ -4,6 +4,9 @@ import {context} from '../models';
 import {app} from '../models';
 import {chapter} from '../models';
 import {novel} from '../models';
+import {llm} from '../models';
+import {session} from '../models';
+import {storage} from '../models';
 import {config} from '../models';
 
 export function ApproveTool(arg1:string,arg2:boolean,arg3:string):Promise<void>;
@@ -20,9 +23,15 @@ export function GetChapters(arg1:number):Promise<Array<chapter.Chapter>>;
 
 export function GetContent(arg1:number,arg2:string):Promise<string>;
 
+export function GetModels():Promise<Array<llm.AvailableModel>>;
+
 export function GetNovels():Promise<Array<novel.Novel>>;
 
 export function GetPlatform():Promise<Record<string, any>>;
+
+export function GetSessionMessages(arg1:string):Promise<Array<session.Message>>;
+
+export function GetSessions(arg1:number,arg2:number,arg3:number):Promise<storage.PageResult_novel_app_SessionMeta_>;
 
 export function GetSettings():Promise<config.AppSettings>;
 

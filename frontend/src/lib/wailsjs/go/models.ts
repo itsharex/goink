@@ -94,6 +94,24 @@ export namespace app {
 	
 	    }
 	}
+	export class SessionMeta {
+	    session_id: string;
+	    title: string;
+	    model: string;
+	    updated_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.title = source["title"];
+	        this.model = source["model"];
+	        this.updated_at = source["updated_at"];
+	    }
+	}
 	export class SetActiveNovelInput {
 	    novel_id: number;
 	
@@ -181,6 +199,35 @@ export namespace config {
 
 }
 
+export namespace llm {
+	
+	export class AvailableModel {
+	    Key: string;
+	    ProviderName: string;
+	    ModelName: string;
+	    ContextWindow: number;
+	    MaxOutputTokens: number;
+	    ReasoningLevels: string[];
+	    SupportsVision: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AvailableModel(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Key = source["Key"];
+	        this.ProviderName = source["ProviderName"];
+	        this.ModelName = source["ModelName"];
+	        this.ContextWindow = source["ContextWindow"];
+	        this.MaxOutputTokens = source["MaxOutputTokens"];
+	        this.ReasoningLevels = source["ReasoningLevels"];
+	        this.SupportsVision = source["SupportsVision"];
+	    }
+	}
+
+}
+
 export namespace novel {
 	
 	export class Novel {
@@ -207,6 +254,111 @@ export namespace novel {
 	        this.dir_path = source["dir_path"];
 	        this.created_at = this.convertValues(source["created_at"], null);
 	        this.updated_at = this.convertValues(source["updated_at"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace session {
+	
+	export class Message {
+	    id: number;
+	    session_id: string;
+	    turn_id: number;
+	    role: string;
+	    content: string;
+	    token_count: number;
+	    extra_metadata?: string;
+	    version: number;
+	    to_api: boolean;
+	    to_frontend: boolean;
+	    event_type?: string;
+	    agent_type: string;
+	    parent_turn_id?: number;
+	    // Go type: time
+	    created_at: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Message(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.session_id = source["session_id"];
+	        this.turn_id = source["turn_id"];
+	        this.role = source["role"];
+	        this.content = source["content"];
+	        this.token_count = source["token_count"];
+	        this.extra_metadata = source["extra_metadata"];
+	        this.version = source["version"];
+	        this.to_api = source["to_api"];
+	        this.to_frontend = source["to_frontend"];
+	        this.event_type = source["event_type"];
+	        this.agent_type = source["agent_type"];
+	        this.parent_turn_id = source["parent_turn_id"];
+	        this.created_at = this.convertValues(source["created_at"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace storage {
+	
+	export class PageResult_novel_app_SessionMeta_ {
+	    items: app.SessionMeta[];
+	    total: number;
+	    page: number;
+	    size: number;
+	    total_pages: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PageResult_novel_app_SessionMeta_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], app.SessionMeta);
+	        this.total = source["total"];
+	        this.page = source["page"];
+	        this.size = source["size"];
+	        this.total_pages = source["total_pages"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

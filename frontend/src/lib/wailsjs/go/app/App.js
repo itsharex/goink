@@ -30,12 +30,24 @@ export function GetContent(arg1, arg2) {
   return window['go']['app']['App']['GetContent'](arg1, arg2);
 }
 
+export function GetModels() {
+  return window['go']['app']['App']['GetModels']();
+}
+
 export function GetNovels() {
   return window['go']['app']['App']['GetNovels']();
 }
 
 export function GetPlatform() {
   return window['go']['app']['App']['GetPlatform']();
+}
+
+export function GetSessionMessages(arg1) {
+  return window['go']['app']['App']['GetSessionMessages'](arg1);
+}
+
+export function GetSessions(arg1, arg2, arg3) {
+  return window['go']['app']['App']['GetSessions'](arg1, arg2, arg3);
 }
 
 export function GetSettings() {

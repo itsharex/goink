@@ -13,8 +13,11 @@ import {
   Initialize,
   IsInitialized,
   SaveSettings,
+  GetModels,
+  GetSessions,
+  GetSessionMessages,
 } from '@/lib/wailsjs/go/app/App'
-import type { app, novel, chapter, config } from '@/lib/wailsjs/go/models'
+import type { app, novel, chapter, config, llm, session } from '@/lib/wailsjs/go/models'
 
 export function useApp() {
   return {
@@ -32,7 +35,10 @@ export function useApp() {
     IsInitialized,
     SaveSettings,
     SetActiveNovel,
+    GetModels,
+    GetSessions,
+    GetSessionMessages,
   }
 }
 
-export type { app, novel, chapter, config }
+export type { app, novel, chapter, config, llm, session }
