@@ -1,9 +1,10 @@
 interface Props {
   disabled: boolean
+  placeholder: string
   onSend: (message: string) => void
 }
 
-export default function ChatInput({ disabled, onSend }: Props) {
+export default function ChatInput({ disabled, placeholder, onSend }: Props) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -21,7 +22,7 @@ export default function ChatInput({ disabled, onSend }: Props) {
       <div className="flex items-center gap-2">
         <input
           type="text"
-          placeholder={disabled ? '请先选择作品' : '输入消息...'}
+          placeholder={placeholder}
           disabled={disabled}
           onKeyDown={handleKeyDown}
           className="flex-1 h-8 rounded-md border bg-background px-3 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground/50"
