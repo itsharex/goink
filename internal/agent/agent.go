@@ -13,6 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"novel/internal/approval"
 	"novel/internal/llm"
 	"novel/internal/mcp_tools"
 	"novel/internal/session"
@@ -23,6 +24,7 @@ type Agent struct {
 	llm      *llm.Client
 	registry *mcp_tools.Registry
 	db       *gorm.DB
+	approver approval.Approver
 	logger   *slog.Logger
 }
 
@@ -43,8 +45,8 @@ type RunOptions struct {
 }
 
 // New 创建 Agent 实例。
-func New(llmClient *llm.Client, registry *mcp_tools.Registry, db *gorm.DB, logger *slog.Logger) *Agent {
-	return &Agent{llm: llmClient, registry: registry, db: db, logger: logger}
+func New(llmClient *llm.Client, registry *mcp_tools.Registry, db *gorm.DB, approver approval.Approver, logger *slog.Logger) *Agent {
+	return &Agent{llm: llmClient, registry: registry, db: db, approver: approver, logger: logger}
 }
 
 // Run 执行 Agent 循环，返回最终文本和轮数。
@@ -157,7 +159,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 						Metadata: display.Metadata, Timestamp: time.Now(),
 					})
 
-					tc := mcp_tools.ToolContext{DB: a.db, NovelID: opts.NovelID, ToolID: id}
+					tc := mcp_tools.ToolContext{DB: a.db, NovelID: opts.NovelID, ToolID: id, Approver: a.approver}
 					result := a.registry.Execute(ctx, name, rawArgs, tc, opts.AllowedTools)
 
 					phase := "completed"

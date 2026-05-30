@@ -1,5 +1,43 @@
 export namespace app {
 	
+	export class ChatInput {
+	    session_id: string;
+	    novel_id: number;
+	    message: string;
+	    provider_name: string;
+	    model_id: string;
+	    reasoning_effort: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.novel_id = source["novel_id"];
+	        this.message = source["message"];
+	        this.provider_name = source["provider_name"];
+	        this.model_id = source["model_id"];
+	        this.reasoning_effort = source["reasoning_effort"];
+	    }
+	}
+	export class ChatResult {
+	    session_id: string;
+	    turn_id: number;
+	    final_text: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.turn_id = source["turn_id"];
+	        this.final_text = source["final_text"];
+	    }
+	}
 	export class CreateChapterInput {
 	    novel_id: number;
 	    title: string;
@@ -45,8 +83,7 @@ export namespace app {
 	    }
 	}
 	export class SaveSettingsInput {
-	    api_key: string;
-	    default_model?: string;
+	
 	
 	    static createFrom(source: any = {}) {
 	        return new SaveSettingsInput(source);
@@ -54,8 +91,7 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.api_key = source["api_key"];
-	        this.default_model = source["default_model"];
+	
 	    }
 	}
 	export class SetActiveNovelInput {
@@ -130,8 +166,6 @@ export namespace config {
 	
 	export class AppSettings {
 	    ID: number;
-	    APIKey: string;
-	    DefaultModel: string;
 	    last_novel_id: number;
 	
 	    static createFrom(source: any = {}) {
@@ -141,8 +175,6 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.ID = source["ID"];
-	        this.APIKey = source["APIKey"];
-	        this.DefaultModel = source["DefaultModel"];
 	        this.last_novel_id = source["last_novel_id"];
 	    }
 	}

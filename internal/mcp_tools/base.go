@@ -10,7 +10,7 @@ import (
 	"github.com/invopop/jsonschema"
 	"gorm.io/gorm"
 
-	"novel/internal/session"
+	"novel/internal/approval"
 	"novel/internal/storage"
 )
 
@@ -29,26 +29,13 @@ type Tool interface {
 
 // ── 上下文 ────────────────────────────────────────────
 
-// ToolContext 是工具执行时注入的上下文，包含 DB、会话、回调等。
-// 简单 CRUD 工具只用 DB + NovelID，子 agent 工具使用全部字段。
+// ToolContext 是工具执行时注入的上下文。
 type ToolContext struct {
-	DB      *gorm.DB
-	NovelID int64
-	ToolID  string
-	Emit    func(event ToolEvent)
-	Session *SessionContext
-	RawArgs json.RawMessage // 原始 JSON，update 工具用于 PATCH DB 实体
-	//子agent使用
-	PersistMsg   func(ctx context.Context, msg *session.Message) error
-	BuildDisplay func(ctx context.Context, name string, args map[string]any, phase DisplayPhase) *DisplayInfo
-	ParentTaskID string
-}
-
-// SessionContext 是工具执行时的会话快照。
-type SessionContext struct {
-	SessionID        string
-	CurrentChapterID int64
-	ActiveVersion    int
+	DB       *gorm.DB
+	NovelID  int64
+	ToolID   string
+	RawArgs  json.RawMessage   // 原始 JSON，update 工具用于 PATCH DB 实体
+	Approver approval.Approver // 审批能力，nil 表示工具无需审批
 }
 
 // ── 结果 ──────────────────────────────────────────────
@@ -80,14 +67,6 @@ const (
 	CategoryConsistencyCheck ToolCategory = "consistency_check"
 	CategoryWritingAssistant ToolCategory = "writing_assistant"
 )
-
-// ── 事件 ──────────────────────────────────────────────
-
-// ToolEvent 是工具执行中发出的实时事件。
-type ToolEvent struct {
-	Type string
-	Data map[string]any
-}
 
 // ── 展示 ──────────────────────────────────────────────
 

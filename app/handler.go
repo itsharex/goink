@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"novel/internal/agent"
+	"novel/internal/approval"
 	"novel/internal/chapter"
 	"novel/internal/character"
 	"novel/internal/config"
@@ -40,6 +41,7 @@ type App struct {
 	llmClient *llm.Client
 	agent     *agent.Agent
 	registry  *mcp_tools.Registry
+	approvals *approval.Service
 
 	novel     *novel.Store
 	chapter   *chapter.Store
@@ -153,7 +155,10 @@ func (a *App) initWithConfig(cfg *config.AppConfig) {
 	a.llmClient = llm.NewClient(providers, a.logger)
 
 	// 8. 创建 Agent 实例（全局复用）
-	a.agent = agent.New(a.llmClient, a.registry, a.db, a.logger)
+	a.agent = agent.New(a.llmClient, a.registry, a.db, a.approvals, a.logger)
+
+	// 9. 初始化审批服务
+	a.approvals = approval.NewService(a.logger)
 
 	a.logger.Info("应用初始化完成", "data_dir", cfg.DataDir)
 }

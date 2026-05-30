@@ -202,3 +202,13 @@ func (a *App) generateTitle(sessionID, userMessage, providerName, modelID string
 		"title":      title,
 	})
 }
+
+// ApproveTool 前端调用，响应审批请求。
+func (a *App) ApproveTool(toolID string, approved bool, feedback string) error {
+	return a.approvals.Complete(toolID, approved, feedback)
+}
+
+// SetApprovalMode 前端调用，切换审批模式。"auto" 自动批准，"manual" 等待用户操作。
+func (a *App) SetApprovalMode(mode string) {
+	a.approvals.SetMode(mode)
+}
