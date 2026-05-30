@@ -10,10 +10,13 @@ import (
 
 	"gorm.io/gorm"
 
+	"novel/internal/agent"
 	"novel/internal/chapter"
 	"novel/internal/character"
 	"novel/internal/config"
+	"novel/internal/llm"
 	"novel/internal/location"
+	"novel/internal/mcp_tools"
 	"novel/internal/migrate"
 	"novel/internal/novel"
 	"novel/internal/rag"
@@ -33,6 +36,10 @@ type App struct {
 	cfg      *config.AppConfig
 	settings *config.AppSettings
 	db       *gorm.DB
+
+	llmClient *llm.Client
+	agent     *agent.Agent
+	registry  *mcp_tools.Registry
 
 	novel     *novel.Store
 	chapter   *chapter.Store
@@ -130,6 +137,23 @@ func (a *App) initWithConfig(cfg *config.AppConfig) {
 	a.storyarc = storyarc.NewStore(db, a.logger)
 	a.location = location.NewStore(db, a.logger)
 	a.reader = reader.NewStore(db, a.logger)
+
+	// 6. 初始化 MCP 工具注册表
+	a.registry = mcp_tools.NewRegistry(a.logger)
+	mcp_tools.RegisterAllTools(a.registry)
+
+	// 7. 初始化 LLM 客户端
+	llmConfigPath := filepath.Join(cfg.DataDir, "llm_config.enc")
+	userConfig, err := llm.LoadUserConfig(llmConfigPath)
+	if err != nil {
+		a.logger.Warn("加载 LLM 配置失败，使用空配置", "err", err)
+		userConfig = &llm.UserLLMConfig{}
+	}
+	providers := llm.Merge(llm.Builtin, userConfig)
+	a.llmClient = llm.NewClient(providers, a.logger)
+
+	// 8. 创建 Agent 实例（全局复用）
+	a.agent = agent.New(a.llmClient, a.registry, a.db, a.logger)
 
 	a.logger.Info("应用初始化完成", "data_dir", cfg.DataDir)
 }
