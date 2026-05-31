@@ -1,3 +1,5 @@
+import type { session } from '@/hooks/useApp'
+
 // 与 Go 端 internal/agent/events.go 的 AgentEventType 枚举一一对应
 export enum AgentEventType {
   Thinking = 0,
@@ -65,4 +67,47 @@ export interface Turn {
   segments: TurnSegment[]
   status: 'streaming' | 'done' | 'failed'
   errorMessage?: string
+}
+
+
+export function rebuildTurns(messages: session.Message[]): Turn[] {
+  const turns: Turn[] = []
+  let current: Turn | null = null
+  let segCounter = 0
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      current = {
+        id: `hist_${msg.turn_id}`,
+        turnId: msg.turn_id,
+        userMessage: msg.content,
+        segments: [],
+        status: 'done',
+      }
+      turns.push(current)
+    } else if (msg.role === 'assistant' && msg.agent_type === 'main' && current) {
+      let thinkingContent = ''
+      if (msg.extra_metadata) {
+        try {
+          const meta = JSON.parse(msg.extra_metadata)
+          thinkingContent = meta.thinking_content || ''
+        } catch { /* ignore */ }
+      }
+      current.segments.push({
+        id: `seg_${msg.turn_id}_${segCounter++}`,
+        type: 'text',
+        content: msg.content,
+        thinkingContent,
+        thinkingDone: true,
+        isStreaming: false,
+        toolName: '',
+        toolId: '',
+        toolStatus: 'executing' as const,
+        displayText: '',
+        error: '',
+      })
+    }
+  }
+
+  return turns
 }

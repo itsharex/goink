@@ -1,10 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { MessageSquare, Loader2 } from 'lucide-react'
+import { MessageSquare, Loader2, History, Plus } from 'lucide-react'
 import { EventsOn } from '@/lib/wailsjs/runtime/runtime'
 import { useApp } from '@/hooks/useApp'
-import type { llm } from '@/hooks/useApp'
+import type { llm, app } from '@/hooks/useApp'
 import type { AgentEvent, Turn } from './types'
-import { AgentEventType, emptySegment } from './types'
+import { AgentEventType, emptySegment, rebuildTurns } from './types'
 import ChatInput from './ChatInput'
 import ChatControls from './ChatControls'
 import MessageBubble from './MessageBubble'
@@ -12,6 +12,8 @@ import ThinkingBlock from './ThinkingBlock'
 import ToolCallCard from './ToolCallCard'
 import type { UsageInfo } from './ContextRing'
 import SettingsDialog from '@/components/settings/SettingsDialog'
+import RecentSessions from './RecentSessions'
+import SessionHistory from './SessionHistory'
 
 interface Props {
   novelId: number
@@ -36,6 +38,11 @@ export default function ChatPanel({ novelId }: Props) {
   const [approvalMode, setApprovalMode] = useState<'manual' | 'auto'>('manual')
   const [lastUsage, setLastUsage] = useState<UsageInfo | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [activeSessionId, setActiveSessionId] = useState<string | null | undefined>(undefined)
+  const [sessions, setSessions] = useState<app.SessionMeta[]>([])
+  const [sessionsTotal, setSessionsTotal] = useState(0)
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const counterRef = useRef(0)
   const startedUnsubRef = useRef<(() => void) | null>(null)
@@ -54,6 +61,31 @@ export default function ChatPanel({ novelId }: Props) {
       }
     }).catch(() => {})
   }, [])
+
+  // 加载会话列表
+  useEffect(() => {
+    if (!novelId) return
+    setActiveSessionId(undefined)
+    setTurns([])
+    setSessionId('')
+    app.GetSessions(novelId, 1, 5).then(r => {
+      if (r) {
+        setSessions(r.items)
+        setSessionsTotal(r.total)
+      }
+    }).catch(() => {})
+  }, [novelId])
+
+  // 加载历史消息
+  useEffect(() => {
+    if (!activeSessionId || !novelId) return
+    setIsLoadingHistory(true)
+    app.GetSessionMessages(activeSessionId).then(msgs => {
+      if (msgs) {
+        setTurns(rebuildTurns(msgs))
+      }
+    }).catch(() => {}).finally(() => setIsLoadingHistory(false))
+  }, [activeSessionId, novelId])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -89,6 +121,27 @@ export default function ChatPanel({ novelId }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns])
+
+  const handleSelectSession = useCallback((sid: string) => {
+    setActiveSessionId(sid)
+  }, [])
+
+  const handleNewChat = useCallback(() => {
+    setActiveSessionId(null)
+    setTurns([])
+    setSessionId('')
+    app.GetSessions(novelId, 1, 5).then(r => {
+      if (r) { setSessions(r.items); setSessionsTotal(r.total) }
+    }).catch(() => {})
+  }, [novelId, app])
+
+  const handleOpenHistory = useCallback(() => {
+    setShowHistoryPanel(true)
+  }, [])
+
+  const handleCloseHistory = useCallback(() => {
+    setShowHistoryPanel(false)
+  }, [])
 
   const handleAgentEvent = useCallback((turnId: number) => (event: AgentEvent) => {
     switch (event.type) {
@@ -234,6 +287,11 @@ export default function ChatPanel({ novelId }: Props) {
       status: 'streaming',
     }
 
+    // 如果是新对话，清除历史标记
+    if (activeSessionId === null || activeSessionId === undefined) {
+      setActiveSessionId(null)
+    }
+
     setTurns(prev => [...prev, newTurn])
 
     // 监听 chat:started，拿到 turnId 后订阅 agent 事件流
@@ -241,6 +299,7 @@ export default function ChatPanel({ novelId }: Props) {
     const startedCleanup = EventsOn('chat:started', (data: any) => {
       if (data.session_id) {
         setSessionId(data.session_id)
+        setActiveSessionId(data.session_id)
       }
 
       agentUnsubRef.current?.()
@@ -258,6 +317,10 @@ export default function ChatPanel({ novelId }: Props) {
         model_id: m,
         reasoning_effort: reasoningEffort,
       })
+      // 刷新会话列表
+      app.GetSessions(novelId, 1, 5).then(r => {
+        if (r) { setSessions(r.items); setSessionsTotal(r.total) }
+      }).catch(() => {})
     } catch (err) {
       setTurns(prev => prev.map(t =>
         t.id === turnId ? { ...t, status: 'failed' as const, errorMessage: String(err) } : t
@@ -276,10 +339,13 @@ export default function ChatPanel({ novelId }: Props) {
       agentUnsubRef.current?.()
       agentUnsubRef.current = null
     }
-  }, [sessionId, novelId, selectedKey, reasoningEffort, app, handleAgentEvent])
+  }, [sessionId, novelId, selectedKey, reasoningEffort, app, handleAgentEvent, activeSessionId])
 
   const hasNovel = novelId > 0
   const hasTurns = turns.length > 0
+  const hasActiveSession = activeSessionId !== undefined && activeSessionId !== null
+  const showRecent = !hasActiveSession && !hasTurns && !isLoading
+
 
   const inputPlaceholder = !hasNovel
     ? '请先选择作品'
@@ -297,11 +363,25 @@ export default function ChatPanel({ novelId }: Props) {
         onMouseDown={handleMouseDown}
       />
 
-      <div className="px-4 py-2.5 border-b shrink-0">
+      <div className="px-4 py-2.5 border-b shrink-0 flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">AI 对话</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleOpenHistory}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <History className="w-3.5 h-3.5" /> 历史
+          </button>
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> 新对话
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3">
+      <div className="flex-1 overflow-y-auto px-3 py-3 relative">
         {!hasNovel ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -309,66 +389,98 @@ export default function ChatPanel({ novelId }: Props) {
               <p className="text-sm text-muted-foreground">选择作品开始对话</p>
             </div>
           </div>
-        ) : !hasTurns && !isLoading ? (
+        ) : showRecent ? (
+          <>
+            <SessionHistory
+              open={showHistoryPanel}
+              novelId={novelId}
+              onClose={handleCloseHistory}
+              onSelectSession={handleSelectSession}
+            />
+            <RecentSessions
+              sessions={sessions}
+              total={sessionsTotal}
+              onSelectSession={handleSelectSession}
+              onViewAll={handleOpenHistory}
+            />
+          </>
+        ) : isLoadingHistory ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <MessageSquare className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">输入消息开始对话</p>
-            </div>
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="space-y-4">
-            {turns.map(turn => (
-              <div key={turn.id} className="space-y-2">
-                {turn.userMessage && (
-                  <MessageBubble role="user" content={turn.userMessage} />
-                )}
+          <>
+            {/* 历史面板（覆盖层） */}
+            <SessionHistory
+              open={showHistoryPanel}
+              novelId={novelId}
+              onClose={handleCloseHistory}
+              onSelectSession={handleSelectSession}
+            />
 
-                {turn.segments.map(seg => {
-                  if (seg.type === 'tool') {
-                    return (
-                      <ToolCallCard
-                        key={seg.id}
-                        toolName={seg.toolName}
-                        displayText={seg.displayText}
-                        status={seg.toolStatus}
-                        error={seg.error}
-                      />
-                    )
-                  }
-
-                  return (
-                    <div key={seg.id}>
-                      {seg.thinkingContent && (
-                        <ThinkingBlock
-                          content={seg.thinkingContent}
-                          isStreaming={!seg.thinkingDone && seg.isStreaming}
-                        />
-                      )}
-                      {seg.content && (
-                        <MessageBubble role="assistant" content={seg.content} />
-                      )}
-                    </div>
-                  )
-                })}
-
-                {turn.status === 'failed' && turn.errorMessage && (
-                  <div className="flex justify-start">
-                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600 max-w-[80%]">
-                      {turn.errorMessage}
-                    </div>
-                  </div>
-                )}
-                {turn.status === 'streaming' && turn.segments.length === 0 && (
-                  <div className="flex justify-start">
-                    <div className="bg-muted rounded-lg rounded-bl-sm px-3 py-2">
-                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                    </div>
-                  </div>
-                )}
+            {/* 消息列表 */}
+            {!hasTurns && !isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <MessageSquare className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">输入消息开始对话</p>
+                </div>
               </div>
-            ))}
-          </div>
+            ) : (
+              <div className="space-y-4">
+                {turns.map(turn => (
+                  <div key={turn.id} className="space-y-2">
+                    {turn.userMessage && (
+                      <MessageBubble role="user" content={turn.userMessage} />
+                    )}
+
+                    {turn.segments.map(seg => {
+                      if (seg.type === 'tool') {
+                        return (
+                          <ToolCallCard
+                            key={seg.id}
+                            toolName={seg.toolName}
+                            displayText={seg.displayText}
+                            status={seg.toolStatus}
+                            error={seg.error}
+                          />
+                        )
+                      }
+
+                      return (
+                        <div key={seg.id}>
+                          {seg.thinkingContent && (
+                            <ThinkingBlock
+                              content={seg.thinkingContent}
+                              isStreaming={!seg.thinkingDone && seg.isStreaming}
+                            />
+                          )}
+                          {seg.content && (
+                            <MessageBubble role="assistant" content={seg.content} />
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {turn.status === 'failed' && turn.errorMessage && (
+                      <div className="flex justify-start">
+                        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600 max-w-[80%]">
+                          {turn.errorMessage}
+                        </div>
+                      </div>
+                    )}
+                    {turn.status === 'streaming' && turn.segments.length === 0 && (
+                      <div className="flex justify-start">
+                        <div className="bg-muted rounded-lg rounded-bl-sm px-3 py-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         <div ref={messagesEndRef} />
