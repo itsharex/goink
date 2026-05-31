@@ -248,7 +248,7 @@ export default function ChatPanel({ novelId }: Props) {
     startedUnsubRef.current = startedCleanup
 
     try {
-      await app.Chat(undefined as any, {
+      await app.Chat({
         session_id: sessionId,
         novel_id: novelId,
         message: content,

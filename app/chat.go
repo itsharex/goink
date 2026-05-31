@@ -31,12 +31,18 @@ type ChatResult struct {
 }
 
 // Chat 是对话入口。Wails 绑定，前端调用后同步执行，期间通过 EventsEmit 推流。
-func (a *App) Chat(ctx context.Context, input ChatInput) (*ChatResult, error) {
+func (a *App) Chat(input ChatInput) (*ChatResult, error) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	defer cancel()
+
 	// 1. 加载或创建 Session
 	sess, isNew, err := a.loadOrCreateSession(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("session 初始化失败: %w", err)
 	}
+
+	a.agent.RegisterCancel(sess.SessionID, cancel)
+	defer a.agent.UnregisterCancel(sess.SessionID)
 
 	// 2. 新会话自动生成标题（异步，与 agent LLM 调用并发）
 	if isNew && sess.Title == "" {
@@ -216,4 +222,9 @@ func (a *App) ApproveTool(toolID string, approved bool, feedback string) error {
 // SetApprovalMode 前端调用，切换审批模式。"auto" 自动批准，"manual" 等待用户操作。
 func (a *App) SetApprovalMode(mode string) {
 	a.approvals.SetMode(mode)
+}
+
+// CancelChat 前端调用，取消一个正在进行的对话。
+func (a *App) CancelChat(sessionID string) {
+	a.agent.Cancel(sessionID)
 }

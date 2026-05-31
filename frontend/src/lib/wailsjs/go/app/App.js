@@ -6,8 +6,12 @@ export function ApproveTool(arg1, arg2, arg3) {
   return window['go']['app']['App']['ApproveTool'](arg1, arg2, arg3);
 }
 
-export function Chat(arg1, arg2) {
-  return window['go']['app']['App']['Chat'](arg1, arg2);
+export function CancelChat(arg1) {
+  return window['go']['app']['App']['CancelChat'](arg1);
+}
+
+export function Chat(arg1) {
+  return window['go']['app']['App']['Chat'](arg1);
 }
 
 export function CreateChapter(arg1) {

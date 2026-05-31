@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	wails "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -26,6 +27,8 @@ type Agent struct {
 	db       *gorm.DB
 	approver approval.Approver
 	logger   *slog.Logger
+	cancels  map[string]context.CancelFunc // sessionID → cancel
+	mu       sync.Mutex
 }
 
 // RunOptions 是单次 Run() 的参数。
@@ -46,7 +49,38 @@ type RunOptions struct {
 
 // New 创建 Agent 实例。
 func New(llmClient *llm.Client, registry *mcp_tools.Registry, db *gorm.DB, approver approval.Approver, logger *slog.Logger) *Agent {
-	return &Agent{llm: llmClient, registry: registry, db: db, approver: approver, logger: logger}
+	return &Agent{
+		llm:      llmClient,
+		registry: registry,
+		db:       db,
+		approver: approver,
+		logger:   logger,
+		cancels:  make(map[string]context.CancelFunc),
+	}
+}
+
+// RegisterCancel 注册一个可取消的对话。
+func (a *Agent) RegisterCancel(sessionID string, cancel context.CancelFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cancels[sessionID] = cancel
+}
+
+// UnregisterCancel 对话结束后清理，只删不 cancel。
+func (a *Agent) UnregisterCancel(sessionID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.cancels, sessionID)
+}
+
+// Cancel 取消一个正在进行的对话。
+func (a *Agent) Cancel(sessionID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if c, ok := a.cancels[sessionID]; ok {
+		c()
+		delete(a.cancels, sessionID)
+	}
 }
 
 // Run 执行 Agent 循环，返回最终文本和轮数。
