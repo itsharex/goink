@@ -235,8 +235,8 @@ func allow(set map[string]bool, name string) bool {
 
 // PageArgs 是分页查询的公共参数，嵌入 Args 结构体即可。
 type PageArgs struct {
-	Page int `json:"page" jsonschema:"description=页码,default=1,minimum=1"                validate:"min=1,omitempty"`
-	Size int `json:"size" jsonschema:"description=每页数量,default=50,minimum=1,maximum=100"  validate:"min=1,max=100,omitempty"`
+	Page int `json:"page" jsonschema:"description=页码,default=1,minimum=1"                validate:"omitempty,min=1"`
+	Size int `json:"size" jsonschema:"description=每页数量,default=50,minimum=1,maximum=100"  validate:"omitempty,min=1,max=100"`
 }
 
 // NormalizePage 给 Page/Size 设默认值。

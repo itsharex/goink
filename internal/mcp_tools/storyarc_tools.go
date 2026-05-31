@@ -145,7 +145,7 @@ type CreateStoryArcArgs struct {
 	Name        string `json:"name" jsonschema:"required,description=弧线名称，如'复仇之路'"                          validate:"required"`
 	ArcType     string `json:"arc_type" jsonschema:"required,description=弧线类型,enum=main,enum=sub,enum=character,enum=background" validate:"required,oneof=main sub character background"`
 	Description string `json:"description" jsonschema:"description=弧线整体描述"`
-	Importance  int    `json:"importance" jsonschema:"description=重要度1-5,default=1,minimum=1,maximum=5"          validate:"min=1,max=5,omitempty"`
+	Importance  int    `json:"importance" jsonschema:"description=重要度1-5,default=1,minimum=1,maximum=5"          validate:"omitempty,min=1,max=5"`
 }
 
 // CreateStoryArcTool 创建新叙事弧线。

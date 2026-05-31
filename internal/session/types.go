@@ -40,8 +40,8 @@ type Message struct {
 	TokenCount    int       `gorm:"column:token_count;not null;default:0"                        json:"token_count"`
 	ExtraMetadata string    `gorm:"column:extra_metadata"                                         json:"extra_metadata,omitempty"` // JSON：tool_calls / thinking_content / tool_call_id / display_text 等
 	Version       int       `gorm:"column:version;not null;default:1;index"                      json:"version"`                   // 压缩代数，查询时 = session.active_version
-	ToAPI         bool      `gorm:"column:to_api;not null;default:1;index"                       json:"to_api"`                    // LLM context 是否需要此消息
-	ToFrontend    bool      `gorm:"column:to_frontend;not null;default:1;index"                  json:"to_frontend"`               // 前端是否需要渲染此消息
+	ToAPI         bool      `gorm:"column:to_api;not null;default:0;index"                       json:"to_api"`                    // LLM context 是否需要此消息。注：default:0 原因同上，子 agent 的 ToAPI=false 不能被默认值覆盖
+	ToFrontend    bool      `gorm:"column:to_frontend;not null;default:0;index"                  json:"to_frontend"`               // 前端是否需要渲染此消息。注：default:0 必须与 Go false 一致，否则 GORM 跳过零值时 DB 填入默认值 1 导致泄漏
 	EventType     string    `gorm:"column:event_type"                                             json:"event_type,omitempty"`      // "compression" | "interrupt" | "error" | ""
 	AgentType     string    `gorm:"column:agent_type;not null;default:'main';index"              json:"agent_type"`                // "main" | "review" | "memory"
 	ParentTurnID  *int      `gorm:"column:parent_turn_id;index"                                  json:"parent_turn_id,omitempty"`  // 子 agent 消息指向触发它的主 turn，主 agent 为 NULL

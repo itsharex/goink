@@ -116,7 +116,7 @@ type CreateTimelineEntryItem struct {
 	Content         string `json:"content" jsonschema:"description=详细描述"`
 	DetailJSON      string `json:"detail_json" jsonschema:"description=JSON结构化数据"`
 	TargetChapter   int    `json:"target_chapter" jsonschema:"required,description=预计回收章节号（不准确不要紧，后续可调整）"        validate:"required,min=1"`
-	Importance      int    `json:"importance" jsonschema:"description=重要度1-5,default=3,minimum=1,maximum=5"         validate:"min=1,max=5,omitempty"`
+	Importance      int    `json:"importance" jsonschema:"description=重要度1-5,default=3,minimum=1,maximum=5"         validate:"omitempty,min=1,max=5"`
 	SourceChapterID int64  `json:"source_chapter_id" jsonschema:"description=在哪章创建/埋下的"`
 	Source          string `json:"source" jsonschema:"description=来源,default=ai"`
 }

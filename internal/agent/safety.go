@@ -10,21 +10,21 @@ import (
 
 // 只读工具集合，死循环检测用。
 var readOnlyTools = map[string]bool{
-	"search_story_memory":    true,
-	"get_timeline":           true,
-	"get_chapter_content":    true,
-	"get_chapter_list":       true,
-	"get_chapter_detail":     true,
-	"get_characters":         true,
-	"get_character_memory":   true,
-	"get_locations":          true,
-	"get_novel_info":         true,
-	"get_creative_profile":   true,
-	"get_story_arcs":         true,
-	"get_story_state":        true,
-	"get_reader_perspective": true,
-	"check_consistency":      true,
-	"get_preferences":        true,
+	"search_story_memory":     true,
+	"get_timeline":            true,
+	"get_chapter_content":     true,
+	"get_chapter_list":        true,
+	"get_chapter_detail":      true,
+	"get_characters":          true,
+	"get_character_memory":    true,
+	"get_locations":           true,
+	"get_novel_info":          true,
+	"get_creative_profile":    true,
+	"get_story_arcs":          true,
+	"get_story_state":         true,
+	"get_reader_perspective":  true,
+	"check_consistency":       true,
+	"get_preferences":         true,
 	"get_character_relations": true,
 }
 
@@ -59,7 +59,7 @@ func buildToolCalls(outputs []toolOutput) []map[string]any {
 			"type": "function",
 			"function": map[string]any{
 				"name":      o.name,
-				"arguments": json.RawMessage(o.rawArgs),
+				"arguments": string(o.rawArgs), //api期望字符串 而不是map对象
 			},
 		})
 	}

@@ -126,7 +126,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 				// 中断时保存当前轮 partial
 				if responseBuffer != "" || thinkingBuffer != "" {
 					a.appendMsg("assistant", responseBuffer,
-						map[string]any{"thinking_content": thinkingBuffer}, opts, runningTokens)
+						map[string]any{"thinking_content": thinkingBuffer}, &opts, runningTokens)
 				}
 				partial := responseBuffer
 				if partial == "" {
@@ -217,7 +217,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 					}
 					if failCnt[name] == 3 {
 						content := fmt.Sprintf("<system-reminder>\n工具 %s 已连续失败 3 次，已被禁用，请不要再调用此工具。\n</system-reminder>", name)
-						a.appendMsg("user", content, nil, opts, runningTokens)
+						a.appendMsg("user", content, nil, &opts, runningTokens)
 					}
 
 					// 暂存 inject
@@ -238,7 +238,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 					})
 					if responseBuffer != "" || thinkingBuffer != "" {
 						a.appendMsg("assistant", responseBuffer,
-							map[string]any{"thinking_content": thinkingBuffer}, opts, runningTokens)
+							map[string]any{"thinking_content": thinkingBuffer}, &opts, runningTokens)
 					}
 					return AgentLoopResult{FinalText: fullResponse, TurnCount: loopCount}, event.Error
 				}
@@ -260,20 +260,20 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 			map[string]any{
 				"tool_calls":       buildToolCalls(toolOutputs),
 				"thinking_content": thinkingBuffer,
-			}, opts, runningTokens)
+			}, &opts, runningTokens)
 
 		// 2. tool 结果
 		for _, to := range toolOutputs {
 			a.appendMsg("tool", to.resultJSON(),
 				map[string]any{"tool_call_id": to.id, "tool_name": to.name},
-				opts, runningTokens)
+				&opts, runningTokens)
 		}
 
 		// 3. inject（role=user，<system-reminder> 包裹）
 		for _, to := range toolOutputs {
 			for _, inj := range pendingInjects[to.id] {
 				content := "<system-reminder>\n" + inj.Content + "\n</system-reminder>"
-				a.appendMsg(inj.Role, content, nil, opts, runningTokens)
+				a.appendMsg(inj.Role, content, nil, &opts, runningTokens)
 			}
 		}
 
@@ -284,7 +284,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 		}
 		if isStuckLoop(patterns, toolOutputs, loopCount) {
 			content := "<system-reminder>\n系统检测到可能陷入重复调用。请基于已获取的信息直接开始写作，或明确告诉我你需要什么新的操作。\n</system-reminder>"
-			a.appendMsg("user", content, nil, opts, runningTokens)
+			a.appendMsg("user", content, nil, &opts, runningTokens)
 			wails.EventsEmit(ctx, "agent:"+strconv.Itoa(opts.TurnID), AgentEvent{
 				TurnID: opts.TurnID, Type: EventToolCall, Phase: "loop_detected", Timestamp: time.Now(),
 			})
@@ -302,7 +302,8 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 }
 
 // appendMsg 统一处理消息的内存追加 + 持久化 + token 计数。
-func (a *Agent) appendMsg(role, content string, extra map[string]any, opts RunOptions, runningTokens map[string]int) {
+// opts 必须传指针，因为 opts.Messages 需要被追加（Go 切片传值会丢失 append）。
+func (a *Agent) appendMsg(role, content string, extra map[string]any, opts *RunOptions, runningTokens map[string]int) {
 	msg := &session.Message{
 		SessionID:     opts.SessionID,
 		TurnID:        opts.TurnID,
