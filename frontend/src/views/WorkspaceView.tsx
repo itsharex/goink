@@ -7,6 +7,8 @@ import SidePanel from '@/components/novel/SidePanel'
 import EditorArea from '@/components/editor/EditorArea'
 import ChatPanel from '@/components/chat/ChatPanel'
 import GitHubLink from '@/components/shell/GitHubLink'
+import SettingsDialog from '@/components/settings/SettingsDialog'
+import { Settings } from 'lucide-react'
 import type { OnMount } from '@monaco-editor/react'
 
 type EditingTarget = { type: 'chapter'; path: string; title: string } | { type: 'goink'; path: string; title: string } | null
@@ -31,6 +33,7 @@ export default function WorkspaceView({ initialNovelId }: Props) {
   const [editorContent, setEditorContent] = useState('')
   const [editorViewMode, setEditorViewMode] = useState<'content' | 'outline'>('content')
   const [isLoadingContent, setIsLoadingContent] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const contentRef = useRef('')
@@ -194,11 +197,20 @@ export default function WorkspaceView({ initialNovelId }: Props) {
 
   return (
     <div className="h-screen flex flex-col">
-      <header className="h-11 flex items-center justify-between px-4 border-b bg-muted/10 shrink-0">
+      <header className="h-11 flex items-center justify-between pl-4 pr-2 border-b bg-muted/10 shrink-0">
         <span className="text-sm font-medium">
           {activeNovel?.title ?? 'Goink'}
         </span>
-        <GitHubLink />
+        <div className="flex items-center gap-3">
+          <GitHubLink />
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title="设置"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 flex min-h-0">
@@ -247,6 +259,12 @@ export default function WorkspaceView({ initialNovelId }: Props) {
       </div>
 
       <StatusBar />
+
+      <SettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        initialTab="general"
+      />
     </div>
   )
 }

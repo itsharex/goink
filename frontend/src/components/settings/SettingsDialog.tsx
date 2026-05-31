@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Settings, Cpu } from 'lucide-react'
 import ModelConfigTab from './ModelConfigTab'
+import GeneralConfigTab from './GeneralConfigTab'
 
 type Tab = 'general' | 'model'
 
@@ -59,12 +60,7 @@ export default function SettingsDialog({ open, onClose, initialTab = 'model' }: 
           {activeTab === 'model' ? (
             <ModelConfigTab />
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <Settings className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">基本设置即将推出</p>
-              </div>
-            </div>
+            <GeneralConfigTab />
           )}
         </div>
       </div>

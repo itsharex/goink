@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"runtime"
 
 	"gorm.io/gorm"
 
@@ -160,39 +157,4 @@ func (a *App) initWithConfig(cfg *config.AppConfig) {
 	a.approvals = approval.NewService(a.logger)
 
 	a.logger.Info("应用初始化完成", "data_dir", cfg.DataDir)
-}
-
-// GetPlatform 返回平台信息，供前端决定默认路径等行为。
-func (a *App) GetPlatform() map[string]any {
-	info := map[string]any{
-		"os":          runtime.GOOS,
-		"defaultPath": defaultDataDir(),
-	}
-	return info
-}
-
-// defaultDataDir 根据平台返回默认数据目录。
-// Windows: 检测 D/E 盘是否存在，否则回退到用户目录。
-// 其他平台: ~/.goink。
-func defaultDataDir() string {
-	if runtime.GOOS == "windows" {
-		for _, drive := range []string{"D:", "E:", "C:"} {
-			if _, err := os.Stat(drive + "\\"); err == nil {
-				return filepath.Join(drive, "Goink")
-			}
-		}
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".goink")
-}
-
-// GetAppConfig 返回当前运行时配置信息（供前端诊断）。
-func (a *App) GetAppConfig() map[string]any {
-	if a.cfg == nil {
-		return map[string]any{"initialized": false}
-	}
-	return map[string]any{
-		"initialized": true,
-		"data_dir":    a.cfg.DataDir,
-	}
 }

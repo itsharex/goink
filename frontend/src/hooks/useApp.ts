@@ -20,6 +20,7 @@ import {
   GetSessions,
   GetSessionMessages,
   SaveLLMConfig,
+  UpdateDataDir,
 } from '@/lib/wailsjs/go/app/App'
 import type { app, novel, chapter, config, llm, session } from '@/lib/wailsjs/go/models'
 
@@ -46,6 +47,7 @@ export function useApp() {
     SetApprovalMode,
     GetLLMConfig,
     SaveLLMConfig,
+    UpdateDataDir,
   }
 }
 
