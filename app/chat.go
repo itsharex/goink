@@ -135,11 +135,12 @@ func (a *App) Chat(input ChatInput) (*ChatResult, error) {
 	}
 
 	if runErr != nil {
+		a.logger.Error("对话失败", "err", runErr)
 		return &ChatResult{
 			SessionID: sess.SessionID,
 			TurnID:    turnID,
 			FinalText: result.FinalText,
-		}, runErr
+		}, fmt.Errorf("%s", agent.FriendlyError(runErr))
 	}
 
 	return &ChatResult{

@@ -234,7 +234,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 					// 流错误：保存 partial 后返回
 					wails.EventsEmit(ctx, "agent:"+strconv.Itoa(opts.TurnID), AgentEvent{
 						TurnID: opts.TurnID, Type: EventError,
-						ErrMsg: event.Error.Error(), Timestamp: time.Now(),
+						ErrMsg: FriendlyError(event.Error), Timestamp: time.Now(),
 					})
 					if responseBuffer != "" || thinkingBuffer != "" {
 						a.appendMsg("assistant", responseBuffer,

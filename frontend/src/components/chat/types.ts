@@ -64,4 +64,5 @@ export interface Turn {
   userMessage: string
   segments: TurnSegment[]
   status: 'streaming' | 'done' | 'failed'
+  errorMessage?: string
 }

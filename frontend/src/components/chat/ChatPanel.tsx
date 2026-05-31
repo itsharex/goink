@@ -100,7 +100,9 @@ export default function ChatPanel({ novelId }: Props) {
       }
       case AgentEventType.Error: {
         setTurns(prev => prev.map(turn =>
-          turn.turnId === turnId ? { ...turn, status: 'failed' as const } : turn
+          turn.turnId === turnId
+            ? { ...turn, status: 'failed' as const, errorMessage: event.error || '对话出错，请重试' }
+            : turn
         ))
         return
       }
@@ -258,7 +260,7 @@ export default function ChatPanel({ novelId }: Props) {
       })
     } catch (err) {
       setTurns(prev => prev.map(t =>
-        t.id === turnId ? { ...t, status: 'failed' as const } : t
+        t.id === turnId ? { ...t, status: 'failed' as const, errorMessage: String(err) } : t
       ))
     } finally {
       setTurns(prev => prev.map(t =>
@@ -350,6 +352,13 @@ export default function ChatPanel({ novelId }: Props) {
                   )
                 })}
 
+                {turn.status === 'failed' && turn.errorMessage && (
+                  <div className="flex justify-start">
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600 max-w-[80%]">
+                      {turn.errorMessage}
+                    </div>
+                  </div>
+                )}
                 {turn.status === 'streaming' && turn.segments.length === 0 && (
                   <div className="flex justify-start">
                     <div className="bg-muted rounded-lg rounded-bl-sm px-3 py-2">
