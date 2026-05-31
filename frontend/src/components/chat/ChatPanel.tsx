@@ -11,6 +11,7 @@ import MessageBubble from './MessageBubble'
 import ThinkingBlock from './ThinkingBlock'
 import ToolCallCard from './ToolCallCard'
 import type { UsageInfo } from './ContextRing'
+import SettingsDialog from '@/components/settings/SettingsDialog'
 
 interface Props {
   novelId: number
@@ -34,6 +35,7 @@ export default function ChatPanel({ novelId }: Props) {
   const [reasoningEffort, setReasoningEffort] = useState('')
   const [approvalMode, setApprovalMode] = useState<'manual' | 'auto'>('manual')
   const [lastUsage, setLastUsage] = useState<UsageInfo | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const counterRef = useRef(0)
   const startedUnsubRef = useRef<(() => void) | null>(null)
@@ -44,7 +46,11 @@ export default function ChatPanel({ novelId }: Props) {
     app.GetModels().then(list => {
       if (list && list.length > 0) {
         setModels(list)
-        setSelectedKey(list[0].Key)
+        const first = list[0]
+        setSelectedKey(first.Key)
+        if (first.ReasoningLevels?.length) {
+          setReasoningEffort(first.ReasoningLevels[0])
+        }
       }
     }).catch(() => {})
   }, [])
@@ -192,9 +198,15 @@ export default function ChatPanel({ novelId }: Props) {
     }))
   }, [])
 
+  const handleConfigModel = useCallback(() => setShowSettings(true), [])
+
   const handleSelectModel = useCallback((key: string) => {
     setSelectedKey(key)
-  }, [])
+    const m = models.find(x => x.Key === key)
+    if (m?.ReasoningLevels?.length) {
+      setReasoningEffort(m.ReasoningLevels[0])
+    }
+  }, [models])
 
   const handleSelectEffort = useCallback((effort: string) => {
     setReasoningEffort(effort)
@@ -236,7 +248,7 @@ export default function ChatPanel({ novelId }: Props) {
     startedUnsubRef.current = startedCleanup
 
     try {
-      await app.Chat(null as any, {
+      await app.Chat(undefined as any, {
         session_id: sessionId,
         novel_id: novelId,
         message: content,
@@ -369,12 +381,19 @@ export default function ChatPanel({ novelId }: Props) {
         onSelectEffort={handleSelectEffort}
         approvalMode={approvalMode}
         onToggleApproval={handleToggleApproval}
+        onConfigModel={handleConfigModel}
         usage={lastUsage}
       />
 
       {isDragging && (
         <div className="fixed inset-0 z-50 cursor-col-resize select-none" />
       )}
+
+      <SettingsDialog
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        initialTab="model"
+      />
     </aside>
   )
 }

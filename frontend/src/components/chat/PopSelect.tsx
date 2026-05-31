@@ -6,15 +6,21 @@ interface Option {
   label: string
 }
 
+interface FooterAction {
+  label: string
+  onClick: () => void
+}
+
 interface Props {
   value: string
   options: Option[]
   onChange: (value: string) => void
   className?: string
   minWidth?: string
+  footerAction?: FooterAction
 }
 
-export default function PopSelect({ value, options, onChange, className = '', minWidth = '130px' }: Props) {
+export default function PopSelect({ value, options, onChange, className = '', minWidth = '130px', footerAction }: Props) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -58,6 +64,20 @@ export default function PopSelect({ value, options, onChange, className = '', mi
               {opt.label}
             </button>
           ))}
+          {footerAction && (
+            <>
+              <div className="border-t my-0.5" />
+              <button
+                onClick={() => {
+                  footerAction.onClick()
+                  setOpen(false)
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+              >
+                ⚙ {footerAction.label}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

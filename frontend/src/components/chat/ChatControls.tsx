@@ -11,6 +11,7 @@ interface Props {
   onSelectEffort: (effort: string) => void
   approvalMode: 'manual' | 'auto'
   onToggleApproval: () => void
+  onConfigModel: () => void
   usage: UsageInfo | null
 }
 
@@ -22,6 +23,7 @@ export default function ChatControls({
   onSelectEffort,
   approvalMode,
   onToggleApproval,
+  onConfigModel,
   usage,
 }: Props) {
   const selected = models.find(m => m.Key === selectedKey)
@@ -41,6 +43,7 @@ export default function ChatControls({
         value={selectedKey}
         options={modelOptions}
         onChange={onSelectModel}
+        footerAction={{ label: '配置模型...', onClick: onConfigModel }}
       />
 
       {supportsReasoning && (

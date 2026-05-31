@@ -4,7 +4,6 @@ package llm
 // 一个 provider 一个 key，内置模型随代码自动更新，自定义模型需完整填写信息。
 type UserLLMConfig struct {
 	Providers []Provider `json:"providers"`
-	Default   string     `json:"default"` // "deepseek/deepseek-v4-pro"
 }
 
 // AvailableModel 是前端下拉列表的模型选项。
@@ -141,16 +140,23 @@ func BuildConfigView(user *UserLLMConfig) *LLMConfigView {
 }
 
 // ToUserConfig 将前端视图转换回可持久化的 UserLLMConfig。
+// ToUserConfig 将前端视图转换回可持久化的 UserLLMConfig。
+// 只保留有 APIKey 的 provider，无 key 的不写入（内置模板由 Merge 自动提供）。
 func (v *LLMConfigView) ToUserConfig() *UserLLMConfig {
 	providers := make([]Provider, 0, len(v.Providers))
 	for _, pv := range v.Providers {
-		models := append([]ModelInfo{}, pv.CustomModels...)
-		providers = append(providers, Provider{
-			Name:    pv.Key,
-			ChatURL: pv.ChatURL,
-			APIKey:  pv.APIKey,
-			Models:  models,
-		})
+		if pv.APIKey == "" {
+			continue
+		}
+		p := Provider{
+			Name:   pv.Key,
+			APIKey: pv.APIKey,
+			Models: append([]ModelInfo{}, pv.CustomModels...),
+		}
+		if pv.Source != "builtin" {
+			p.ChatURL = pv.ChatURL
+		}
+		providers = append(providers, p)
 	}
 	return &UserLLMConfig{Providers: providers}
 }
