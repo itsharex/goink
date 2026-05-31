@@ -476,6 +476,15 @@ export default function ChatPanel({ novelId }: Props) {
         </div>
       </div>
 
+      <div className="absolute left-0 right-0 top-[41px] bottom-0 pointer-events-none z-30">
+        <SessionHistory
+          open={showHistoryPanel}
+          novelId={novelId}
+          onClose={handleCloseHistory}
+          onSelectSession={handleSelectSession}
+        />
+      </div>
+
       <div className="flex-1 overflow-y-auto px-3 py-3 relative">
         {!hasNovel ? (
           <div className="flex items-center justify-center h-full">
@@ -485,34 +494,18 @@ export default function ChatPanel({ novelId }: Props) {
             </div>
           </div>
         ) : showRecent ? (
-          <>
-            <SessionHistory
-              open={showHistoryPanel}
-              novelId={novelId}
-              onClose={handleCloseHistory}
-              onSelectSession={handleSelectSession}
-            />
-            <RecentSessions
-              sessions={sessions}
-              total={sessionsTotal}
-              onSelectSession={handleSelectSession}
-              onViewAll={handleOpenHistory}
-            />
-          </>
+          <RecentSessions
+            sessions={sessions}
+            total={sessionsTotal}
+            onSelectSession={handleSelectSession}
+            onViewAll={handleOpenHistory}
+          />
         ) : isLoadingHistory ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <>
-            {/* 历史面板（覆盖层） */}
-            <SessionHistory
-              open={showHistoryPanel}
-              novelId={novelId}
-              onClose={handleCloseHistory}
-              onSelectSession={handleSelectSession}
-            />
-
             {/* 消息列表 */}
             {!hasTurns && !isLoading ? (
               <div className="flex items-center justify-center h-full">
