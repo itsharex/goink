@@ -14,8 +14,12 @@
   cursor: pointer;
   user-select: none;
   font-size: 0.8rem;
-  color: var(--muted-foreground);
-  transition: background 150ms ease;
+  color: oklch(0.5 0 0);
+  transition: background 150ms ease, color 300ms ease;
+}
+
+.dark .thinking-summary {
+  color: oklch(0.65 0 0);
 }
 
 .thinking-summary:hover {
@@ -44,28 +48,28 @@ details[open] > .thinking-summary .thinking-chevron {
 .thinking-shimmer {
   background: linear-gradient(
     90deg,
-    oklch(0.5 0.04 262) 0%,
-    oklch(0.35 0.12 262) 25%,
-    oklch(0.6 0.08 262) 50%,
-    oklch(0.35 0.12 262) 75%,
-    oklch(0.5 0.04 262) 100%
+    oklch(0.45 0 0) 0%,
+    oklch(0.72 0 0) 25%,
+    oklch(0.45 0 0) 50%,
+    oklch(0.72 0 0) 75%,
+    oklch(0.45 0 0) 100%
   );
   background-size: 220% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: thinking-shimmer 2.8s linear infinite;
+  animation: thinking-shimmer 3.5s linear infinite;
   font-weight: 600;
 }
 
 .dark .thinking-shimmer {
   background: linear-gradient(
     90deg,
-    oklch(0.65 0.05 262) 0%,
-    oklch(0.5 0.15 262) 25%,
-    oklch(0.78 0.08 262) 50%,
-    oklch(0.5 0.15 262) 75%,
-    oklch(0.65 0.05 262) 100%
+    oklch(0.55 0 0) 0%,
+    oklch(0.88 0 0) 25%,
+    oklch(0.55 0 0) 50%,
+    oklch(0.88 0 0) 75%,
+    oklch(0.55 0 0) 100%
   );
   background-size: 220% 100%;
   -webkit-background-clip: text;
