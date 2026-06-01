@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -47,7 +48,10 @@ func (t *EditTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 	// 2. 读取当前文件
 	current, err := git.ReadFile(tc.NovelID, a.Path)
 	if err != nil {
-		return &ToolResult{Success: false, Error: fmt.Sprintf("读取文件失败: %s", err.Error())}, nil
+		if os.IsNotExist(err) {
+			return &ToolResult{Success: false, Error: "文件不存在: " + a.Path}, nil
+		}
+		return nil, fmt.Errorf("read file %s: %w", a.Path, err)
 	}
 
 	// 3. 根据 change_type 生成新内容
@@ -84,7 +88,7 @@ func (t *EditTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 			"reason":      a.Reason,
 		})
 		if err != nil {
-			return &ToolResult{Success: false, Error: "审批异常: " + err.Error(), BreakLoop: true}, nil
+			return nil, fmt.Errorf("approval: %w", err)
 		}
 		if !approval.Approved {
 			msg := "用户拒绝了修改"
@@ -265,7 +269,10 @@ func (t *ReadTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 
 	content, err := git.ReadFile(tc.NovelID, a.Path)
 	if err != nil {
-		return &ToolResult{Success: false, Error: fmt.Sprintf("读取文件失败: %s", err.Error())}, nil
+		if os.IsNotExist(err) {
+			return &ToolResult{Success: false, Error: "文件不存在: " + a.Path}, nil
+		}
+		return nil, fmt.Errorf("read file %s: %w", a.Path, err)
 	}
 
 	start := a.StartLine
