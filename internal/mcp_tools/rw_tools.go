@@ -231,9 +231,113 @@ const editDescription = `编辑小说文件（章节正文或故事状态 goink.
 只接受上述相对路径。
 所有修改会先生成 git diff 提交用户审批，审批通过后才写入文件。被拒绝则本轮对话终止。`
 
+// ── read ──────────────────────────────────────────────────
+
+// ReadArgs 是 read 工具的参数。
+type ReadArgs struct {
+	Path         string `json:"path" jsonschema:"required,description=要读取的文件路径。章节文件格式为 chapters/001.md（三位数字），故事状态为 goink.md" validate:"required"`
+	IncludeLines *bool   `json:"include_lines" jsonschema:"default=true,description=是否包含行号前缀（如 123|）。默认 true，用于精确引用和行范围编辑。传 false 获取纯文本"`
+	StartLine    int    `json:"start_line" jsonschema:"default=1,description=起始行号 1-based 含此行" validate:"omitempty,min=1"`
+	EndLine      int    `json:"end_line" jsonschema:"default=2000,description=结束行号 1-based 含此行，超出自动截到文末；设为 0 读取全部" validate:"omitempty,min=0"`
+}
+
+// ReadTool 读取文件内容（章节正文或故事状态 goink.md）。
+// 默认含行号前缀（123|），LLM 传 include_lines=false 获取纯文本。
+// start_line/end_line 支持行范围读取，用于翻页和精确引用。
+type ReadTool struct{}
+
+func (t *ReadTool) Name() string           { return "read" }
+func (t *ReadTool) Description() string    { return readDescription }
+func (t *ReadTool) Category() ToolCategory { return CategoryNovelManagement }
+
+func (t *ReadTool) JSONSchema() json.RawMessage { return SchemaOf(ReadArgs{}) }
+func (t *ReadTool) ExposeToLLM() bool           { return true }
+func (t *ReadTool) NewArgs() any                { return &ReadArgs{} }
+
+func (t *ReadTool) Execute(ctx context.Context, args any, tc ToolContext) (*ToolResult, error) {
+	a := args.(*ReadArgs)
+
+	if !validPath(a.Path) {
+		return &ToolResult{Success: false, Error: "无效文件路径，支持 chapters/001.md ~ chapters/999999.md 和 goink.md"}, nil
+	}
+
+	content, err := git.ReadFile(tc.NovelID, a.Path)
+	if err != nil {
+		return &ToolResult{Success: false, Error: fmt.Sprintf("读取文件失败: %s", err.Error())}, nil
+	}
+
+	start := a.StartLine
+	if start == 0 {
+		start = 1
+	}
+	end := a.EndLine
+	if end == 0 {
+		end = 2000
+	}
+
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	if start > totalLines {
+		return &ToolResult{Success: false, Error: fmt.Sprintf("起始行 %d 超出文件总行数 %d", start, totalLines)}, nil
+	}
+	if end > totalLines {
+		end = totalLines
+	}
+
+	selected := lines[start-1 : end]
+
+	includeLines := a.IncludeLines == nil || *a.IncludeLines
+
+	var output string
+	if includeLines {
+		var sb strings.Builder
+		for i, line := range selected {
+			fmt.Fprintf(&sb, "%d|%s\n", start+i, line)
+		}
+		output = strings.TrimRight(sb.String(), "\n")
+	} else {
+		output = strings.Join(selected, "\n")
+	}
+
+	display := a.Path
+	if isChapterPath(a.Path) {
+		display = fmt.Sprintf("第%d章", parseChapterNum(a.Path))
+	}
+
+	data := map[string]any{
+		"path":        a.Path,
+		"display":     display,
+		"content":     output,
+		"total_lines": totalLines,
+		"start_line":  start,
+		"end_line":    end,
+	}
+	if end < totalLines {
+		data["truncated"] = true
+	}
+
+	return &ToolResult{Success: true, Data: data}, nil
+}
+
+// ── 工具描述 ──────────────────────────────────────────────
+
+const readDescription = `读取小说文件（章节正文或故事状态 goink.md）。
+
+路径格式（与 edit 工具一致）：
+- chapters/001.md ~ chapters/999999.md（三位数字补齐的章节文件）
+- goink.md（故事状态文档）
+只接受上述相对路径。
+特性：
+- 默认添加行号前缀（123|），方便后续 edit 工具进行 line_range_replace 和 search_replace
+- start_line 和 end_line 支持行范围读取：默认读前 2000 行，可通过调整参数翻页或精确引用
+- 返回 total_lines 表示全文行数，用于判断是否被截断
+- include_lines=false 返回纯文本（不含行号）`
+
 // ── 注册 ──────────────────────────────────────────────────
 
-// RegisterEditingTools 注册编辑类工具。
-func RegisterEditingTools(r *Registry) {
+// RegisterRWTools 注册读写工具。
+func RegisterRWTools(r *Registry) {
+	r.Register(&ReadTool{})
 	r.Register(&EditTool{})
 }

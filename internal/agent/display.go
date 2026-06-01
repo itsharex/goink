@@ -45,6 +45,7 @@ var toolDisplayNames = map[string]string{
 	"update_preference":               "更新创作偏好",
 	"lint_chapter":                    "章节文本检查",
 	"edit":                           "编辑文件内容",
+	"read":                           "读取文件内容",
 }
 
 // toolActivityKinds 工具名 → 前端展示类别。
@@ -86,6 +87,7 @@ var toolActivityKinds = map[string]string{
 	"update_preference":   "edit",
 	"lint_chapter":        "review",
 	"edit":               "write",
+	"read":               "view",
 }
 
 // chapterTools 需要查章节标题的工具集。
@@ -93,6 +95,7 @@ var chapterTools = map[string]bool{
 	"get_chapter_content": true,
 	"edit_chapter":        true,
 	"edit":               true,
+	"read":               true,
 }
 
 // buildDisplay 根据 tool_name + args + phase 生成前端展示文本。
@@ -134,14 +137,19 @@ func (a *Agent) buildDisplay(name string, args map[string]any, phase mcp_tools.D
 				baseText = "编辑 " + label
 			case "edit":
 				baseText = "编辑 " + label
+			case "read":
+				baseText = "查看 " + label
 			}
 		}
 
 
-		// edit 工具的 goink.md 路径特殊处理
-		if name == "edit" {
-			if path, ok := args["path"].(string); ok && path == "goink.md" {
+		// rw 工具的 goink.md 路径特殊处理
+		if path, ok := args["path"].(string); ok && path == "goink.md" {
+			switch name {
+			case "edit":
 				baseText = "编辑 故事状态"
+			case "read":
+				baseText = "查看 故事状态"
 			}
 		}
 	}

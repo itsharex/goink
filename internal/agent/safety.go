@@ -26,6 +26,7 @@ var readOnlyTools = map[string]bool{
 	"check_consistency":       true,
 	"get_preferences":         true,
 	"get_character_relations": true,
+	"read":                    true,
 }
 
 type toolOutput struct {

@@ -9,5 +9,5 @@ func RegisterAllTools(r *Registry) {
 	RegisterLocationTools(r)
 	RegisterTimelineTools(r)
 	RegisterStoryArcTools(r)
-	RegisterEditingTools(r)
+	RegisterRWTools(r)
 }
