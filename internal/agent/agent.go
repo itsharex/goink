@@ -24,6 +24,7 @@ import (
 type Agent struct {
 	llm      *llm.Client
 	registry *mcp_tools.Registry
+	session  *session.Store
 	db       *gorm.DB
 	approver approval.Approver
 	logger   *slog.Logger
@@ -48,10 +49,11 @@ type RunOptions struct {
 }
 
 // New 创建 Agent 实例。
-func New(llmClient *llm.Client, registry *mcp_tools.Registry, db *gorm.DB, approver approval.Approver, logger *slog.Logger) *Agent {
+func New(llmClient *llm.Client, registry *mcp_tools.Registry, session *session.Store, db *gorm.DB, approver approval.Approver, logger *slog.Logger) *Agent {
 	return &Agent{
 		llm:      llmClient,
 		registry: registry,
+		session:  session,
 		db:       db,
 		approver: approver,
 		logger:   logger,

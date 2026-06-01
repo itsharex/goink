@@ -41,13 +41,12 @@ interface Props {
 export default function ContextRing({ usage }: Props) {
   const [showPopover, setShowPopover] = useState(false)
 
-  if (!usage || !usage.context_window || !usage.total_tokens) return null
-
-  const ratio = Math.min(usage.usage_ratio, 100)
+  const hasUsage = usage && usage.context_window && usage.total_tokens
+  const ratio = hasUsage ? Math.min(usage.usage_ratio, 100) : 0
   const r = 18
   const circumference = 2 * Math.PI * r
   const offset = circumference - (ratio / 100) * circumference
-  const color = ringColor(ratio)
+  const color = hasUsage ? ringColor(ratio) : 'var(--muted-foreground)'
 
   return (
     <span
@@ -84,10 +83,10 @@ export default function ContextRing({ usage }: Props) {
             />
           </div>
           <div className="text-xs text-muted-foreground">
-            已用: {formatTokens(usage.total_tokens)}
-            {' · '}总大小: {formatTokens(usage.context_window)}
+            已用: {hasUsage ? formatTokens(usage.total_tokens) : '0'}
+            {hasUsage && <>{' · '}总大小: {formatTokens(usage.context_window)}</>}
           </div>
-          {usage.detail && (
+          {hasUsage && usage.detail && (
             <div className="flex flex-col gap-1.5 border-t pt-2">
               {Object.entries(DETAIL_LABELS).map(([key, label]) => {
                 const count = (usage.detail as any)[key] || 0

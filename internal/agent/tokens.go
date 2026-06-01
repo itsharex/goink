@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -49,6 +50,12 @@ func (a *Agent) updateUsage(ctx context.Context, apiUsage map[string]any, runnin
 	}
 	if opts.Model.ContextWindow > 0 {
 		usage["usage_ratio"] = float64(int(apiTotal)) / float64(opts.Model.ContextWindow) * 100
+	}
+
+	if b, err := json.Marshal(usage); err == nil {
+		if err := a.session.UpdateSessionUsage(ctx, opts.SessionID, string(b)); err != nil {
+			a.logger.Warn("持久化 usage 失败", "err", err)
+		}
 	}
 
 	wails.EventsEmit(ctx, "agent:"+strconv.Itoa(opts.TurnID), AgentEvent{
