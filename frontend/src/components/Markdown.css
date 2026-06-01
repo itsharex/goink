@@ -16,6 +16,9 @@
   --tw-prose-pre-bg: var(--muted);
   --tw-prose-th-borders: var(--border);
   --tw-prose-td-borders: var(--border);
+  /* 中文字体渲染：子像素抗锯齿保留笔画完整，避免小字发虚 */
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .dark .prose {
@@ -30,32 +33,124 @@
   --tw-prose-td-borders: var(--border);
 }
 
-/* Chat 紧凑间距：覆盖 prose 默认的大段间距 */
+/* ── Chat 紧凑间距 ─────────────────────────────────────────── */
 .prose-sm :where(p, ul, ol):not(:where([class~="not-prose"] *)) {
   margin-top: 0.25em;
   margin-bottom: 0.25em;
 }
 .prose-sm :where(h2, h3, h4):not(:where([class~="not-prose"] *)) {
-  margin-top: 0.6em;
-  margin-bottom: 0.2em;
+  margin-top: 0.75em;
+  margin-bottom: 0.25em;
 }
 .prose-sm :where(pre, table, blockquote, hr):not(:where([class~="not-prose"] *)) {
-  margin-top: 0.4em;
-  margin-bottom: 0.4em;
+  margin-top: 0.55em;
+  margin-bottom: 0.55em;
 }
 .prose-sm :where(li > p):not(:where([class~="not-prose"] *)) {
   margin-top: 0;
   margin-bottom: 0;
 }
 .prose-sm :where(figure):not(:where([class~="not-prose"] *)) {
-  margin-top: 0.4em;
-  margin-bottom: 0.4em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
 }
 .prose-sm :where(figure figcaption):not(:where([class~="not-prose"] *)) {
   margin-top: 0.25em;
 }
 
-/* 用户消息：颜色继承气泡，不用 prose 默认色 */
+/* ── 中文排版微调 ─────────────────────────────────────────── */
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  letter-spacing: 0; /* 中文不需要负字间距 */
+}
+
+.prose h2 {
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+}
+
+.prose em {
+  font-style: normal;
+  color: color-mix(in oklab, currentColor 82%, var(--primary) 18%);
+}
+
+.prose strong {
+  font-weight: 720;
+}
+
+/* ── 引用块 ───────────────────────────────────────────────── */
+.prose blockquote {
+  margin: 0.75em 0;
+  padding: 0.65rem 1rem;
+  font-style: normal;
+  font-weight: 420;
+  color: color-mix(in oklab, var(--foreground) 78%, var(--muted-foreground));
+  background: color-mix(in oklab, var(--primary) 5%, var(--muted) 30%);
+  border-left: 4px solid color-mix(in oklab, var(--primary) 60%, transparent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.prose blockquote > :first-child { margin-top: 0; }
+.prose blockquote > :last-child { margin-bottom: 0; }
+
+/* ── 表格 ─────────────────────────────────────────────────── */
+.prose table {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.prose thead th {
+  background: color-mix(in oklab, var(--muted) 82%, transparent);
+  font-weight: 680;
+  font-size: 0.9em;
+  color: var(--muted-foreground);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.prose tbody td {
+  font-size: 0.925em;
+}
+
+.prose tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── 列表 ─────────────────────────────────────────────────── */
+.prose li::marker {
+  color: var(--muted-foreground);
+}
+
+.prose ul > li::marker {
+  color: color-mix(in oklab, var(--primary) 50%, var(--muted-foreground));
+}
+
+/* ── 水平线 ───────────────────────────────────────────────── */
+.prose hr {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border) 20%, var(--border) 80%, transparent);
+}
+
+/* ── 图片 ─────────────────────────────────────────────────── */
+.prose img {
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+/* ── 内联代码 ─────────────────────────────────────────────── */
+.prose code {
+  font-size: 0.875em;
+  padding: 0.13em 0.35em;
+  border-radius: calc(var(--radius-sm) * 0.8);
+  background: color-mix(in oklab, var(--muted) 72%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+  color: color-mix(in oklab, var(--foreground) 88%, var(--primary));
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* ── 用户消息：颜色继承气泡 ───────────────────────────────── */
 .markdown-user {
   --tw-prose-body: inherit;
   --tw-prose-headings: inherit;
@@ -65,13 +160,20 @@
   --tw-prose-bullets: inherit;
   --tw-prose-quotes: inherit;
   --tw-prose-code: inherit;
+  --tw-prose-quote-borders: color-mix(in oklab, currentColor 40%, transparent);
 }
 
 .markdown-user a {
   border-bottom: 1px solid color-mix(in oklab, currentColor 45%, transparent);
 }
 
-/* 代码块外壳 + 工具栏（prose 不处理这些） */
+.markdown-user blockquote {
+  color: color-mix(in oklab, currentColor 78%, transparent);
+  background: color-mix(in oklab, currentColor 8%, transparent);
+  border-left-color: color-mix(in oklab, currentColor 40%, transparent);
+}
+
+/* ── 代码块外壳 + 工具栏 ──────────────────────────────────── */
 .markdown-code-block {
   margin: 0.72rem 0;
   overflow: hidden;
@@ -97,6 +199,8 @@
   font-weight: 650;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .markdown-code-copy {
@@ -126,6 +230,8 @@
   color: inherit;
   font-size: 0.84rem;
   line-height: 1.65;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .markdown-code-pre code {
@@ -137,16 +243,93 @@
   background: transparent;
   color: inherit;
   white-space: pre;
+  font-size: inherit;
 }
 
-/* KaTeX 显示公式 */
+/* ── Mermaid 图表 ──────────────────────────────────────────── */
+.mermaid-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  background: color-mix(in oklab, var(--muted) 72%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
+}
+
+.mermaid-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.mermaid-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 0;
+  border-radius: calc(var(--radius-sm) * 0.8);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.mermaid-zoom-btn:hover:not(:disabled) {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+.mermaid-zoom-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mermaid-zoom-label {
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: calc(var(--radius-sm) * 0.8);
+  border: 0;
+  background: transparent;
+  transition: color 150ms ease, background 150ms ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.mermaid-zoom-label:hover {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+.mermaid-diagram {
+  overflow: auto;
+  padding: 1rem;
+  user-select: none;
+}
+
+.mermaid-scaled {
+  display: inline-block;
+  min-width: max-content;
+}
+
+.mermaid-scaled svg {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+
+/* ── KaTeX 显示公式 ────────────────────────────────────────── */
 .prose .katex-display {
   margin: 0.65rem 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-/* Highlight.js 语法着色 */
+/* ── Highlight.js 语法着色 ─────────────────────────────────── */
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-title.function_ {

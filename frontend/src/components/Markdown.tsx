@@ -1,4 +1,4 @@
-import { isValidElement, useCallback, useMemo, useState, type ReactNode } from 'react'
+import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -15,11 +15,6 @@ interface MarkdownProps {
 }
 
 interface CodeBlockProps {
-  className?: string
-  children?: ReactNode
-}
-
-interface CodeElementProps {
   className?: string
   children?: ReactNode
 }
@@ -86,18 +81,146 @@ function CodeBlock({ className, children }: CodeBlockProps) {
   )
 }
 
-function PreBlock({ children }: { children?: ReactNode }) {
-  const codeElement = isValidElement<CodeElementProps>(children) && children.type === 'code'
-    ? children
-    : null
+let mermaidModule: typeof import('mermaid').default | null = null
+function loadMermaid() {
+  if (!mermaidModule) {
+    return import('mermaid').then(m => {
+      mermaidModule = m.default
+      mermaidModule.initialize({ startOnLoad: false })
+      return mermaidModule
+    })
+  }
+  return Promise.resolve(mermaidModule)
+}
 
-  if (!codeElement) {
+function MermaidBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState('')
+  const [error, setError] = useState(false)
+  const [scale, setScale] = useState(1)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isPanning = useRef(false)
+  const panStart = useRef({ x: 0, y: 0, scrollX: 0, scrollY: 0 })
+  const idRef = useRef(`m-${Math.random().toString(36).slice(2, 9)}`)
+
+  useEffect(() => {
+    let cancelled = false
+    loadMermaid().then(async (mermaid) => {
+      if (cancelled) return
+      const dark = document.documentElement.classList.contains('dark')
+      mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
+      try {
+        const { svg: s } = await mermaid.render(idRef.current, code)
+        if (!cancelled) { setSvg(s); setScale(1) }
+      } catch (e) {
+        console.error('mermaid render failed:', e)
+        if (!cancelled) setError(true)
+      }
+    })
+    return () => { cancelled = true }
+  }, [code])
+
+  // 非 passive 滚轮监听，阻止页面滚动
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || !svg) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      setScale(prev => Math.min(3, Math.max(0.25, prev - e.deltaY * 0.001)))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [svg])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    const el = containerRef.current
+    if (!el || scale <= 1) return
+    isPanning.current = true
+    panStart.current = { x: e.clientX, y: e.clientY, scrollX: el.scrollLeft, scrollY: el.scrollTop }
+    el.style.cursor = 'grabbing'
+  }, [scale])
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isPanning.current) return
+      const el = containerRef.current
+      if (!el) return
+      el.scrollLeft = panStart.current.scrollX + panStart.current.x - e.clientX
+      el.scrollTop = panStart.current.scrollY + panStart.current.y - e.clientY
+    }
+    const onUp = () => {
+      isPanning.current = false
+      if (containerRef.current) containerRef.current.style.cursor = scale > 1 ? 'grab' : 'default'
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [scale])
+
+  const zoomIn = useCallback(() => setScale(prev => Math.min(3, prev + 0.25)), [])
+  const zoomOut = useCallback(() => setScale(prev => Math.max(0.25, prev - 0.25)), [])
+  const zoomReset = useCallback(() => setScale(1), [])
+
+  return (
+    <div className="markdown-code-block not-prose">
+      {svg ? (
+        <>
+          <div className="mermaid-code-toolbar">
+            <span className="markdown-code-lang">mermaid</span>
+            <div className="mermaid-zoom-controls">
+              <button onClick={zoomOut} disabled={scale <= 0.25} className="mermaid-zoom-btn" title="缩小">−</button>
+              <button onClick={zoomReset} className="mermaid-zoom-label">{Math.round(scale * 100)}%</button>
+              <button onClick={zoomIn} disabled={scale >= 3} className="mermaid-zoom-btn" title="放大">+</button>
+            </div>
+          </div>
+          <div
+            ref={containerRef}
+            className="mermaid-diagram"
+            onMouseDown={handleMouseDown}
+            style={{ cursor: scale > 1 ? 'grab' : 'default' }}
+          >
+            <div
+              className="mermaid-scaled"
+              style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="markdown-code-toolbar">
+            <span className="markdown-code-lang">mermaid{error ? ' error' : ''}</span>
+          </div>
+          <pre className="markdown-code-pre"><code>{code}</code></pre>
+        </>
+      )}
+    </div>
+  )
+}
+
+function PreBlock({ children }: { children?: ReactNode }) {
+  if (!isValidElement(children)) {
     return <pre className="markdown-code-pre">{children}</pre>
   }
 
+  const className: string = (children.props as any)?.className || ''
+
+  if (!className) {
+    return <pre className="markdown-code-pre">{children}</pre>
+  }
+
+  const lang = className.replace(/^language-/, '')
+
+  if (lang === 'mermaid') {
+    const code = getNodeText((children.props as any).children).replace(/\n$/, '')
+    return <MermaidBlock code={code} />
+  }
+
   return (
-    <CodeBlock className={codeElement.props.className}>
-      {codeElement.props.children}
+    <CodeBlock className={className}>
+      {(children.props as any).children}
     </CodeBlock>
   )
 }
