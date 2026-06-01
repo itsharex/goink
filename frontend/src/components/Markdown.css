@@ -94,26 +94,58 @@
 
 /* ── 表格 ─────────────────────────────────────────────────── */
 .prose table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  border: 1px solid var(--border);
+  font-size: 0.875rem;
 }
 
 .prose thead th {
-  background: color-mix(in oklab, var(--muted) 82%, transparent);
-  font-weight: 680;
-  font-size: 0.9em;
+  background: color-mix(in oklab, var(--muted) 85%, transparent);
+  font-weight: 650;
+  font-size: 0.82em;
   color: var(--muted-foreground);
   text-transform: none;
   letter-spacing: 0;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.prose thead th:first-child {
+  border-top-left-radius: var(--radius-md);
+}
+
+.prose thead th:last-child {
+  border-top-right-radius: var(--radius-md);
 }
 
 .prose tbody td {
-  font-size: 0.925em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 46%, transparent);
 }
 
 .prose tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.prose tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.prose tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-md);
+}
+
+.prose tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--muted) 40%, transparent);
+}
+
+.prose tbody tr:hover td {
+  background: color-mix(in oklab, var(--primary) 5%, var(--muted) 30%);
+  transition: background 120ms ease;
 }
 
 /* ── 列表 ─────────────────────────────────────────────────── */
@@ -247,6 +279,11 @@
 }
 
 /* ── Mermaid 图表 ──────────────────────────────────────────── */
+.mermaid-host {
+  min-height: 320px;
+  contain: layout style;
+}
+
 .mermaid-code-toolbar {
   display: flex;
   align-items: center;
@@ -305,21 +342,54 @@
   background: color-mix(in oklab, var(--muted) 70%, transparent);
 }
 
+.mermaid-code-pre {
+  min-height: 280px;
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  overflow: auto;
+  background: transparent;
+  color: inherit;
+  font-size: 0.84rem;
+  line-height: 1.65;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  scrollbar-gutter: stable;
+}
+
+.mermaid-code-pre code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  white-space: pre;
+  font-size: inherit;
+}
+
 .mermaid-diagram {
   overflow: auto;
   padding: 1rem;
   user-select: none;
+  scrollbar-gutter: stable;
 }
 
 .mermaid-scaled {
   display: inline-block;
   min-width: max-content;
+  animation: mermaid-fade-in 200ms ease-out;
 }
 
 .mermaid-scaled svg {
   display: block;
   max-width: none;
   height: auto;
+}
+
+@keyframes mermaid-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ── KaTeX 显示公式 ────────────────────────────────────────── */

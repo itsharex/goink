@@ -86,7 +86,7 @@ function loadMermaid() {
   if (!mermaidModule) {
     return import('mermaid').then(m => {
       mermaidModule = m.default
-      mermaidModule.initialize({ startOnLoad: false })
+      mermaidModule.initialize({ startOnLoad: false, suppressErrorRendering: true })
       return mermaidModule
     })
   }
@@ -102,21 +102,31 @@ function MermaidBlock({ code }: { code: string }) {
   const panStart = useRef({ x: 0, y: 0, scrollX: 0, scrollY: 0 })
   const idRef = useRef(`m-${Math.random().toString(36).slice(2, 9)}`)
 
+  // 防抖渲染：流式输出时 code 频繁变化，延迟等稳定后再渲染。不清空旧 SVG，避免源码/图表来回切换导致页面抖动。
   useEffect(() => {
+    setError(false)
+
     let cancelled = false
-    loadMermaid().then(async (mermaid) => {
+    const timer = setTimeout(() => {
       if (cancelled) return
-      const dark = document.documentElement.classList.contains('dark')
-      mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
-      try {
-        const { svg: s } = await mermaid.render(idRef.current, code)
-        if (!cancelled) { setSvg(s); setScale(1) }
-      } catch (e) {
-        console.error('mermaid render failed:', e)
-        if (!cancelled) setError(true)
-      }
-    })
-    return () => { cancelled = true }
+      loadMermaid().then(async (mermaid) => {
+        if (cancelled) return
+        const dark = document.documentElement.classList.contains('dark')
+        mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default', suppressErrorRendering: true })
+        try {
+          const cleanCode = code.replace(/^---\n[\s\S]*?---\n/, '')
+          const { svg: s } = await mermaid.render(idRef.current, cleanCode)
+          if (!cancelled) { setSvg(s); setScale(1) }
+        } catch {
+          if (!cancelled) { setError(true); setSvg('') }
+        }
+      })
+    }, 200)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [code])
 
   // 非 passive 滚轮监听，阻止页面滚动
@@ -164,37 +174,32 @@ function MermaidBlock({ code }: { code: string }) {
   const zoomReset = useCallback(() => setScale(1), [])
 
   return (
-    <div className="markdown-code-block not-prose">
+    <div className="markdown-code-block not-prose mermaid-host">
+      <div className="mermaid-code-toolbar">
+        <span className="markdown-code-lang">mermaid{error ? ' error' : ''}</span>
+        {svg && (
+          <div className="mermaid-zoom-controls">
+            <button onClick={zoomOut} disabled={scale <= 0.25} className="mermaid-zoom-btn" title="缩小">−</button>
+            <button onClick={zoomReset} className="mermaid-zoom-label">{Math.round(scale * 100)}%</button>
+            <button onClick={zoomIn} disabled={scale >= 3} className="mermaid-zoom-btn" title="放大">+</button>
+          </div>
+        )}
+      </div>
       {svg ? (
-        <>
-          <div className="mermaid-code-toolbar">
-            <span className="markdown-code-lang">mermaid</span>
-            <div className="mermaid-zoom-controls">
-              <button onClick={zoomOut} disabled={scale <= 0.25} className="mermaid-zoom-btn" title="缩小">−</button>
-              <button onClick={zoomReset} className="mermaid-zoom-label">{Math.round(scale * 100)}%</button>
-              <button onClick={zoomIn} disabled={scale >= 3} className="mermaid-zoom-btn" title="放大">+</button>
-            </div>
-          </div>
+        <div
+          ref={containerRef}
+          className="mermaid-diagram"
+          onMouseDown={handleMouseDown}
+          style={{ cursor: scale > 1 ? 'grab' : 'default' }}
+        >
           <div
-            ref={containerRef}
-            className="mermaid-diagram"
-            onMouseDown={handleMouseDown}
-            style={{ cursor: scale > 1 ? 'grab' : 'default' }}
-          >
-            <div
-              className="mermaid-scaled"
-              style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-          </div>
-        </>
+            className="mermaid-scaled"
+            style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        </div>
       ) : (
-        <>
-          <div className="markdown-code-toolbar">
-            <span className="markdown-code-lang">mermaid{error ? ' error' : ''}</span>
-          </div>
-          <pre className="markdown-code-pre"><code>{code}</code></pre>
-        </>
+        <pre className="mermaid-code-pre"><code>{code}</code></pre>
       )}
     </div>
   )

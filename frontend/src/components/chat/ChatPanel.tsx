@@ -56,6 +56,8 @@ export default function ChatPanel({ novelId }: Props) {
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
   const counterRef = useRef(0)
   const startedUnsubRef = useRef<(() => void) | null>(null)
   const agentUnsubRef = useRef<(() => void) | null>(null)
@@ -137,9 +139,18 @@ export default function ChatPanel({ novelId }: Props) {
     }
   }, [])
 
+  // 流式输出时自动滚到底部，但仅在用户未主动上滚时
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    }
   }, [turns])
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  }, [])
 
   const handleSelectSession = useCallback((sid: string) => {
     setActiveSessionId(sid)
@@ -485,7 +496,7 @@ export default function ChatPanel({ novelId }: Props) {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 relative">
+      <div ref={scrollContainerRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto px-3 py-3 relative">
         {!hasNovel ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

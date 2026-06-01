@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import Markdown from '@/components/Markdown'
 
 interface Props {
@@ -5,7 +6,7 @@ interface Props {
   content: string
 }
 
-export default function MessageBubble({ role, content }: Props) {
+export default memo(function MessageBubble({ role, content }: Props) {
   const isUser = role === 'user'
 
   return (
@@ -21,4 +22,4 @@ export default function MessageBubble({ role, content }: Props) {
       </div>
     </div>
   )
-}
+})
