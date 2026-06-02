@@ -19,7 +19,7 @@ const (
 type AgentEvent struct {
 	TurnID       int            `json:"turn_id"`
 	SubTaskID    string         `json:"sub_task_id,omitempty"` // 子 Agent 事件路由 ID（对应 run_subagent 的 tool call ID）
-	Seq          int            `json:"seq,omitempty"`            // 单个 turn 内的事件序号，用于前端恢复流式顺序
+	Seq          int            `json:"seq,omitempty"`         // turn 内事件序号，前端用于纠正 dev 模式 WebSocket 乱序
 	Type         AgentEventType `json:"type"`
 	Data         string         `json:"data,omitempty"`          // thinking / content 文本 chunk
 	ToolName     string         `json:"tool_name,omitempty"`     // EventToolCall 时

@@ -45,6 +45,7 @@ type RunOptions struct {
 	ProviderName     string
 	AgentType        string
 	SubTaskID        string // 子 Agent 事件路由 ID
+	EventSeq         *int   // 共享事件序号，nil 时自建（主Agent）；子Agent传入父的指针
 	MaxTurns         int
 	MaxContextTokens int
 }
@@ -105,6 +106,7 @@ func (a *Agent) RunSubAgent(ctx context.Context, parentOpts RunOptions, req mcp_
 		AllowedTools: allowed,
 		AgentType:    req.AgentType,
 		SubTaskID:    req.ToolID,
+		EventSeq:     parentOpts.EventSeq,
 		MaxTurns:     50,
 		Model:        parentOpts.Model,
 		ProviderName: parentOpts.ProviderName,
@@ -147,10 +149,14 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 	runningTokens := a.initRunningTokens(opts.Messages)
 	tools := a.registry.OpenAI(opts.AllowedTools)
 	agentEventName := "agent:" + strconv.Itoa(opts.TurnID)
-	eventSeq := 0
+	eventSeq := opts.EventSeq
+	if eventSeq == nil {
+		seq := 0
+		eventSeq = &seq
+	}
 	emit := func(event AgentEvent) {
-		eventSeq++
-		event.Seq = eventSeq
+		*eventSeq++
+		event.Seq = *eventSeq
 		if event.Timestamp.IsZero() {
 			event.Timestamp = time.Now()
 		}
