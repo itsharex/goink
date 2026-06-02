@@ -14,6 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"novel/internal/agentcfg"
 	"novel/internal/approval"
 	"novel/internal/llm"
 	"novel/internal/mcp_tools"
@@ -82,6 +83,45 @@ func (a *Agent) Cancel(sessionID string) {
 	if c, ok := a.cancels[sessionID]; ok {
 		c()
 		delete(a.cancels, sessionID)
+	}
+}
+
+// RunSubAgent 启动子 Agent 并返回最终报告文本。
+func (a *Agent) RunSubAgent(ctx context.Context, parentOpts RunOptions, req mcp_tools.SubAgentRequest) (string, error) {
+	at := agentTypeFromString(req.AgentType)
+	sysPrompt := agentcfg.System1(at)
+	allowed := agentcfg.Allowlist(at)
+
+	msgs := []map[string]any{
+		{"role": "system", "content": sysPrompt},
+		{"role": "user", "content": req.Instruction},
+	}
+
+	parentTurnID := parentOpts.TurnID
+	subOpts := RunOptions{
+		SessionID:    parentOpts.SessionID,
+		NovelID:      req.NovelID,
+		Messages:     msgs,
+		AllowedTools: allowed,
+		AgentType:    req.AgentType,
+		ParentTurnID: &parentTurnID,
+		MaxTurns:     50,
+		Model:        parentOpts.Model,
+		ProviderName: parentOpts.ProviderName,
+	}
+	result, err := a.Run(ctx, subOpts)
+	return result.FinalText, err
+}
+
+// agentTypeFromString 将字符串转为 AgentType。
+func agentTypeFromString(s string) agentcfg.AgentType {
+	switch s {
+	case "review":
+		return agentcfg.ReviewAgent
+	case "memory":
+		return agentcfg.MemoryAgent
+	default:
+		return agentcfg.MainAgent
 	}
 }
 
@@ -205,7 +245,15 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 						Metadata: display.Metadata, Timestamp: time.Now(),
 					})
 
-					tc := mcp_tools.ToolContext{DB: a.db, NovelID: opts.NovelID, ToolID: id, Approver: a.approver}
+					tc := mcp_tools.ToolContext{
+						DB:       a.db,
+						NovelID:  opts.NovelID,
+						ToolID:   id,
+						Approver: a.approver,
+						RunSubAgent: func(ctx context.Context, req mcp_tools.SubAgentRequest) (string, error) {
+							return a.RunSubAgent(ctx, opts, req)
+						},
+					}
 					result := a.registry.Execute(ctx, name, rawArgs, tc, opts.AllowedTools)
 
 					phase := "completed"

@@ -28,6 +28,7 @@ var mainAgentTools = []string{
 	"edit",
 	"read",
 	"search_story_memory",
+	"run_subagent",
 }
 
 var reviewAgentTools = []string{

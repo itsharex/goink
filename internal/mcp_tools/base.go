@@ -29,6 +29,16 @@ type Tool interface {
 
 // ── 上下文 ────────────────────────────────────────────
 
+// SubAgentRequest 传递给子 Agent 运行器的参数。
+type SubAgentRequest struct {
+	AgentType   string // "memory" | "review"
+	NovelID     int64
+	Instruction string
+}
+
+// RunSubAgentFunc 由 agent 包注入，避免循环依赖。
+type RunSubAgentFunc func(ctx context.Context, req SubAgentRequest) (report string, err error)
+
 // ToolContext 是工具执行时注入的上下文。
 type ToolContext struct {
 	DB       *gorm.DB
@@ -36,6 +46,8 @@ type ToolContext struct {
 	ToolID   string
 	RawArgs  json.RawMessage   // 原始 JSON，update 工具用于 PATCH DB 实体
 	Approver approval.Approver // 审批能力，nil 表示工具无需审批
+
+	RunSubAgent RunSubAgentFunc // 子 Agent 运行器，由 agent 包注入
 }
 
 // ── 结果 ──────────────────────────────────────────────

@@ -11,4 +11,5 @@ func RegisterAllTools(r *Registry) {
 	RegisterStoryArcTools(r)
 	RegisterRWTools(r)
 	RegisterMemoryTools(r)
+	RegisterSubagentTools(r)
 }
