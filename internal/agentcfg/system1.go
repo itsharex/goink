@@ -27,6 +27,7 @@ var mainAgentTools = []string{
 	"get_preferences", "create_preference", "update_preference",
 	"edit",
 	"read",
+	"search_story_memory",
 }
 
 var reviewAgentTools = []string{
@@ -42,6 +43,7 @@ var memoryAgentTools = []string{
 	"get_chapter_list", "get_characters", "get_character_relations",
 	"get_locations", "get_timeline", "get_story_arcs",
 	"get_reader_perspective", "get_preferences",
+	"search_story_memory",
 }
 
 var (

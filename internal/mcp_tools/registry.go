@@ -10,4 +10,5 @@ func RegisterAllTools(r *Registry) {
 	RegisterTimelineTools(r)
 	RegisterStoryArcTools(r)
 	RegisterRWTools(r)
+	RegisterMemoryTools(r)
 }

@@ -35,10 +35,11 @@ type App struct {
 	settings *config.AppSettings
 	db       *gorm.DB
 
-	llmClient *llm.Client
-	agent     *agent.Agent
-	registry  *mcp_tools.Registry
-	approvals *approval.Service
+	llmClient   *llm.Client
+	agent       *agent.Agent
+	registry    *mcp_tools.Registry
+	approvals   *approval.Service
+	vectorStore *rag.VectorStore
 
 	novel     *novel.Store
 	chapter   *chapter.Store
@@ -153,7 +154,24 @@ func (a *App) initWithConfig(cfg *config.AppConfig) {
 	// 8. 初始化审批服务
 	a.approvals = approval.NewService(a.logger)
 
-	// 9. 创建 Agent 实例（全局复用）
+	// 9. 异步初始化向量存储（不阻塞 UI）
+	go func() {
+		emb, err := rag.GetEmbedder()
+		if err != nil {
+			a.logger.Error("获取 Embedder 失败，向量检索不可用", "err", err)
+			return
+		}
+		sqlDB, err := a.db.DB()
+		if err != nil {
+			a.logger.Error("获取底层 SQL DB 失败，向量检索不可用", "err", err)
+			return
+		}
+		rag.InitVectorStore(sqlDB, emb, a.logger)
+		a.vectorStore = rag.GetVectorStore()
+		a.logger.Info("向量存储初始化完成")
+	}()
+
+	// 10. 创建 Agent 实例（全局复用）
 	a.agent = agent.New(a.llmClient, a.registry, a.session, a.db, a.approvals, a.logger)
 
 	a.logger.Info("应用初始化完成", "data_dir", cfg.DataDir)

@@ -219,3 +219,22 @@ func (s *VectorStore) DeleteNovel(ctx context.Context, novelID int64) error {
 	s.log.Info("已删除小说向量表", "novel_id", novelID)
 	return nil
 }
+
+// ── 全局单例 ──────────────────────────────────────────────
+
+var (
+	globalVSOnce sync.Once
+	globalVS     *VectorStore
+)
+
+// InitVectorStore 初始化全局 VectorStore，多次调用只生效一次。
+func InitVectorStore(db *sql.DB, embedder Embedder, log *slog.Logger) {
+	globalVSOnce.Do(func() {
+		globalVS = NewVectorStore(db, embedder, log)
+	})
+}
+
+// GetVectorStore 返回全局 VectorStore，未初始化时返回 nil。
+func GetVectorStore() *VectorStore {
+	return globalVS
+}
