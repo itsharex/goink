@@ -44,7 +44,7 @@ type RunOptions struct {
 	Model            *llm.ModelInfo
 	ProviderName     string
 	AgentType        string
-	ParentTurnID     *int
+	SubTaskID        string // 子 Agent 事件路由 ID
 	MaxTurns         int
 	MaxContextTokens int
 }
@@ -97,14 +97,14 @@ func (a *Agent) RunSubAgent(ctx context.Context, parentOpts RunOptions, req mcp_
 		{"role": "user", "content": req.Instruction},
 	}
 
-	parentTurnID := parentOpts.TurnID
 	subOpts := RunOptions{
+		TurnID:       parentOpts.TurnID,
 		SessionID:    parentOpts.SessionID,
 		NovelID:      req.NovelID,
 		Messages:     msgs,
 		AllowedTools: allowed,
 		AgentType:    req.AgentType,
-		ParentTurnID: &parentTurnID,
+		SubTaskID:    req.ToolID,
 		MaxTurns:     50,
 		Model:        parentOpts.Model,
 		ProviderName: parentOpts.ProviderName,
@@ -154,6 +154,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 		if event.Timestamp.IsZero() {
 			event.Timestamp = time.Now()
 		}
+		event.SubTaskID = opts.SubTaskID
 		wails.EventsEmit(ctx, agentEventName, event)
 	}
 
@@ -285,7 +286,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 						pendingInjects[id] = result.Inject
 					}
 
-					toolOutputs = append(toolOutputs, toolOutput{name: name, id: id, rawArgs: rawArgs, result: result})
+					toolOutputs = append(toolOutputs, toolOutput{name: name, id: id, rawArgs: rawArgs, result: result, displayText: display.DisplayText, activityKind: display.ActivityKind})
 
 				case llm.EventUsage:
 					a.updateUsage(ctx, event.Usage, runningTokens, opts)
@@ -315,10 +316,12 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) (AgentLoopResult, erro
 			break
 		}
 
-		// 1. assistant + tool_calls
+		// 1. assistant + tool_calls + tool_displays
+
 		a.appendMsg("assistant", responseBuffer, thinkingBuffer,
 			map[string]any{
-				"tool_calls": buildToolCalls(toolOutputs),
+				"tool_calls":    buildToolCalls(toolOutputs),
+				"tool_displays": buildToolDisplay(toolOutputs),
 			}, &opts, runningTokens)
 
 		// 2. tool 结果
@@ -367,7 +370,7 @@ func (a *Agent) appendMsg(role, content, thinkingContent string, extra map[strin
 		SessionID:       opts.SessionID,
 		TurnID:          opts.TurnID,
 		AgentType:       opts.AgentType,
-		ParentTurnID:    opts.ParentTurnID,
+		SubTaskID:       opts.SubTaskID,
 		Role:            role,
 		Content:         content,
 		ThinkingContent: thinkingContent,

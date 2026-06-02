@@ -33,6 +33,7 @@ type Tool interface {
 type SubAgentRequest struct {
 	AgentType   string // "memory" | "review"
 	NovelID     int64
+	ToolID      string // run_subagent 的 tool call ID，子 Agent 事件路由用
 	Instruction string
 }
 

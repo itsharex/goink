@@ -388,7 +388,7 @@ export namespace session {
 	    to_frontend: boolean;
 	    event_type?: string;
 	    agent_type: string;
-	    parent_turn_id?: number;
+	    sub_task_id?: string;
 	    // Go type: time
 	    created_at: any;
 	
@@ -411,7 +411,7 @@ export namespace session {
 	        this.to_frontend = source["to_frontend"];
 	        this.event_type = source["event_type"];
 	        this.agent_type = source["agent_type"];
-	        this.parent_turn_id = source["parent_turn_id"];
+	        this.sub_task_id = source["sub_task_id"];
 	        this.created_at = this.convertValues(source["created_at"], null);
 	    }
 	

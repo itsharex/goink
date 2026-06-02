@@ -45,58 +45,58 @@ var toolDisplayNames = map[string]string{
 	"create_preference":               "创建创作偏好",
 	"update_preference":               "更新创作偏好",
 	"lint_chapter":                    "章节文本检查",
-	"edit":                           "编辑文件内容",
-	"read":                           "读取文件内容",
+	"edit":                            "编辑文件内容",
+	"read":                            "读取文件内容",
 }
 
 // toolActivityKinds 工具名 → 前端展示类别。
 var toolActivityKinds = map[string]string{
-	"get_chapter_list":              "browse",
-	"get_chapter_content":           "view",
-	"edit_chapter":                  "write",
-	"create_new_chapter":            "create",
-	"get_creative_profile":          "memory",
-	"update_creative_profile":       "memory",
-	"search_story_memory":           "memory",
-	"get_character_memory":          "memory",
-	"get_timeline":                  "view",
-	"create_timeline_entry":         "write",
-	"update_timeline_entry":         "edit",
-	"update_chapter_plan":           "edit",
-	"get_locations":                 "view",
-	"create_location":               "create",
-	"update_location":               "edit",
-	"create_location_relation":      "create",
-	"update_location_relation":      "edit",
-	"get_novel_info":                "view",
-	"get_characters":                "view",
-	"get_character_relations":       "view",
-	"create_character":              "create",
-	"update_character":              "edit",
-	"update_character_relationship": "edit",
-	"run_subagent":                  "plan",
-	"get_reader_perspective":        "view",
+	"get_chapter_list":                "browse",
+	"get_chapter_content":             "view",
+	"edit_chapter":                    "write",
+	"create_new_chapter":              "create",
+	"get_creative_profile":            "memory",
+	"update_creative_profile":         "memory",
+	"search_story_memory":             "memory",
+	"get_character_memory":            "memory",
+	"get_timeline":                    "view",
+	"create_timeline_entry":           "write",
+	"update_timeline_entry":           "edit",
+	"update_chapter_plan":             "edit",
+	"get_locations":                   "view",
+	"create_location":                 "create",
+	"update_location":                 "edit",
+	"create_location_relation":        "create",
+	"update_location_relation":        "edit",
+	"get_novel_info":                  "view",
+	"get_characters":                  "view",
+	"get_character_relations":         "view",
+	"create_character":                "create",
+	"update_character":                "edit",
+	"update_character_relationship":   "edit",
+	"run_subagent":                    "plan",
+	"get_reader_perspective":          "view",
 	"create_reader_perspective_entry": "write",
 	"update_reader_perspective_entry": "edit",
-	"get_story_arcs":      "view",
-	"create_story_arc":    "create",
-	"update_story_arc":    "edit",
-	"create_arc_node":     "create",
-	"update_arc_node":     "edit",
-	"get_preferences":     "view",
-	"create_preference":   "create",
-	"update_preference":   "edit",
-	"lint_chapter":        "review",
-	"edit":               "write",
-	"read":               "view",
+	"get_story_arcs":                  "view",
+	"create_story_arc":                "create",
+	"update_story_arc":                "edit",
+	"create_arc_node":                 "create",
+	"update_arc_node":                 "edit",
+	"get_preferences":                 "view",
+	"create_preference":               "create",
+	"update_preference":               "edit",
+	"lint_chapter":                    "review",
+	"edit":                            "write",
+	"read":                            "view",
 }
 
 // chapterTools 需要查章节标题的工具集。
 var chapterTools = map[string]bool{
 	"get_chapter_content": true,
 	"edit_chapter":        true,
-	"edit":               true,
-	"read":               true,
+	"edit":                true,
+	"read":                true,
 }
 
 // buildDisplay 根据 tool_name + args + phase 生成前端展示文本。
@@ -142,7 +142,6 @@ func (a *Agent) buildDisplay(name string, args map[string]any, phase mcp_tools.D
 				baseText = "查看 " + label
 			}
 		}
-
 
 		// rw 工具的 goink.md 路径特殊处理
 		if path, ok := args["path"].(string); ok && path == "goink.md" {
@@ -219,4 +218,22 @@ func (a *Agent) lookupChapterBrief(novelID int64, chapterNumber int) string {
 		return fmt.Sprintf("第%d章", chapterNumber)
 	}
 	return fmt.Sprintf("第%d章 %s", chapterNumber, row.Title)
+}
+
+func buildToolDisplay(toolOutputs []toolOutput) []map[string]any {
+	toolDisplays := make([]map[string]any, 0, len(toolOutputs))
+	for _, to := range toolOutputs {
+		phase := "completed"
+		if !to.result.Success {
+			phase = "failed"
+		}
+		toolDisplays = append(toolDisplays, map[string]any{
+			"tool_id":       to.id,
+			"tool_name":     to.name,
+			"display_text":  to.displayText,
+			"activity_kind": to.activityKind,
+			"phase":         phase,
+		})
+	}
+	return toolDisplays
 }

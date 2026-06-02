@@ -45,7 +45,7 @@ type Message struct {
 	ToFrontend    bool      `gorm:"column:to_frontend;not null;default:0;index"                  json:"to_frontend"`               // 前端是否需要渲染此消息。注：default:0 必须与 Go false 一致，否则 GORM 跳过零值时 DB 填入默认值 1 导致泄漏
 	EventType     string    `gorm:"column:event_type"                                             json:"event_type,omitempty"`      // "compression" | "interrupt" | "error" | ""
 	AgentType     string    `gorm:"column:agent_type;not null;default:'main';index"              json:"agent_type"`                // "main" | "review" | "memory"
-	ParentTurnID  *int      `gorm:"column:parent_turn_id;index"                                  json:"parent_turn_id,omitempty"`  // 子 agent 消息指向触发它的主 turn，主 agent 为 NULL
+	SubTaskID     string    `gorm:"column:sub_task_id;index"                                     json:"sub_task_id,omitempty"`     // run_subagent 的 tool call ID，前端路由子 Agent 消息用
 	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime;index"                       json:"created_at"`
 }
 

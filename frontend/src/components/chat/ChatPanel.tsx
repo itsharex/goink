@@ -10,6 +10,7 @@ import ChatControls from './ChatControls'
 import MessageBubble from './MessageBubble'
 import ThinkingBlock from './ThinkingBlock'
 import ToolCallCard from './ToolCallCard'
+import SubagentCard from './SubagentCard'
 import type { UsageInfo } from './ContextRing'
 import SettingsDialog from '@/components/settings/SettingsDialog'
 import RecentSessions from './RecentSessions'
@@ -56,14 +57,12 @@ export default function ChatPanel({ novelId, onApprove, onReject }: Props) {
   const [sessions, setSessions] = useState<app.SessionMeta[]>([])
   const [sessionsTotal, setSessionsTotal] = useState(0)
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
-  const [approvalToolIds, setApprovalToolIds] = useState<Set<string>>(new Set())
   const [activeApproval, setActiveApproval] = useState<{ toolId: string; path: string; changeType: string } | null>(null)
 
   // 监听审批请求，更新工具卡片状态和输入区审批栏
   useEffect(() => {
     EventsOn('approval:requested', (data: any) => {
       const toolId = data?.tool_id ?? ''
-      setApprovalToolIds(prev => new Set(prev).add(toolId))
       setActiveApproval({
         toolId,
         path: data?.payload?.path ?? '',
@@ -212,6 +211,85 @@ export default function ChatPanel({ novelId, onApprove, onReject }: Props) {
     setTurns(prev => prev.map(turn => {
       if (turn.turnId !== turnId) return turn
 
+      // 子 Agent 事件：按 sub_task_id 路由到对应 SubagentSegment
+      if (event.sub_task_id) {
+        const subIdx = turn.segments.findIndex(s =>
+          s.type === 'subagent' && s.taskId === event.sub_task_id
+        )
+        if (subIdx < 0) return turn
+        const subSeg = { ...turn.segments[subIdx] }
+        if (!subSeg.segments) subSeg.segments = []
+        const subSegs = [...subSeg.segments]
+        const subSegId = `subseg_${++counterRef.current}`
+
+        switch (event.type) {
+          case AgentEventType.Thinking: {
+            const chunk = event.data || ''
+            const last = subSegs[subSegs.length - 1]
+            if (last && last.type === 'text' && last.isStreaming) {
+              subSegs[subSegs.length - 1] = { ...last, thinkingContent: last.thinkingContent + chunk }
+            } else {
+              subSegs.push({ ...emptySegment(subSegId), thinkingContent: chunk, thinkingDone: false, isStreaming: true })
+            }
+            break
+          }
+          case AgentEventType.ThinkingDone: {
+            for (let i = 0; i < subSegs.length; i++) {
+              if (subSegs[i].type === 'text' && !subSegs[i].thinkingDone) {
+                subSegs[i] = { ...subSegs[i], thinkingDone: true, isStreaming: false }
+              }
+            }
+            break
+          }
+          case AgentEventType.Content: {
+            const chunk = event.data || ''
+            const last = subSegs[subSegs.length - 1]
+            if (last && last.type === 'text' && last.isStreaming) {
+              subSegs[subSegs.length - 1] = { ...last, content: last.content + chunk, thinkingDone: true }
+            } else {
+              subSegs.push({ ...emptySegment(subSegId), content: chunk, thinkingDone: true, isStreaming: true })
+            }
+            break
+          }
+          case AgentEventType.ToolCall: {
+            const subToolStatus = event.phase === 'completed' ? 'completed' as const
+              : event.phase === 'failed' ? 'failed' as const
+              : 'executing' as const
+            const stIdx = subSegs.findIndex(s =>
+              s.type === 'tool' && s.toolId === event.tool_id
+            )
+            if (stIdx >= 0) {
+              subSegs[stIdx] = {
+                ...subSegs[stIdx],
+                toolStatus: subToolStatus,
+                displayText: event.display_text || subSegs[stIdx].displayText,
+                activityKind: event.activity_kind || '',
+                error: event.error || '',
+              }
+            } else {
+              subSegs.push({
+                ...emptySegment(subSegId),
+                type: 'tool',
+                toolName: event.tool_name || '',
+                toolId: event.tool_id || '',
+                toolStatus: subToolStatus,
+                displayText: event.display_text || event.tool_name || '',
+                activityKind: event.activity_kind || '',
+                error: event.error || '',
+              })
+            }
+            break
+          }
+          default:
+            break
+        }
+
+        subSeg.segments = subSegs
+        const newSegs = [...turn.segments]
+        newSegs[subIdx] = subSeg
+        return { ...turn, segments: newSegs }
+      }
+
       const segments = [...turn.segments]
       const segId = `seg_${++counterRef.current}`
 
@@ -267,28 +345,54 @@ export default function ChatPanel({ novelId, onApprove, onReject }: Props) {
         }
 
         case AgentEventType.ToolCall: {
-          const idx = segments.findIndex(seg =>
-            seg.type === 'tool' && event.tool_id && seg.toolId === event.tool_id
-          )
+          const isSubagent = event.tool_name === 'run_subagent'
           const toolStatus = event.phase === 'completed' ? 'completed' as const
             : event.phase === 'failed' ? 'failed' as const
             : 'executing' as const
 
           // 工具结束即清除审批等待标记
           if (toolStatus !== 'executing' && event.tool_id) {
-            setApprovalToolIds(prev => {
-              const next = new Set(prev)
-              next.delete(event.tool_id!)
-              return next
-            })
             setActiveApproval(prev => prev?.toolId === event.tool_id ? null : prev)
           }
+
+          // run_subagent：维护对应的 subagent segment
+          if (isSubagent) {
+            const agentType = (event.metadata?.agent_type as 'memory' | 'review') || 'memory'
+            const toolId = event.tool_id || ''
+            const subIdx = segments.findIndex(seg =>
+              seg.type === 'subagent' && seg.taskId === toolId
+            )
+            if (subIdx >= 0) {
+              segments[subIdx] = {
+                ...segments[subIdx],
+                status: toolStatus === 'executing' ? 'streaming' : toolStatus === 'failed' ? 'failed' : 'done',
+                toolStatus,
+              }
+            } else {
+              segments.push({
+                ...emptySegment(`subagent_${toolId || segId}`),
+                type: 'subagent',
+                status: 'streaming',
+                agentType,
+                taskId: toolId,
+                segments: [],
+                finalText: '',
+                toolStatus: 'executing',
+              })
+            }
+            return { ...turn, segments }
+          }
+
+          const idx = segments.findIndex(seg =>
+            seg.type === 'tool' && event.tool_id && seg.toolId === event.tool_id
+          )
 
           if (idx >= 0) {
             segments[idx] = {
               ...segments[idx],
               toolStatus,
               displayText: event.display_text || segments[idx].displayText,
+              activityKind: event.activity_kind || segments[idx].activityKind || '',
               error: event.error || '',
             }
           } else {
@@ -299,6 +403,7 @@ export default function ChatPanel({ novelId, onApprove, onReject }: Props) {
               toolId: event.tool_id || '',
               toolStatus,
               displayText: event.display_text || event.tool_name || '',
+              activityKind: event.activity_kind || '',
               error: event.error || '',
             })
           }
@@ -574,15 +679,29 @@ export default function ChatPanel({ novelId, onApprove, onReject }: Props) {
                     )}
 
                     {turn.segments.map(seg => {
+                      if (seg.type === 'subagent' && seg.agentType) {
+                        return (
+                          <SubagentCard
+                            key={seg.id}
+                            agentType={seg.agentType}
+                            segments={seg.segments || []}
+                            status={seg.status || 'done'}
+                          />
+                        )
+                      }
+
                       if (seg.type === 'tool') {
+                        // run_subagent 已由 subagent 段渲染，跳过纯工具卡
+                        if (seg.toolName === 'run_subagent') return null
+
                         return (
                           <ToolCallCard
                             key={seg.id}
                             toolName={seg.toolName}
                             displayText={seg.displayText}
                             status={seg.toolStatus}
+                            activityKind={seg.activityKind}
                             error={seg.error}
-                            isAwaitingApproval={approvalToolIds.has(seg.toolId)}
                           />
                         )
                       }

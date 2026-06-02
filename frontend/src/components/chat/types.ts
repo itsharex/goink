@@ -13,6 +13,7 @@ export enum AgentEventType {
 // AgentEvent 与 Go 端 AgentEvent 的 JSON 序列化一一对应
 export interface AgentEvent {
   turn_id: number
+  sub_task_id?: string
   seq?: number
   type: AgentEventType
   data?: string
@@ -29,19 +30,27 @@ export interface AgentEvent {
   timestamp: string
 }
 
-// TurnSegment 是 turn 内的一个片段：文本块或工具调用
+// TurnSegment 是 turn 内的一个片段：文本块、工具调用或子 Agent
 export interface TurnSegment {
   id: string
-  type: 'text' | 'tool'
+  type: 'text' | 'tool' | 'subagent'
   content: string
   thinkingContent: string
   thinkingDone: boolean
   isStreaming: boolean
+  // tool
   toolName: string
   toolId: string
   toolStatus: 'executing' | 'completed' | 'failed'
   displayText: string
+  activityKind: string
   error: string
+  // subagent
+  status?: 'streaming' | 'done' | 'failed'
+  agentType?: 'memory' | 'review'
+  taskId?: string
+  segments?: TurnSegment[]
+  finalText?: string
 }
 
 export function emptySegment(id: string): TurnSegment {
@@ -56,6 +65,7 @@ export function emptySegment(id: string): TurnSegment {
     toolId: '',
     toolStatus: 'executing',
     displayText: '',
+    activityKind: '',
     error: '',
   }
 }
@@ -70,11 +80,11 @@ export interface Turn {
   errorMessage?: string
 }
 
-
 export function rebuildTurns(messages: session.Message[]): Turn[] {
   const turns: Turn[] = []
   let current: Turn | null = null
   let segCounter = 0
+  const subagentCache = new Map<string, TurnSegment>()
 
   for (const msg of messages) {
     if (msg.role === 'user') {
@@ -86,23 +96,115 @@ export function rebuildTurns(messages: session.Message[]): Turn[] {
         status: 'done',
       }
       turns.push(current)
-    } else if (msg.role === 'assistant' && msg.agent_type === 'main' && current) {
+    } else if (msg.role === 'assistant') {
+      // 子 Agent 消息：agent_type !== 'main' 且有 sub_task_id
+      if (msg.agent_type !== 'main' && msg.sub_task_id && current) {
+        const subTaskId = msg.sub_task_id
+        const cached = subagentCache.get(subTaskId)
+        const subSeg: TurnSegment = cached ?? (() => {
+          const seg: TurnSegment = {
+            ...emptySegment(`seg_${segCounter++}`),
+            type: 'subagent',
+            status: 'done',
+            agentType: (msg.agent_type as 'memory' | 'review') || 'memory',
+            taskId: subTaskId,
+            segments: [],
+            finalText: '',
+          }
+          current!.segments.push(seg)
+          subagentCache.set(subTaskId, seg)
+          return seg
+        })()
+
+        // 追加子 agent 的文本内容
+        if ((msg.content || msg.thinking_content) && subSeg.segments) {
+          subSeg.segments.push({
+            ...emptySegment(`seg_${segCounter++}`),
+            type: 'text',
+            content: msg.content || '',
+            thinkingContent: msg.thinking_content || '',
+            thinkingDone: true,
+            isStreaming: false,
+          })
+          if (msg.content) {
+            subSeg.finalText = (subSeg.finalText || '') ? (subSeg.finalText + '\n' + msg.content) : msg.content
+          }
+        }
+
+        // 子 agent 的工具调用
+        const toolDisplays = parseToolDisplays(msg.extra_metadata)
+        if (toolDisplays.length > 0 && subSeg.segments) {
+          for (const td of toolDisplays) {
+            const phase = td.phase as 'completed' | 'failed' | 'executing' | undefined
+            subSeg.segments.push({
+              ...emptySegment(`seg_${segCounter++}`),
+              type: 'tool',
+              toolName: td.tool_name,
+              toolId: td.tool_id,
+              toolStatus: phase && (phase === 'executing' || phase === 'completed' || phase === 'failed') ? phase : 'completed',
+              displayText: td.display_text,
+              activityKind: td.activity_kind,
+              error: '',
+            })
+          }
+        }
+        continue
+      }
+
+      // 主 Agent 消息
+      if (!current) continue
+
       const thinkingContent = msg.thinking_content || ''
-      current.segments.push({
-        id: `seg_${msg.turn_id}_${segCounter++}`,
-        type: 'text',
-        content: msg.content,
-        thinkingContent,
-        thinkingDone: true,
-        isStreaming: false,
-        toolName: '',
-        toolId: '',
-        toolStatus: 'executing' as const,
-        displayText: '',
-        error: '',
-      })
+
+      // 文本内容
+      if (msg.content || thinkingContent) {
+        current.segments.push({
+          ...emptySegment(`seg_${segCounter++}`),
+          type: 'text',
+          content: msg.content || '',
+          thinkingContent,
+          thinkingDone: true,
+          isStreaming: false,
+        })
+      }
+
+      // 工具展示信息
+      const toolDisplays = parseToolDisplays(msg.extra_metadata)
+      for (const td of toolDisplays) {
+        current.segments.push({
+          ...emptySegment(`seg_${segCounter++}`),
+          type: 'tool',
+          toolName: td.tool_name,
+          toolId: td.tool_id,
+          toolStatus: (td.phase === 'completed' || td.phase === 'failed' || td.phase === 'executing') ? td.phase : 'completed',
+          displayText: td.display_text || td.tool_name,
+          activityKind: td.activity_kind || '',
+          error: '',
+        })
+      }
     }
   }
 
   return turns
+}
+
+interface ToolDisplay {
+  tool_id: string
+  tool_name: string
+  display_text: string
+  activity_kind: string
+  phase: string
+}
+
+function parseToolDisplays(extraMetadata?: string): ToolDisplay[] {
+  if (!extraMetadata) return []
+  try {
+    const meta = JSON.parse(extraMetadata)
+    if (meta.tool_displays && Array.isArray(meta.tool_displays)) {
+      return meta.tool_displays as ToolDisplay[]
+    }
+    return []
+  } catch {
+    return []
+  }
 }

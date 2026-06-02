@@ -30,10 +30,12 @@ var readOnlyTools = map[string]bool{
 }
 
 type toolOutput struct {
-	name    string
-	id      string
-	rawArgs json.RawMessage
-	result  *mcp_tools.ToolResult
+	name         string
+	id           string
+	rawArgs      json.RawMessage
+	result       *mcp_tools.ToolResult
+	displayText  string // buildDisplay 生成的展示文本
+	activityKind string // buildDisplay 生成的活动类别
 }
 
 func (to toolOutput) resultJSON() string {

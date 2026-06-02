@@ -36,6 +36,7 @@ func (t *RunSubagentTool) Execute(ctx context.Context, args any, tc ToolContext)
 		AgentType:   a.AgentType,
 		NovelID:     tc.NovelID,
 		Instruction: a.Instruction,
+		ToolID:      tc.ToolID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("子 Agent 执行失败: %w", err)
