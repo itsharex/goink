@@ -25,8 +25,11 @@ jobs:
         shell: bash
 
       - name: Install sqlite3 headers (CGo)
-        run: choco install -y sqlite
         shell: bash
+        run: |
+          curl -fsSL -o /tmp/sqlite-amalgamation.zip https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip
+          unzip -qo /tmp/sqlite-amalgamation.zip -d /tmp/sqlite
+          echo "CGO_CFLAGS=-I/tmp/sqlite" >> $GITHUB_ENV
 
       - name: Download runtime deps
         run: |
