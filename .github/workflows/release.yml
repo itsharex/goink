@@ -44,10 +44,7 @@ jobs:
           wails build -tags webkit2_41 -o goink.exe
 
       - name: Install Inno Setup
-        shell: bash
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/is.exe" "https://jrsoftware.org/download.php/is.exe"
-          "$RUNNER_TEMP/is.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+        run: choco install innosetup -y --limit-output
 
       - name: Package (Inno Setup)
         shell: bash
