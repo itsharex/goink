@@ -102,6 +102,16 @@ func bundledRuntimeDirs(appDir string) []string {
 	}
 }
 
+// BundledModelsDir 返回打包自带的模型目录路径（绝对路径）。
+func BundledModelsDir(appDir string) string {
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(appDir, "..", "Resources", "runtime", "models")
+	default:
+		return filepath.Join(appDir, "runtime", "models")
+	}
+}
+
 func onnxLibName() string {
 	switch runtime.GOOS {
 	case "windows":

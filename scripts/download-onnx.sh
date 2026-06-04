@@ -4,6 +4,35 @@ set -euo pipefail
 OS=$(uname -s)
 RUNTIME_DIR="${RUNTIME_DIR:-build/runtime}"
 ONNX_VERSION="1.21.0"
+BGE_REPO="https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main"
+BGE_MIRROR="https://hf-mirror.com/Xenova/bge-small-zh-v1.5/resolve/main"
+MODEL_DIR="${RUNTIME_DIR}/models"
+
+download_bge_model() {
+    mkdir -p "$MODEL_DIR"
+    echo "下载 BGE 嵌入模型 (bge-small-zh-v1.5, int8)..."
+
+    # vocab.txt
+    if ! curl -fsSL --retry 3 --connect-timeout 30 -o "$MODEL_DIR/vocab.txt" "$BGE_REPO/vocab.txt"; then
+        echo "HF 直连失败，尝试镜像..."
+        curl -fsSL --retry 3 --connect-timeout 30 -o "$MODEL_DIR/vocab.txt" "$BGE_MIRROR/vocab.txt"
+    fi
+
+    # model.onnx (int8 quantized)
+    if ! curl -fsSL --retry 3 --connect-timeout 30 -o "$MODEL_DIR/model.onnx" "$BGE_REPO/onnx/model_int8.onnx"; then
+        echo "HF 直连失败，尝试镜像..."
+        curl -fsSL --retry 3 --connect-timeout 30 -o "$MODEL_DIR/model.onnx" "$BGE_MIRROR/onnx/model_int8.onnx"
+    fi
+
+    # 校验
+    if file "$MODEL_DIR/model.onnx" | grep -qi "html"; then
+        echo "错误: 下载的模型文件是 HTML 页面"
+        head -5 "$MODEL_DIR/model.onnx"
+        exit 1
+    fi
+    echo "BGE 模型 → $MODEL_DIR/"
+    ls -la "$MODEL_DIR/"
+}
 
 download_onnx() {
     local os_tag="$1"
@@ -68,12 +97,15 @@ download_onnx() {
 case "${OS}" in
     MINGW*|MSYS*|CYGWIN*)
         download_onnx "win-x64" "onnxruntime-win-x64-${ONNX_VERSION}.zip"
+        download_bge_model
         ;;
     Linux)
         download_onnx "linux-x64" "onnxruntime-linux-x64-${ONNX_VERSION}.tgz"
+        download_bge_model
         ;;
     Darwin)
         download_onnx "osx-universal2" "onnxruntime-osx-universal2-${ONNX_VERSION}.tgz"
+        download_bge_model
         ;;
     *)
         echo "不支持的操作系统: $OS"

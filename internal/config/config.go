@@ -62,7 +62,15 @@ func LLMConfigPath() string {
 }
 
 // ModelsDir 返回 ONNX 模型目录路径。
+// 优先查安装包自带的 runtime/models/，找不到再 fallback 到用户数据目录。
 func ModelsDir() string {
+	appDir, err := platform.AppDir()
+	if err == nil {
+		bundled := platform.BundledModelsDir(appDir)
+		if _, err := os.Stat(filepath.Join(bundled, "model.onnx")); err == nil {
+			return bundled
+		}
+	}
 	return filepath.Join(platform.DataDir(), "models")
 }
 
