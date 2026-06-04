@@ -46,7 +46,7 @@ jobs:
       - name: Install Inno Setup
         shell: bash
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/is.exe" "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+          curl -fsSL -o "$RUNNER_TEMP/is.exe" "https://jrsoftware.org/download.php/is.exe"
           "$RUNNER_TEMP/is.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
       - name: Package (Inno Setup)
