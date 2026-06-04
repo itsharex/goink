@@ -46,7 +46,7 @@ func (t *SearchStoryMemoryTool) Execute(ctx context.Context, args any, tc ToolCo
 
 	vs := rag.GetVectorStore()
 	if vs == nil {
-		return nil, fmt.Errorf("向量存储未初始化")
+		return &ToolResult{Success: false, Error: "向量检索不可用，ONNX 模型未安装，请先下载模型"}, nil
 	}
 
 	// 1. 过量获取，提高召回

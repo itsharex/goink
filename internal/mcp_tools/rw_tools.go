@@ -58,6 +58,8 @@ func (t *EditTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 			} else {
 				return &ToolResult{Success: false, Error: "文件不存在: " + a.Path}, nil
 			}
+		} else if errors.Is(err, git.ErrPathEscape) {
+			return &ToolResult{Success: false, Error: "路径非法: " + a.Path}, nil
 		} else {
 			return nil, fmt.Errorf("read file %s: %w", a.Path, err)
 		}
@@ -132,6 +134,9 @@ func (t *EditTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 
 	// 6. 写入文件
 	if err := git.WriteFile(tc.NovelID, a.Path, proposed); err != nil {
+		if errors.Is(err, git.ErrPathEscape) {
+			return &ToolResult{Success: false, Error: "路径非法: " + a.Path}, nil
+		}
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
@@ -307,6 +312,9 @@ func (t *ReadTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return &ToolResult{Success: false, Error: "文件不存在: " + a.Path}, nil
+		}
+		if errors.Is(err, git.ErrPathEscape) {
+			return &ToolResult{Success: false, Error: "路径非法: " + a.Path}, nil
 		}
 		return nil, fmt.Errorf("read file %s: %w", a.Path, err)
 	}

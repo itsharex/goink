@@ -55,7 +55,7 @@ func WriteFile(novelID int64, path, content string) error {
 	return nil
 }
 
-var errPathEscape = errors.New("git: path escapes novel directory")
+var ErrPathEscape = errors.New("git: path escapes novel directory")
 
 func novelDir(novelID int64) string {
 	return config.NovelDirPath(novelID)
@@ -68,14 +68,15 @@ func safePath(base, rel string) (string, error) {
 		return "", fmt.Errorf("git: resolve base: %w", err)
 	}
 	full := filepath.Clean(filepath.Join(absBase, rel))
-	// Windows 文件系统不区分大小写，需用 EqualFold 比较防止路径穿越绕过
+	// Windows 文件系统不区分大小写，用 ToLower 做大小写无关前缀比较防止路径穿越绕过
 	if runtime.GOOS == "windows" {
-		if !strings.EqualFold(full, absBase+string(filepath.Separator)) && !strings.EqualFold(full, absBase) {
-			return "", fmt.Errorf("%w: %s", errPathEscape, rel)
+		prefix := absBase + string(filepath.Separator)
+		if !strings.HasPrefix(strings.ToLower(full), strings.ToLower(prefix)) && !strings.EqualFold(full, absBase) {
+			return "", fmt.Errorf("%w: %s", ErrPathEscape, rel)
 		}
 	} else {
 		if !strings.HasPrefix(full, absBase+string(filepath.Separator)) && full != absBase {
-			return "", fmt.Errorf("%w: %s", errPathEscape, rel)
+			return "", fmt.Errorf("%w: %s", ErrPathEscape, rel)
 		}
 	}
 	return full, nil
