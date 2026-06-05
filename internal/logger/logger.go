@@ -42,5 +42,5 @@ func Default() *slog.Logger {
 	if err != nil {
 		return New(slog.LevelDebug, "text", os.Stderr)
 	}
-	return New(slog.LevelDebug, "text", io.MultiWriter(os.Stderr, f))
+	return New(slog.LevelDebug, "text", f)
 }
