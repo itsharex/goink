@@ -104,7 +104,7 @@ case "${OS}" in
         download_bge_model
         ;;
     Darwin)
-        download_onnx "osx-universal2" "onnxruntime-osx-universal2-${ONNX_VERSION}.tgz"
+        download_onnx "osx-arm64" "onnxruntime-osx-arm64-${ONNX_VERSION}.tgz"
         download_bge_model
         ;;
     *)
