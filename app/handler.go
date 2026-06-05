@@ -188,6 +188,16 @@ func (a *App) initWithConfig(cfg *config.AppConfig) {
 		rag.InitVectorStore(sqlDB, emb, a.logger)
 		a.vectorStore = rag.GetVectorStore()
 		a.logger.Info("向量存储初始化完成")
+
+		// 初始化刷新队列并启动
+		rag.InitRefreshQueue(a.vectorStore, a.chapter, a.novel, a.logger)
+		rag.GetRefreshQueue().Start()
+
+		// 首次启动全量索引（已有向量则跳过）
+		rebuildCtx := context.Background()
+		if err := rag.GetRefreshQueue().RebuildAll(rebuildCtx); err != nil {
+			a.logger.Error("全量向量索引失败", "err", err)
+		}
 	}()
 
 	// 10. 创建 Agent 实例（全局复用）

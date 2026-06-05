@@ -13,6 +13,7 @@ import (
 
 	"novel/internal/chapter"
 	"novel/internal/git"
+	"novel/internal/rag"
 )
 
 // ── edit ──────────────────────────────────────────────────
@@ -151,6 +152,11 @@ func (t *EditTool) Execute(ctx context.Context, args any, tc ToolContext) (*Tool
 		"novel_id": tc.NovelID,
 		"path":     a.Path,
 	})
+
+	// 异步刷新章节向量
+	if isChapterPath(a.Path) {
+		rag.SubmitRefresh(tc.NovelID, parseChapterNum(a.Path), proposed)
+	}
 
 	// 8. inject 维护提醒（章节全量替换且 >500 字时）
 	var injects []InjectMessage
